@@ -1,5 +1,35 @@
 # LxMine 发布记录
 
+## 2026-11-15 鸿蒙双轨分发：应用市场邀请测试 + HiCar 保持 GitHub
+
+- 新增 `scripts/build-store.ps1`（`npm run build:store`）：产出华为应用市场邀请测试用包，
+  bundleName `com.lxmine.player`（旧 `com.lxlia.player` 在华为侧已被占用，AGC 无法创建），产物是 AGC 接受的 **APP 包（`.app`）**。构建期间临时把
+  `entry/src/main/module.json5` 的 `deviceTypes` 收窄为 `["phone","tablet"]` 并移除
+  `ACCESS_CAR_DISTRIBUTED_ENGINE`，结束（含失败）自动还原并校验 `car` 已恢复。
+  `-ReleaseSigning` 用 `%USERPROFILE%\.ohos\lxmine-release\` 里的发布证书与 Profile
+  按 `buildMode=release` 构建并签名（AGC 合法性检测要求 API≥11 的包 `debug` 不为
+  `true`；hvigor 只接受 DevEco 加密格式的密码，脚本用 `encpwd.txt` + `material/` 注入
+  `store-release` 签名配置，构建后还原）；不带的则出 debug 包仅供本机验证。复制产物前
+  会解开 `.app` 内的 HAP 自检包名、设备类型、车机权限、`versionCode`、`buildMode`、
+  `debug` 六项。上架材料（应用介绍、测试说明、权限说明、隐私问答、审核备注）见
+  [AGC_SUBMISSION.md](AGC_SUBMISSION.md)。
+- AGC 侧已落地（2026-11-15）：创建应用 LxMine（APP ID `6917621881923326327`，
+  `com.lxmine.player`，手机/平板，项目 LxMine）；申请发布证书 `lxmine_release`
+  （2026-11-15 至 2029-11-15）与发布 Profile `lxmine_store`；上传
+  `LxMine-1.0.0-Store-20261115.app`，合法性检测「已达标」；创建外部测试群组「好友测试」。
+- 邀请测试规则按官方文档核对（2026-11）：上限 10000 人 / 300 群组、单版本最长 90 天、
+  仅中国大陆、不支持快速审核、不支持未成年模式；版本分享链接在审核通过后可拼
+  `&invitationCode=`；发布邀请测试不需要资质与备案。
+- 双轨规则与 AGC 操作写入 [INVITE_TEST.md](INVITE_TEST.md)。HiCar 版不进市场：
+  `cn.migu.music` 是咪咕音乐包名无法在 AGC 创建，且邀请测试设备类型不含车机；
+  继续由 `build-hicar.ps1` 出包并放 GitHub Releases，维护者自用该版本。
+- 版本同步：两包同源，版本号统一取 `apps/harmony/AppScope/app.json5` 的
+  versionName / versionCode，每次发版依次出 Store 包与 HiCar 包。
+- 2026-11-15 已提交邀请测试版本（预审中，30–40 分钟自动检测后转人工审核）：
+  设备 手机/平板/PC/2in1（`deviceTypes` 含 `2in1`；手表不参与），测试期
+  2026-11-15 → 2027-01-01，反馈渠道为抖音公开群 784249865742。
+  版本分享链接：<https://appgallery.huawei.com/link/invite-test-wap?taskId=5554c3049d63f207e204e4decf9160d7>
+
 ## 2026-11-14 v1.0.0 — 融合完成版
 
 - 版本号从固定 0.1.0 升级为 **1.0.0**（Harmony versionCode 1000000；Windows package 1.0.0）。

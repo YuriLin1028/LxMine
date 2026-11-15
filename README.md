@@ -73,6 +73,15 @@ LxMine 不是 LX Music 或 Mineradio 的官方版本，与两位作者无隶属�
 调试证书与设备 UDID 绑定，换机或证书过期后需要重新签名。`cn.migu.music` 仅用于
 兼容已安装设备与应用接续，本项目与咪咕音乐无关。
 
+### HarmonyOS（应用市场邀请测试）
+
+手机/平板另有一条免侧载通道：维护者在华为应用市场发起「邀请测试」后会给出一条
+链接，朋友点开加入测试组即可从「应用尝鲜」安装和更新。测试包包名为
+`com.lxmine.player`，只含手机/平板/PC；车机兼容包（`cn.migu.music`）始终只走 GitHub。
+
+出包与 AGC 操作见 [docs/INVITE_TEST.md](docs/INVITE_TEST.md)，命令为
+`npm run build:store`。
+
 ## 目录结构
 
 ```
