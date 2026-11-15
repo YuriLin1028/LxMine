@@ -6,8 +6,19 @@ LxMine 以 [Mineradio](#上游与致谢) 2.2.0 的沉浸视觉与桌面体验为
 [LX Music](#上游与致谢) 的自定义音源协议与音乐资料库能力，统一 PC 与鸿蒙端的首页、
 歌单、搜索、本地音乐与播放详情体验。
 
-当前版本：**1.0.0**（2026-11-14）。版本内容见 [RELEASE_NOTES](docs/RELEASE_NOTES.md)，
-构建与发布记录见 [RELEASE](docs/RELEASE.md)。
+当前版本：**1.0.0**（2026-11-14），安装包见 [Releases](https://github.com/YuriLin1028/LxMine/releases/latest)。
+版本内容见 [RELEASE_NOTES](docs/RELEASE_NOTES.md)，构建与发布记录见 [RELEASE](docs/RELEASE.md)。
+
+## 界面预览
+
+<p align="center">
+  <img src="docs/assets/screenshots/pc-home.png" width="49%" alt="Windows 首页">
+  <img src="docs/assets/screenshots/pc-list.png" width="49%" alt="Windows 歌曲列表与列表工具">
+</p>
+<p align="center">
+  <img src="docs/assets/screenshots/phone-home.jpeg" width="30%" alt="HarmonyOS 手机首页">
+  <img src="docs/assets/screenshots/phone-player.jpeg" width="30%" alt="HarmonyOS 播放详情">
+</p>
 
 ## 上游与致谢
 
@@ -34,6 +45,33 @@ LxMine 不是 LX Music 或 Mineradio 的官方版本，与两位作者无隶属�
 - **PC 沉浸光感**：指针追光、系统材质、锚点弹窗、无边框窗口 chrome 与按压反馈。
 - **鸿蒙原生端**：ArkTS / ArkUI 导航与播控，应用接续、局域网同步、横屏沉浸。
 - **多音源兼容**：兼容 LX 自定义源脚本；脚本由用户自行导入，仓库不附带。
+
+## 安装
+
+### Windows
+
+从 [Releases](https://github.com/YuriLin1028/LxMine/releases/latest) 下载
+`LxMine-1.0.0-Setup.exe` 安装。安装包没有商业代码签名，SmartScreen 可能提示
+“未知发布者”，选择“更多信息 → 仍要运行”即可。
+
+### HarmonyOS（未签名 HAP）
+
+从 Releases 下载 `LxMine-1.0.0-HiCar-unsigned.hap`：`bundleName` 为
+`cn.migu.music`，支持 phone / tablet / car，versionName 1.0.0。
+
+未签名 HAP **不能直接安装**，需要先完成签名：
+
+1. 在手机“设置 → 关于本机”连续点击版本号开启开发者模式，并在“系统和更新 →
+   开发人员选项”打开 USB 调试。
+2. 使用自动签名工具为 HAP 签名并安装。可参考 [sydxky.cn](https://sydxky.cn/)
+   的“安装工具”页面，使用 HoKit、小白调试助手等工具；这类工具会自动申请绑定
+   当前设备的调试证书。该站点是第三方社区站点，本仓库不隶属于它，使用前请自行
+   确认工具来源与隐私政策。
+3. 也可以在 DevEco Studio 中打开 `apps/harmony`，登录华为账号并勾选自动签名，
+   然后执行 `hdc install -r <signed>.hap`。
+
+调试证书与设备 UDID 绑定，换机或证书过期后需要重新签名。`cn.migu.music` 仅用于
+兼容已安装设备与应用接续，本项目与咪咕音乐无关。
 
 ## 目录结构
 
