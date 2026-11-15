@@ -1,0 +1,15 @@
+{
+  "name": "lxmine",
+  "version": "1.0.0",
+  "private": true,
+  "license": "GPL-3.0-only",
+  "author": "林毅 and contributors",
+  "description": "LxMine 跨端音乐播放器：Windows 与 HarmonyOS，融合 LX Music 音源与 Mineradio 沉浸视觉",
+  "scripts": {
+    "start": "npm --prefix apps/desktop start",
+    "build:win": "npm --prefix apps/desktop run build:win",
+    "build:win:dir": "npm --prefix apps/desktop run build:win:dir",
+    "check:harmony": "pwsh.exe -NoProfile -File scripts/build-harmony.ps1 -SkipStage",
+    "build:harmony": "pwsh.exe -NoProfile -File scripts/build-harmony.ps1"
+  }
+}

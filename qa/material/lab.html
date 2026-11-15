@@ -1,0 +1,185 @@
+<!doctype html><html><head><meta charset="utf-8">
+<link rel="stylesheet" href="../../apps/desktop/public/lxmine/style.css">
+<style>
+html,body{background:#000!important;margin:0;width:100%;height:100%;overflow:hidden}
+body::after{display:none!important}
+#background{position:absolute;left:0;top:0;width:376px;height:auto;pointer-events:none}
+.glass{position:absolute!important}
+.modal,.popover{animation:none!important;transform:none!important;filter:none!important;padding:0!important;overflow:visible!important}
+</style></head><body>
+<svg class="glass-filter-defs" width="0" height="0"><defs></defs></svg>
+<img id="background" src="artifacts/native-off.png">
+<div class="glass" id="lab-capsule-52" style="left:24px;top:112px;width:312px;height:52px;border-radius:26px"></div>
+<div class="glass" id="lab-capsule-72" style="left:24px;top:256px;width:312px;height:72px;border-radius:36px"></div>
+<div class="glass" id="lab-circle-64" style="left:24px;top:400px;width:64px;height:64px;border-radius:32px"></div>
+<div class="glass" id="lab-panel-28" style="left:120px;top:400px;width:216px;height:112px;border-radius:28px"></div>
+<script src="../../apps/desktop/public/lxmine/material.js"></script>
+<script>
+LxGlass.install();
+let referenceFolder='artifacts/references/type/';
+window.setScene=async function(name){
+  referenceFolder='artifacts/references/'+name+'/';const bg=document.querySelector('#background');bg.src=referenceFolder+'native-off.png';await bg.decode();
+  const entries=name.endsWith('-tiers')?
+    [['lab-tier-capsule',24,56,312,52,26,''],['lab-menu',24,128,240,100,24,'popover'],['lab-circle-42',24,272,42,42,21,''],['lab-sheet',24,360,312,160,30,'modal']]:
+    [['lab-capsule-52',24,112,312,52,26,''],['lab-capsule-72',24,256,312,72,36,''],['lab-circle-64',24,400,64,64,32,''],['lab-panel-28',120,400,216,112,28,'']];
+  document.querySelectorAll('.glass').forEach(n=>n.remove());
+  for(const [id,x,y,w,h,r,kind] of entries){const n=document.createElement('div');n.id=id;n.className='glass '+kind;n.style.cssText=`left:${x}px;top:${y}px;width:${w}px;height:${h}px;border-radius:${r}px`;document.body.append(n)}
+  await new Promise(r=>requestAnimationFrame(()=>requestAnimationFrame(()=>requestAnimationFrame(r))));
+};
+window.makeSheet = async function(png) {
+  const load=async src=>{const i=new Image();i.src=src;await i.decode();return i};
+  const native=await load(referenceFolder+'native-repeat.png'),pc=await load('data:image/png;base64,'+png);
+  const sheet=document.createElement('canvas');sheet.width=1536;sheet.height=1100;const ctx=sheet.getContext('2d');ctx.fillStyle='#202020';ctx.fillRect(0,0,1536,1100);ctx.fillStyle='white';ctx.font='22px sans-serif';
+  ctx.fillText('HarmonyOS · EXQUISITE',12,30);ctx.fillText('PC · identical backdrop',524,30);ctx.fillText('Absolute difference × 4',1036,30);
+  let yy=55;
+  for(const host of document.querySelectorAll('.glass')){
+    const r=host.getBoundingClientRect(),d=devicePixelRatio;
+    const x=Math.round(r.x*d),y=Math.round(r.y*d),w=Math.round(r.width*d),h=Math.round(r.height*d),scale=Math.min(488/w,220/h);
+    const c=document.createElement('canvas');c.width=w;c.height=h;const z=c.getContext('2d');z.drawImage(native,x,y,w,h,0,0,w,h);const a=z.getImageData(0,0,w,h);z.clearRect(0,0,w,h);z.drawImage(pc,x,y,w,h,0,0,w,h);const b=z.getImageData(0,0,w,h);
+    for(let i=0;i<a.data.length;i+=4){for(let k=0;k<3;k++)a.data[i+k]=Math.min(255,4*Math.abs(a.data[i+k]-b.data[i+k]));a.data[i+3]=255}z.putImageData(a,0,0);
+    ctx.fillText(host.id,12,yy+20);yy+=30;
+    ctx.drawImage(native,x,y,w,h,12,yy,w*scale,h*scale);ctx.drawImage(pc,x,y,w,h,524,yy,w*scale,h*scale);ctx.drawImage(c,0,0,w,h,1036,yy,w*scale,h*scale);yy+=Math.ceil(h*scale)+28;
+  }
+  return sheet.toDataURL('image/png').split(',')[1];
+};
+window.comparePixels = async function(png) {
+  const decode = async src => { const i=new Image();i.src=src;await i.decode();const c=document.createElement('canvas');c.width=i.width;c.height=i.height;const x=c.getContext('2d');x.drawImage(i,0,0);return {data:x.getImageData(0,0,c.width,c.height).data,w:c.width,h:c.height}; };
+  const native=await decode(referenceFolder+'native-repeat.png'),pc=await decode('data:image/png;base64,'+png);
+  window.__pixelInputs={native,pc};
+  const result=[];
+  for(const host of document.querySelectorAll('.glass')){
+    const b=host.getBoundingClientRect(),d=devicePixelRatio,r=parseFloat(getComputedStyle(host).borderTopLeftRadius)*d;
+    const left=Math.round(b.left*d),top=Math.round(b.top*d),w=Math.round(b.width*d),h=Math.round(b.height*d);
+    const sums={all:[0,0],rim:[0,0],centre:[0,0],inside:[0,0],outline:[0,0],outside:[0,0]},stats=[0,0,0,0,0,0],outlineMeans=[0,0];
+    for(let y=0;y<h;y++)for(let x=0;x<w;x++){
+      const qx=Math.abs(x+.5-w/2)-(w/2-r),qy=Math.abs(y+.5-h/2)-(h/2-r);
+      const dist=r-Math.hypot(Math.max(0,qx),Math.max(0,qy))-Math.min(Math.max(qx,qy),0);
+      if(dist<0)continue;
+      const i=((top+y)*native.w+left+x)*4,j=((top+y)*pc.w+left+x)*4;
+      const delta=(Math.abs(native.data[i]-pc.data[j])+Math.abs(native.data[i+1]-pc.data[j+1])+Math.abs(native.data[i+2]-pc.data[j+2]))/3;
+      sums.inside[0]+=delta;sums.inside[1]++;
+      if(dist<d){sums.outline[0]+=delta;sums.outline[1]++;outlineMeans[0]+=(native.data[i]+native.data[i+1]+native.data[i+2])/3;outlineMeans[1]+=(pc.data[j]+pc.data[j+1]+pc.data[j+2])/3;continue;}
+      const part=dist<10*d?'rim':'centre';sums.all[0]+=delta;sums.all[1]++;sums[part][0]+=delta;sums[part][1]++;
+      const a=(native.data[i]+native.data[i+1]+native.data[i+2])/3,b=(pc.data[j]+pc.data[j+1]+pc.data[j+2])/3;
+      stats[0]+=a;stats[1]+=b;stats[2]+=a*a;stats[3]+=b*b;stats[4]+=a*b;stats[5]++;
+    }
+    const padding=Math.ceil(16*d);
+    for(let y=-padding;y<h+padding;y++)for(let x=-padding;x<w+padding;x++){
+      const qx=Math.abs(x+.5-w/2)-(w/2-r),qy=Math.abs(y+.5-h/2)-(h/2-r),dist=r-Math.hypot(Math.max(0,qx),Math.max(0,qy))-Math.min(Math.max(qx,qy),0);
+      if(dist>=0||dist< -16*d)continue;
+      const i=((top+y)*native.w+left+x)*4,j=((top+y)*pc.w+left+x)*4;
+      sums.outside[0]+=(Math.abs(native.data[i]-pc.data[j])+Math.abs(native.data[i+1]-pc.data[j+1])+Math.abs(native.data[i+2]-pc.data[j+2]))/3;sums.outside[1]++;
+    }
+    const n=stats[5],ma=stats[0]/n,mb=stats[1]/n,va=stats[2]/n-ma*ma,vb=stats[3]/n-mb*mb,cov=stats[4]/n-ma*mb;
+    const ssim=((2*ma*mb+6.5025)*(2*cov+58.5225))/((ma*ma+mb*mb+6.5025)*(va+vb+58.5225));
+    result.push({id:host.id,mae:sums.all[0]/sums.all[1],allInsideMAE:sums.inside[0]/sums.inside[1],outlineMAE:sums.outline[0]/sums.outline[1],outlineMeans:{native:outlineMeans[0]/sums.outline[1],pc:outlineMeans[1]/sums.outline[1]},outsideMAE:sums.outside[0]/sums.outside[1],rimMAE:sums.rim[0]/sums.rim[1],centreMAE:sums.centre[0]/sums.centre[1],ssim,means:{native:ma,pc:mb},regression:{slope:cov/vb,intercept:ma-cov/vb*mb}});
+  }
+  return result;
+};
+window.surfaceSmoothness=function(){
+  const {native,pc}=window.__pixelInputs,d=devicePixelRatio,result=[];
+  for(const host of document.querySelectorAll('.glass')){
+    const b=host.getBoundingClientRect();if(b.width!==b.height)continue;
+    const r=b.width*d/2,cx=(b.left+b.width/2)*d,cy=(b.top+b.height/2)*d;
+    const sums=[0,0],peaks=[0,0];let count=0;
+    for(let y=Math.ceil(cy-r+1);y<cy+r-1;y++)for(let x=Math.ceil(cx-r+1);x<cx+r-1;x++){
+      const depth=(r-Math.hypot(x+.5-cx,y+.5-cy))/d;if(depth<5||depth>18)continue;
+      [native,pc].forEach((image,j)=>{for(let k=0;k<3;k++){
+        const at=(xx,yy)=>image.data[(yy*image.w+xx)*4+k];
+        const lap=Math.abs(at(x-1,y)+at(x+1,y)+at(x,y-1)+at(x,y+1)-4*at(x,y));sums[j]+=lap;peaks[j]=Math.max(peaks[j],lap);
+      }});count+=3;
+    }
+    result.push({id:host.id,nativeLaplacian:sums[0]/count,pcLaplacian:sums[1]/count,ratio:sums[1]/sums[0],peaks});
+  }
+  return result;
+};
+window.shoulderCurves=async function(){
+  const {native,pc}=window.__pixelInputs,d=devicePixelRatio;
+  const im=new Image();im.src=referenceFolder+'native-off.png';await im.decode();
+  const c=document.createElement('canvas');c.width=im.width;c.height=im.height;const ctx=c.getContext('2d');ctx.filter=`blur(${1.9*d}px)`;ctx.drawImage(im,0,0);
+  const raw={data:ctx.getImageData(0,0,c.width,c.height).data,w:c.width};
+  const sample=(image,x,y,k)=>{const ix=Math.floor(x),iy=Math.floor(y),fx=x-ix,fy=y-iy,j=(iy*image.w+ix)*4;return image.data[j+k]*(1-fx)*(1-fy)+image.data[j+4+k]*fx*(1-fy)+image.data[j+image.w*4+k]*(1-fx)*fy+image.data[j+image.w*4+4+k]*fx*fy};
+  const phase=(image,x,y)=>{
+    let best={error:Infinity};
+    for(let dx=-8;dx<=8;dx+=.125){let sa=0,sb=0,saa=0,sbb=0,sab=0,n=0;
+      for(let t=-12*d;t<=12*d;t+=2)for(let k=0;k<3;k++){
+        const a=sample(image,x*d+t,y*d,k),b=sample(raw,(x+dx)*d+t,180*d,k);
+        sa+=a;sb+=b;saa+=a*a;sbb+=b*b;sab+=a*b;n++;
+      }
+      const va=saa/n-(sa/n)**2,vb=sbb/n-(sb/n)**2,cov=sab/n-sa*sb/(n*n),correlation=cov/Math.sqrt(va*vb),error=va-cov*cov/vb;
+      if(correlation>0&&error<best.error)best={shift:dx,error,correlation};
+    }
+    return best;
+  };
+  const rows=[];
+  for(const host of document.querySelectorAll('.glass:not(.modal):not(.popover)')){
+    const b=host.getBoundingClientRect();if(b.width<200)continue;
+    for(const side of ['top','bottom'])for(const depth of [1.5,3,5,8])for(const fraction of [.3,.7]){
+      const x=b.left+b.width*fraction,y=side==='top'?b.top+depth:b.bottom-depth;
+      const a=phase(native,x,y),p=phase(pc,x,y);
+      rows.push({id:host.id,side,depth,fraction,nativeShift:a.shift,pcShift:p.shift,phaseError:Math.abs(a.shift-p.shift),nativeCorrelation:a.correlation,pcCorrelation:p.correlation});
+    }
+  }
+  return {samples:rows,maxPhaseError:Math.max(...rows.map(r=>r.phaseError)),meanPhaseError:rows.reduce((s,r)=>s+r.phaseError,0)/rows.length,minCorrelation:Math.min(...rows.flatMap(r=>[r.nativeCorrelation,r.pcCorrelation]))};
+};
+window.referenceChecks=async function(){
+  const decode=async src=>{const i=new Image();i.src=src;await i.decode();const c=document.createElement('canvas');c.width=i.width;c.height=i.height;const z=c.getContext('2d');z.drawImage(i,0,0);return {data:z.getImageData(0,0,c.width,c.height).data,w:c.width,h:c.height}};
+  const a=await decode(referenceFolder+'native-on.png'),b=await decode(referenceFolder+'native-repeat.png'),off=await decode(referenceFolder+'native-off.png'),pc=window.__pixelInputs.pc;
+  let stable=0,effect=0,count=0;
+  for(const host of document.querySelectorAll('.glass')){
+    const r=host.getBoundingClientRect(),d=devicePixelRatio;
+    for(let y=Math.ceil((r.top+10)*d);y<(r.bottom-10)*d;y+=4)for(let x=Math.ceil((r.left+10)*d);x<(r.right-10)*d;x+=4){const i=(y*a.w+x)*4;for(let k=0;k<3;k++){stable+=Math.abs(a.data[i+k]-b.data[i+k]);effect+=Math.abs(b.data[i+k]-off.data[i+k]);count++;}}
+  }
+  const repeatMAD=stable/count,onOffMAD=effect/count,backgroundMAD=window.__backdropMAD;
+  return {status:repeatMAD<1&&onOffMAD>2&&backgroundMAD<.5?'PASS':'FAIL',repeatMAD,onOffMAD,backgroundMAD,dimensions:[a.w,a.h],dpr:devicePixelRatio};
+};
+window.verifyBackdrop=async function(png){
+  const decode=async src=>{const i=new Image();i.src=src;await i.decode();const c=document.createElement('canvas');c.width=i.width;c.height=i.height;const z=c.getContext('2d');z.drawImage(i,0,0);return {data:z.getImageData(0,0,c.width,c.height).data,w:c.width,h:c.height}};
+  const native=await decode(referenceFolder+'native-off.png'),pc=await decode('data:image/png;base64,'+png);let sum=0,n=0;
+  for(let y=0;y<Math.min(native.h,pc.h);y+=4)for(let x=0;x<Math.min(native.w,pc.w);x+=4){const i=(y*native.w+x)*4,j=(y*pc.w+x)*4;for(let k=0;k<3;k++){sum+=Math.abs(native.data[i+k]-pc.data[j+k]);n++}}
+  return window.__backdropMAD=sum/n;
+};
+window.analyseCentre=function(){
+  const {native,pc}=window.__pixelInputs,points=[],d=devicePixelRatio;
+  for(const host of document.querySelectorAll('.glass')){
+    const b=host.getBoundingClientRect(),r=parseFloat(getComputedStyle(host).borderTopLeftRadius)*d,w=Math.round(b.width*d),h=Math.round(b.height*d),left=Math.round(b.left*d),top=Math.round(b.top*d);
+    for(let y=0;y<h;y+=4)for(let x=0;x<w;x+=4){const qx=Math.abs(x+.5-w/2)-(w/2-r),qy=Math.abs(y+.5-h/2)-(h/2-r);const dist=r-Math.hypot(Math.max(0,qx),Math.max(0,qy))-Math.min(Math.max(qx,qy),0);if(dist>12*d)points.push([left+x,top+y]);}
+  }
+  const results=[];
+  for(let dy=-7;dy<=7;dy++)for(let dx=-7;dx<=7;dx++){
+    let sum=0;
+    for(const [x,y] of points){const i=(y*native.w+x)*4,j=((y+dy)*pc.w+x+dx)*4;for(let k=0;k<3;k++)sum+=Math.abs(native.data[i+k]-pc.data[j+k]);}
+    results.push({dx,dy,mae:sum/points.length/3});
+  }
+  return results.sort((a,b)=>a.mae-b.mae).slice(0,10);
+};
+window.inferCurve=async function(){
+  const load=async src=>{const i=new Image();i.src=src;await i.decode();return i};
+  const raw=await load(referenceFolder+'native-off.png'),nativeImage=await load(referenceFolder+'native-repeat.png');
+  const c=document.createElement('canvas');c.width=raw.width;c.height=raw.height;const z=c.getContext('2d');
+  const d=devicePixelRatio;z.filter=`blur(${2.2*d}px)`;z.drawImage(raw,0,0);const source=z.getImageData(0,0,c.width,c.height).data;
+  z.filter='none';z.clearRect(0,0,c.width,c.height);z.drawImage(nativeImage,0,0);const native=z.getImageData(0,0,c.width,c.height).data;
+  const bins=Array.from({length:12},()=>[]);
+  for(const host of document.querySelectorAll('.glass')){
+    const b=host.getBoundingClientRect(),r=parseFloat(getComputedStyle(host).borderTopLeftRadius)*d,w=Math.round(b.width*d),h=Math.round(b.height*d),left=Math.round(b.left*d),top=Math.round(b.top*d);
+    for(let y=0;y<h;y+=5)for(let x=0;x<w;x+=5){const px=x+.5-w/2,py=y+.5-h/2,qx=Math.abs(px)-(w/2-r),qy=Math.abs(py)-(h/2-r),ax=Math.max(qx,0),ay=Math.max(qy,0),len=Math.hypot(ax,ay),dist=(r-len-Math.min(Math.max(qx,qy),0))/d;
+      if(dist<.8||dist>=12)continue;let nx=0,ny=0;
+      if(len>.001){nx=ax/len*Math.sign(px);ny=ay/len*Math.sign(py)}else if(qx>qy)nx=Math.sign(px);else ny=Math.sign(py);
+      bins[Math.floor(dist)].push([left+x,top+y,nx,ny]);
+    }
+  }
+  const out=[];
+  for(let bin=1;bin<12;bin++){
+    const pts=bins[bin],candidates=[];
+    for(let shift=-16;shift<=16;shift+=.5){let sn=0,sp=0,snn=0,spp=0,snp=0,n=0;
+      for(const [x,y,nx,ny] of pts){const xx=x+nx*shift*d,yy=y+ny*shift*d,ix=Math.floor(xx),iy=Math.floor(yy),fx=xx-ix,fy=yy-iy,i=(y*c.width+x)*4,j=(iy*c.width+ix)*4;
+        for(let k=0;k<3;k++){const a=native[i+k],b=source[j+k]*(1-fx)*(1-fy)+source[j+4+k]*fx*(1-fy)+source[j+c.width*4+k]*(1-fx)*fy+source[j+c.width*4+4+k]*fx*fy;sn+=a;sp+=b;snn+=a*a;spp+=b*b;snp+=a*b;n++;}
+      }
+      const vn=snn/n-(sn/n)**2,vp=spp/n-(sp/n)**2,cov=snp/n-sn*sp/(n*n),error=vn-cov*cov/vp;
+      candidates.push({shift,error,correlation:cov/Math.sqrt(vn*vp)});
+    }
+    candidates.sort((a,b)=>a.error-b.error);out.push({distance:bin+.5,points:pts.length,best:candidates[0],next:candidates.slice(1,3)});
+  }
+  return out;
+};
+</script></body></html>

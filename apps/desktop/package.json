@@ -1,0 +1,112 @@
+{
+  "name": "lxmine",
+  "productName": "LxMine",
+  "version": "1.0.0",
+  "description": "LxMine：LX Music 音源与音乐管理，融合 MineRadio 沉浸视觉、歌词与 3D 歌单。",
+  "author": "LxMine contributors",
+  "license": "GPL-3.0-only",
+  "main": "desktop/main.js",
+  "private": true,
+  "scripts": {
+    "start": "electron .",
+    "build:win": "electron-builder --win nsis",
+    "test:material": "node ../../qa/material/check.cjs",
+    "build:win:dir": "electron-builder --win dir",
+    "build:win:internal-beta": "electron-builder --config electron-builder.internal-beta.json --win nsis --publish never",
+    "build:harmony-stage": "node scripts/build-harmony-stage.mjs"
+  },
+  "build": {
+    "appId": "com.lxlia.player",
+    "productName": "LxMine",
+    "directories": {
+      "output": "dist",
+      "buildResources": "build"
+    },
+    "afterPack": "build/after-pack.js",
+    "beforePack": "build/verify-material.cjs",
+    "toolsets": {
+      "winCodeSign": "1.1.0"
+    },
+    "files": [
+      "desktop/**/*",
+      "public/index.html",
+      "public/desktop-lyrics.html",
+      "public/lxmine/**/*",
+      "public/mine-stage/**/*",
+      "public/vendor/three.r128.min.js",
+      "build/**/*",
+      "cuefield/**/*",
+      "server.js",
+      "*-api.js",
+      "qishui-auth-v6.js",
+      "qishui-qr-login.js",
+      "qishui-auth-v6/**/*",
+      "qishui-audio-decryptor/**/*",
+      "dj-analyzer.js",
+      "LICENSE",
+      "NOTICE.md",
+      "docs/THIRD_PARTY_PORTS.md",
+      "package.json",
+      "!desktop/wallpaper-preload.js",
+      "!public/wallpaper.html",
+      "shared/**/*"
+    ],
+    "asar": false,
+    "win": {
+      "executableName": "LxMine",
+      "icon": "build/icon.ico",
+      "signAndEditExecutable": false,
+      "target": [
+        {
+          "target": "nsis",
+          "arch": [
+            "x64"
+          ]
+        }
+      ]
+    },
+    "nsis": {
+      "oneClick": false,
+      "perMachine": false,
+      "allowToChangeInstallationDirectory": false,
+      "createDesktopShortcut": true,
+      "createStartMenuShortcut": true,
+      "shortcutName": "LxMine",
+      "installerIcon": "build/icon.ico",
+      "uninstallerIcon": "build/icon.ico",
+      "installerSidebar": "build/installerSidebar.bmp",
+      "uninstallerSidebar": "build/installerSidebar.bmp",
+      "installerHeader": "build/installerHeader.bmp",
+      "include": "build/installer.nsh",
+      "artifactName": "LxMine-${version}-Setup.${ext}"
+    },
+    "publish": null
+  },
+  "dependencies": {
+    "gsap": "^3.15.0",
+    "json5": "^2.2.3",
+    "mpg123-decoder": "^1.0.3",
+    "music-metadata": "11.14.0",
+    "NeteaseCloudMusicApi": "^4.32.0",
+    "qrcode": "^1.5.4"
+  },
+  "overrides": {
+    "axios": "1.18.1",
+    "body-parser": "1.20.6",
+    "music-metadata": "11.14.0"
+  },
+  "devDependencies": {
+    "electron": "^42.4.1",
+    "electron-builder": "^26.15.3",
+    "playwright": "1.63.0",
+    "rcedit": "^5.0.2"
+  },
+  "lxmine": {
+    "runtimeName": "LxMine",
+    "appUserModelId": "com.lxlia.player",
+    "update": {
+      "disabled": true,
+      "provider": "none"
+    }
+  }
+}

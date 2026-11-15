@@ -1,0 +1,13 @@
+.hvigor/
+.idea/
+local.properties
+oh_modules/
+build/
+entry/build/
+entry/oh_modules/
+.signing/
+*.p12
+*.p7b
+*.cer
+# DevEco writes local signing material/passwords here. Share the template only.
+build-profile.json5

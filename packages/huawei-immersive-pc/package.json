@@ -1,0 +1,42 @@
+{
+  "name": "@lxlia/huawei-immersive-pc",
+  "version": "1.0.0",
+  "private": true,
+  "description": "Huawei-style immersive optical material, motion and popup standard for Windows/Electron apps.",
+  "license": "MIT",
+  "author": "林毅",
+  "type": "commonjs",
+  "files": [
+    "src",
+    "examples",
+    "references",
+    "tools",
+    "README.md",
+    "STANDARD.md",
+    "SKILL.md",
+    "CHANGELOG.md",
+    "NOTICE.md",
+    "LICENSE",
+    "MANIFEST.sha256"
+  ],
+  "scripts": {
+    "demo": "node tools/serve.cjs",
+    "validate": "node tools/validate.cjs",
+    "smoke": "node tools/smoke.cjs",
+    "manifest": "node tools/manifest.cjs",
+    "test": "node tools/validate.cjs && node tools/smoke.cjs"
+  },
+  "devDependencies": {
+    "playwright": "^1.63.0"
+  },
+  "keywords": [
+    "huawei",
+    "immersive",
+    "glass",
+    "electron",
+    "windows",
+    "ui",
+    "motion",
+    "popup"
+  ]
+}

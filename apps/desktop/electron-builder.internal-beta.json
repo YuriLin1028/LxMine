@@ -1,0 +1,76 @@
+{
+  "appId": "com.lxmine.internal",
+  "productName": "LxMine Preview",
+  "directories": {
+    "output": "dist-internal-beta",
+    "buildResources": "build"
+  },
+  "afterPack": "build/after-pack.js",
+  "toolsets": {
+    "winCodeSign": "1.1.0"
+  },
+  "extraMetadata": {
+    "name": "lxmine-preview",
+    "productName": "LxMine Preview",
+    "version": "1.0.0",
+    "lxmine": {
+      "internalBeta": true,
+      "runtimeName": "LxMine Preview",
+      "appUserModelId": "com.lxmine.internal",
+      "update": {
+        "disabled": true,
+        "provider": "none",
+        "preview": false,
+        "preferMirrors": false,
+        "mirrors": []
+      }
+    }
+  },
+  "files": [
+    "desktop/**/*",
+    "public/**/*",
+    "build/**/*",
+    "cuefield/**/*",
+    "server.js",
+    "*-api.js",
+    "qishui-audio-decryptor/**/*",
+    "dj-analyzer.js",
+    "LICENSE",
+    "NOTICE.md",
+    "docs/THIRD_PARTY_PORTS.md",
+    "package.json",
+    "!public/index.*.html",
+    "public/index.html",
+    "shared/**/*"
+  ],
+  "asar": true,
+  "win": {
+    "executableName": "LxMine Preview",
+    "icon": "build/icon.ico",
+    "signAndEditExecutable": false,
+    "target": [
+      {
+        "target": "nsis",
+        "arch": [
+          "x64"
+        ]
+      }
+    ]
+  },
+  "nsis": {
+    "oneClick": false,
+    "perMachine": false,
+    "allowToChangeInstallationDirectory": false,
+    "createDesktopShortcut": true,
+    "createStartMenuShortcut": true,
+    "shortcutName": "LxMine Preview",
+    "installerIcon": "build/icon.ico",
+    "uninstallerIcon": "build/icon.ico",
+    "installerSidebar": "build/installerSidebar.bmp",
+    "uninstallerSidebar": "build/installerSidebar.bmp",
+    "installerHeader": "build/installerHeader.bmp",
+    "include": "build/installer-internal-beta.nsh",
+    "artifactName": "LxMine-${version}-Preview-Setup.${ext}"
+  },
+  "publish": null
+}

@@ -1,0 +1,38 @@
+const test=require('node:test'),assert=require('node:assert/strict'),fs=require('node:fs'),path=require('node:path'),vm=require('node:vm'),os=require('node:os');
+const ts=require(process.env.HARMONY_TYPESCRIPT||'D:/Program Files/Huawei/DevEco Studio/sdk/default/openharmony/ets/build-tools/ets-loader/node_modules/typescript');
+function load(name,imports={}){const module={exports:{}};const file=path.resolve(__dirname,'../entry/src/main/ets/services',name+'.ets');const code=ts.transpileModule(fs.readFileSync(file,'utf8'),{compilerOptions:{module:ts.ModuleKind.CommonJS,target:ts.ScriptTarget.ES2022}}).outputText;vm.runInNewContext(code,{module,exports:module.exports,require:n=>{if(imports[n])return imports[n];throw Error('Unexpected dependency '+n);},console,ArrayBuffer,Uint8Array,Date,Map,Set,Promise},{filename:file});return module.exports;}
+const catalogue=load('CatalogueApi');
+const lyricPrefs=load('LyricPreferences');
+test('lyric preferences recover malformed or null saved settings with silent defaults',()=>{
+  for(const json of ['null','{broken','{}']){
+    const value=lyricPrefs.lyricPreferences(json);
+    assert.equal(value.colorMode,'cover-gradient');assert.equal(value.primary,'#F4D28A');assert.equal(value.showTranslation,true);assert.equal(value.showRomaji,false);
+  }
+  const value=lyricPrefs.lyricPreferences(JSON.stringify({colorMode:'unsupported',primary:'red',secondary:'#112233',showTranslation:false,showRomaji:true}));
+  assert.equal(value.colorMode,'cover-gradient');assert.equal(value.primary,'#F4D28A');assert.equal(value.secondary,'#112233');assert.equal(value.showTranslation,false);assert.equal(value.showRomaji,true);
+});
+test('all four lyric color modes resolve the correct cover or custom palette',()=>{
+  const cover={first:'#112233',last:'#445566'};
+  for(const [mode,first,last] of [['cover-solid',cover.first,cover.first],['cover-gradient',cover.first,cover.last],['custom-solid','#AABBCC','#AABBCC'],['custom-gradient','#AABBCC','#DDEEFF']]){
+    const value=lyricPrefs.lyricPreferences(JSON.stringify({colorMode:mode,primary:'#AABBCC',secondary:'#DDEEFF'}));
+    assert.equal(lyricPrefs.lyricPrimary(value,cover),first);assert.equal(lyricPrefs.lyricSecondary(value,cover),last);
+  }
+});
+test('public lyric fallback retains translations and romaji separately from the main timeline',async()=>{
+  const parser=load('LyricParser');let destroyed=0;
+  const service=load('LyricService',{'./LyricParser':parser,'@kit.ArkTS':{buffer:Buffer},'@kit.NetworkKit':{http:{RequestMethod:{GET:'GET'},createHttp:()=>({request:async()=>({responseCode:200,result:JSON.stringify({lrc:{lyric:'[00:01.00]Main'},tlyric:{lyric:'[00:01.00]Translation'},romalrc:{lyric:'[00:01.00]Romaji'}})}),destroy:()=>destroyed++})}}});
+  const value=await service.publicLyricBundle({source:'wy',id:'1'});
+  assert.equal(value.lines[0].text,'Main');assert.equal(value.translation[0].text,'Translation');assert.equal(value.romaji[0].text,'Romaji');assert.equal(destroyed,1);
+});
+function hostFor(total,kind){return{async catalogue(op,json){const p=JSON.parse(json);const limit=op==='search'?30:50;return JSON.stringify({items:Array.from({length:Math.max(0,Math.min(limit,total-(p.page-1)*limit))},(_,i)=>({id:String((p.page-1)*limit+i),source:p.source,kind:kind||p.type,name:'Item'})),total});}};}
+test('catalogue search publishes each page before its final result',async()=>{const sizes=[];let finished=false;const result=await catalogue.searchCatalogue(hostFor(65),'wy','artist','query',1,()=>false,items=>{assert.equal(finished,false);sizes.push(items.length);});finished=true;assert.deepEqual(sizes,[30,60,65]);assert.equal(result.items.length,65);});
+test('entity songs publish 50, 100 and 105 rows in the same request',async()=>{const sizes=[];const result=await catalogue.catalogueTracks(hostFor(105),{id:'artist',kind:'artist',source:'wy'},1,items=>sizes.push(items.length));assert.deepEqual(sizes,[50,100,105]);assert.equal(result.items.length,105);});
+test('cancelled searches stop paging and retain the first published snapshot',async()=>{let cancelled=false,calls=0;const sizes=[];const host=hostFor(65),request=host.catalogue;host.catalogue=async(...args)=>{calls++;return request(...args);};await catalogue.searchCatalogue(host,'wy','artist','query',1,()=>cancelled,items=>{sizes.push(items.length);cancelled=true;});assert.deepEqual(sizes,[30]);assert.equal(calls,1);});
+function downloadHarness(t,{status=200,hold=false}={}){const root=fs.mkdtempSync(path.join(os.tmpdir(),'lxmine-download-test-'));t.after(()=>{assert(path.basename(root).startsWith('lxmine-download-test-'));fs.rmSync(root,{recursive:true,force:true});});fs.mkdirSync(path.join(root,'files'));fs.mkdirSync(path.join(root,'cache'));const primary={},handlers={};let destroyed=false;const bytes=Buffer.alloc(4096,8);bytes.write('ID3');const io={accessSync:p=>fs.existsSync(p),mkdirSync:(p,r)=>fs.mkdirSync(p,{recursive:r}),readTextSync:p=>fs.readFileSync(p,'utf8'),openSync:(p,flags)=>({fd:fs.openSync(p,flags===1?'r':'w')}),OpenMode:{READ_ONLY:1,CREATE:2,WRITE_ONLY:4,TRUNC:8},writeSync:(fd,data)=>fs.writeSync(fd,typeof data==='string'?data:Buffer.from(data)),fsyncSync:fs.fsyncSync,closeSync:f=>fs.closeSync(typeof f==='number'?f:f.fd),renameSync:fs.renameSync,unlinkSync:fs.unlinkSync,statSync:fs.statSync,readSync:(fd,out)=>fs.readSync(fd,Buffer.from(out),0,out.byteLength,null)};
+const client={on:(name,fn)=>handlers[name]=fn,destroy:()=>{destroyed=true;},requestInStream:async()=>{if(!hold){handlers.headersReceive?.({'content-length':String(bytes.length)});const data=bytes.buffer.slice(bytes.byteOffset,bytes.byteOffset+bytes.byteLength);handlers.dataReceive?.(data);handlers.dataEnd?.();}return status;}};
+const {MusicDownloads}=load('MusicDownloads',{'@kit.BasicServicesKit':{request:{downloadFile:async()=>({on:(name,fn)=>primary[name]=fn,remove:async()=>{}})}},'@kit.CoreFileKit':{fileIo:io},'@kit.NetworkKit':{http:{createHttp:()=>client,RequestMethod:{GET:'GET'}}},'./MusicLibrary':{songKey:s=>s.source+':'+s.id}});
+const downloads=new MusicDownloads();let items=[];downloads.onChange=value=>items=value;downloads.initialize({filesDir:path.join(root,'files'),cacheDir:path.join(root,'cache')});return{downloads,primary,items:()=>items,bytes,destroyed:()=>destroyed};}
+async function waitFor(check){for(let i=0;i<100;i++){if(check())return;await new Promise(r=>setTimeout(r,5));}throw Error('Download did not settle');}
+test('legacy downloader failure retries a streaming transfer and persists a complete audio file',async t=>{const h=downloadHarness(t);await h.downloads.start({source:'kw',id:'1',name:'Audio',singer:'QA'},'128k','https://audio.test/a.mp3');h.primary.fail(8);await waitFor(()=>h.items()[0].state==='complete');assert.equal(h.items()[0].received,h.bytes.length);assert.deepEqual(fs.readFileSync(h.items()[0].path),h.bytes);assert(h.destroyed());});
+test('HTTP failures do not become successful downloads',async t=>{const h=downloadHarness(t,{status:403});await h.downloads.start({source:'kw',id:'1',name:'Audio',singer:'QA'},'128k','https://audio.test/a.mp3');h.primary.fail(8);await waitFor(()=>h.items()[0].state==='failed');assert.match(h.items()[0].error,/403/);assert.equal(fs.existsSync(h.items()[0].path),false);});
+test('a streaming fallback can be cancelled without saving a song',async t=>{const h=downloadHarness(t,{hold:true});await h.downloads.start({source:'kw',id:'1',name:'Audio',singer:'QA'},'128k','https://audio.test/a.mp3');h.primary.fail(8);await h.downloads.cancel(h.items()[0].id);assert.equal(h.items()[0].state,'cancelled');assert.equal(fs.existsSync(h.items()[0].path),false);assert(h.destroyed());});

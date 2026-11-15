@@ -1,0 +1,258 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <link rel="icon" href="data:,">
+  <title>Huawei Immersive PC — 可交互标准示例</title>
+  <link rel="stylesheet" href="../src/hx-immersive.css">
+  <link rel="stylesheet" href="./demo.css">
+</head>
+<body>
+  <svg class="hx-filter-defs" width="0" height="0" aria-hidden="true" focusable="false"><defs></defs></svg>
+
+  <div class="demo-scene" aria-hidden="true">
+    <canvas id="aurora"></canvas>
+    <div class="scene-grid"></div>
+    <div class="scene-type">IMMERSIVE</div>
+    <div class="scene-vignette"></div>
+  </div>
+
+  <div class="hx-window-surface" aria-hidden="true"></div>
+  <div class="hx-drag-region" aria-hidden="true"></div>
+  <div class="hx-caption" aria-label="窗口控制">
+    <button type="button" data-fake="minimize" aria-label="最小化"><svg viewBox="0 0 24 24"><path d="M5 12h14"/></svg></button>
+    <button type="button" data-fake="maximize" aria-label="最大化"><svg viewBox="0 0 24 24"><rect x="5" y="5" width="14" height="14" rx="1.5"/></svg></button>
+    <button type="button" class="hx-caption__close" data-fake="close" aria-label="关闭"><svg viewBox="0 0 24 24"><path d="M6 6l12 12M18 6L6 18"/></svg></button>
+  </div>
+
+  <header class="demo-header">
+    <div class="demo-heading">
+      <p class="demo-kicker">HUAWEI IMMERSIVE · PC STANDARD 1.0</p>
+      <h1>把手机级沉浸光感，做成 Windows 可复用的工程标准</h1>
+      <p class="demo-lead">
+        真实 Chromium backdrop、轮廓折射、独立环境边缘、指针追光、分层形变，
+        以及按真机录屏拟合的弹窗时序。此页面只依赖本目录的四个运行时文件。
+      </p>
+      <div class="demo-badges">
+        <span>16 组真机像素标定</span>
+        <span>740ms 原生弹窗曲线</span>
+        <span>P95 &lt; 33.5ms</span>
+      </div>
+    </div>
+    <div class="demo-head-actions">
+      <button id="grid-toggle" class="hx-icon-button hx-glass hx-light" type="button" aria-pressed="true" aria-label="切换网格背景">
+        <svg viewBox="0 0 24 24"><path d="M4 4h16v16H4zM4 10h16M4 16h16M10 4v16M16 4v16"/></svg>
+      </button>
+      <button id="help-btn" class="hx-icon-button hx-glass hx-light" type="button" aria-label="关于示例">
+        <svg viewBox="0 0 24 24"><circle cx="12" cy="12" r="8"/><path d="M9.8 9.4a2.3 2.3 0 1 1 3.4 2.1c-.8.5-1.2 1-1.2 1.9M12 16.7h.01"/></svg>
+      </button>
+    </div>
+  </header>
+
+  <main class="demo-main">
+    <section class="demo-grid">
+      <article class="demo-card hx-glass hx-light demo-card--wide">
+        <div class="demo-card-head">
+          <div>
+            <h2>01 / 光学表面</h2>
+            <p>外缘取色、透明内圈、可读内容区的折射。文字与点击区域不参与形变。</p>
+          </div>
+          <code>.hx-glass</code>
+        </div>
+        <div class="demo-samples">
+          <button class="hx-icon-button hx-glass hx-light" type="button" aria-label="喜歡">
+            <svg viewBox="0 0 24 24"><path d="M12 20s-7-4.4-7-9.3A4.2 4.2 0 0 1 12 7a4.2 4.2 0 0 1 7 3.7C19 15.6 12 20 12 20Z"/></svg>
+          </button>
+          <button class="hx-icon-button hx-glass hx-light" type="button" aria-label="下载">
+            <svg viewBox="0 0 24 24"><path d="M12 4v11M7.5 10.5 12 15l4.5-4.5M5 19h14"/></svg>
+          </button>
+          <button class="hx-icon-button hx-glass hx-light" type="button" aria-label="更多">
+            <svg viewBox="0 0 24 24"><circle cx="6" cy="12" r="1"/><circle cx="12" cy="12" r="1"/><circle cx="18" cy="12" r="1"/></svg>
+          </button>
+          <button class="demo-capsule hx-glass hx-light" type="button">
+            <span class="demo-dot"></span>实时 backdrop
+          </button>
+          <button class="demo-capsule hx-glass hx-light is-accent" type="button">
+            采样真实视频 / Canvas
+          </button>
+        </div>
+        <div class="demo-code-row">
+          <code>&lt;button class="hx-glass hx-light"&gt;…&lt;/button&gt;</code>
+          <span>材质由 JS 自动注入 <code>.hx-glass__skin</code></span>
+        </div>
+      </article>
+
+      <article class="demo-card hx-glass">
+        <div class="demo-card-head">
+          <div>
+            <h2>02 / 锚点弹窗</h2>
+            <p>触发器中心为原点；空间不足时向上翻转；选中行使用系统蓝。</p>
+          </div>
+          <code>HxPopup</code>
+        </div>
+        <div class="demo-actions">
+          <button id="quality-btn" class="demo-button hx-glass hx-light" type="button">
+            音质 <span id="quality-value">高品质 320k</span>
+          </button>
+          <button id="bottom-menu-btn" class="demo-button hx-glass hx-light" type="button">
+            靠近底部的菜单
+          </button>
+        </div>
+        <p class="demo-note">菜单无标题、无勾选图标；48px 行高，4px 内边距，20px 圆角。Esc、点击外部、滚动与失焦都会关闭。</p>
+      </article>
+
+      <article class="demo-card hx-glass">
+        <div class="demo-card-head">
+          <div>
+            <h2>03 / 模态与抽屉</h2>
+            <p>520ms 弹入 / 220ms 收起；底部抽屉 540ms / 240ms，带抓取条。</p>
+          </div>
+          <code>HxSurfaces</code>
+        </div>
+        <div class="demo-actions">
+          <button id="modal-btn" class="demo-button hx-glass hx-light" type="button">打开对话框</button>
+          <button id="sheet-btn" class="demo-button hx-glass hx-light" type="button">播放队列抽屉</button>
+        </div>
+        <p class="demo-note">焦点被限制在浮层内，Esc 关闭并把焦点还给触发器。背景模糊只由遮罩承担。</p>
+      </article>
+
+      <article class="demo-card demo-card--plain">
+        <div class="demo-card-head">
+          <div>
+            <h2>04 / 单节点搜索形变</h2>
+            <p>球体与搜索框是同一个节点，460ms 连续几何形变，不做双节点交叉淡入。</p>
+          </div>
+          <code>HxSurfaces.morph</code>
+        </div>
+        <div class="search-slot" id="search-slot">
+          <div class="hx-search hx-glass hx-light" id="demo-search" role="search">
+            <svg viewBox="0 0 24 24"><circle cx="10.5" cy="10.5" r="6.5"/><path d="M15.5 15.5L21 21"/></svg>
+            <input id="demo-search-input" type="text" placeholder="歌曲、歌手、歌单" aria-label="搜索">
+          </div>
+        </div>
+        <p class="demo-note">关闭时反向形变回原始矩形，材质和文本始终在同一节点上。</p>
+      </article>
+
+      <article class="demo-card demo-card--plain">
+        <div class="demo-card-head">
+          <div>
+            <h2>05 / 播放详情分层时序</h2>
+            <p>播控先到位；620ms 后背景才从模糊中显影。退出先停 140ms，再分层淡出。</p>
+          </div>
+          <code>choreography</code>
+        </div>
+        <div class="demo-actions">
+          <button id="stage-btn" class="demo-button hx-glass hx-light" type="button">进入播放详情</button>
+          <button id="spin-btn" class="demo-button hx-glass hx-light" type="button">切换播放</button>
+        </div>
+        <p class="demo-note">详情页的播控栏保持 56px、44/38px 封面与 38/40px 按钮，不因窗口变窄而缩水。</p>
+      </article>
+
+      <article class="demo-card demo-card--plain demo-card--wide">
+        <div class="demo-card-head">
+          <div>
+            <h2>06 / 验收不是目测</h2>
+            <p>真机截图逐像素、局部平滑度、负对照、源文件哈希与帧预算共同构成门禁。</p>
+          </div>
+          <code>STANDARD §11</code>
+        </div>
+        <div class="demo-timings">
+          <div><span>弹窗展开</span><strong>740ms</strong></div>
+          <div><span>弹窗收起</span><strong>150ms</strong></div>
+          <div><span>帧预算 P95</span><strong>&lt; 33.5ms</strong></div>
+          <div><span>长任务</span><strong>0</strong></div>
+        </div>
+      </article>
+    </section>
+  </main>
+
+  <div class="demo-bottom">
+    <nav class="hx-nav hx-glass hx-light" aria-label="主导航">
+      <button class="hx-nav__item is-active" type="button" aria-current="page">
+        <svg viewBox="0 0 24 24"><path d="M4 11 12 4l8 7v9h-6v-6h-4v6H4z"/></svg>
+        <span>首页</span>
+      </button>
+      <button class="hx-nav__item" type="button">
+        <svg viewBox="0 0 24 24"><path d="M5 5h5v5H5zM14 5h5v5h-5zM5 14h5v5H5zM14 14h5v5h-5z"/></svg>
+        <span>资料库</span>
+      </button>
+      <button class="hx-nav__item" type="button">
+        <svg viewBox="0 0 24 24"><circle cx="12" cy="12" r="3"/><path d="M19 12a7 7 0 0 0-.1-1l2-1.5-2-3.4-2.3 1A7 7 0 0 0 14.5 6l-.4-2.5h-4L9.7 6a7 7 0 0 0-2.1 1.1l-2.3-1-2 3.4 2 1.5a7 7 0 0 0 0 2l-2 1.5 2 3.4 2.3-1A7 7 0 0 0 9.7 18l.4 2.5h4l.4-2.5a7 7 0 0 0 2.1-1.1l2.3 1 2-3.4-2-1.5a7 7 0 0 0 .1-1Z"/></svg>
+        <span>设置</span>
+      </button>
+    </nav>
+
+    <div class="hx-dock hx-glass hx-light is-compact" id="demo-dock">
+      <button class="hx-dock__cover hx-glass" type="button" aria-label="播放详情">
+        <span class="hx-dock__ring"></span>
+        <span class="hx-dock__cover-inner demo-cover"></span>
+      </button>
+      <div class="hx-dock__copy">
+        <strong>Night Walk</strong>
+        <span>LxMine · Immersive Mix</span>
+      </div>
+      <div class="hx-dock__controls">
+        <button class="hx-dock__button hx-glass hx-light" type="button" aria-label="喜欢">
+          <svg viewBox="0 0 24 24"><path d="M12 20s-7-4.4-7-9.3A4.2 4.2 0 0 1 12 7a4.2 4.2 0 0 1 7 3.7C19 15.6 12 20 12 20Z"/></svg>
+        </button>
+        <button class="hx-dock__button hx-glass hx-light" type="button" aria-label="上一首">
+          <svg viewBox="0 0 24 24"><path d="M6 5v14M18 6l-8 6 8 6z"/></svg>
+        </button>
+        <button class="hx-dock__button hx-dock__play hx-glass hx-light" id="play-btn" type="button" aria-label="播放">
+          <svg id="play-icon" viewBox="0 0 24 24"><path d="M8 5l11 7-11 7z"/></svg>
+          <svg id="pause-icon" viewBox="0 0 24 24" style="display:none"><path d="M7 5v14M17 5v14"/></svg>
+        </button>
+        <button class="hx-dock__button hx-glass hx-light" type="button" aria-label="下一首">
+          <svg viewBox="0 0 24 24"><path d="M18 5v14M6 6l8 6-8 6z"/></svg>
+        </button>
+        <button class="hx-dock__button hx-glass hx-light" type="button" aria-label="更多" data-hx-optional>
+          <svg viewBox="0 0 24 24"><circle cx="6" cy="12" r="1"/><circle cx="12" cy="12" r="1"/><circle cx="18" cy="12" r="1"/></svg>
+        </button>
+      </div>
+    </div>
+  </div>
+
+  <aside class="demo-hud" aria-live="off">
+    <div><span>帧间隔 P95</span><strong id="hud-fps">—</strong></div>
+    <div><span>长任务</span><strong id="hud-long">0</strong></div>
+    <div><span>光学表面</span><strong id="hud-hosts">0</strong></div>
+  </aside>
+
+  <div class="demo-search-overlay" id="search-overlay" aria-hidden="true">
+    <div class="search-overlay-host" id="search-overlay-host"></div>
+    <div class="search-results">
+      <p class="demo-kicker">搜索建议</p>
+      <button type="button">Night Walk <span>歌曲</span></button>
+      <button type="button">Immersive Mix <span>歌单</span></button>
+      <button type="button">LxMine Radio <span>电台</span></button>
+    </div>
+  </div>
+
+  <section class="demo-stage" id="demo-stage" aria-hidden="true">
+    <div class="demo-stage-backdrop"></div>
+    <div class="demo-stage-body">
+      <p class="demo-kicker">NOW PLAYING</p>
+      <div class="demo-stage-cover"></div>
+      <h2>Night Walk</h2>
+      <p>LxMine · Immersive Mix</p>
+      <div class="demo-stage-lines">
+        <span>沿着城市边缘的灯带</span>
+        <span class="active">走进一层更深的蓝</span>
+        <span>所有反射都慢了一拍</span>
+      </div>
+      <button id="stage-back" class="hx-icon-button hx-glass hx-light" type="button" aria-label="返回">
+        <svg viewBox="0 0 24 24"><path d="M15 5l-7 7 7 7"/></svg>
+      </button>
+    </div>
+  </section>
+
+  <div class="demo-toast" id="toast" role="status"></div>
+
+  <script src="../src/hx-material.js"></script>
+  <script src="../src/hx-interactions.js"></script>
+  <script src="../src/hx-popup.js"></script>
+  <script src="../src/hx-surfaces.js"></script>
+  <script src="./demo.js"></script>
+</body>
+</html>

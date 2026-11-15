@@ -1,0 +1,15 @@
+{
+  "capturedAt": "2026-10-18T13:49:29.6353309Z",
+  "device": "<redacted>",
+  "model": "PLA-AL10",
+  "scene": "type-tiers",
+  "metadata": "DPR=3.5; supported=true; level=0; enabled=true",
+  "hashes": {
+    "native-off-layout.json": "659c3b0b0693113a8bcf9638ad981533f2a680a20878a021f528cb5f1400d7cf",
+    "native-off.png": "fa462dee3637eb74c6a5d452b36d0375984539d91acd1b0c33fc8ded97385907",
+    "native-on-layout.json": "af94a63542bc1b295fcbb08ac7121632e0f12e5ce45cadcb508c4873917aa866",
+    "native-on.png": "21cbcb11393c5ed645007267a7ee3f9bb3c0876d4d485ff013e2a86f5635a2db",
+    "native-repeat-layout.json": "af94a63542bc1b295fcbb08ac7121632e0f12e5ce45cadcb508c4873917aa866",
+    "native-repeat.png": "21cbcb11393c5ed645007267a7ee3f9bb3c0876d4d485ff013e2a86f5635a2db"
+  }
+}

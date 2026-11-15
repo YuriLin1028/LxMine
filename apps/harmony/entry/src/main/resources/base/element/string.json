@@ -1,0 +1,12 @@
+{
+  "string": [
+    {
+      "name": "module_desc",
+      "value": "跨端音乐播放器"
+    },
+    {
+      "name": "grip_permission_reason",
+      "value": "根据左右手握持状态调整播控位置，方便单手操作"
+    }
+  ]
+}
