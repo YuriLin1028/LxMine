@@ -49,6 +49,7 @@
       "package.json",
       "!desktop/wallpaper-preload.js",
       "!public/wallpaper.html",
+      "!desktop/lx-sources-default.json",
       "shared/**/*"
     ],
     "asar": false,
