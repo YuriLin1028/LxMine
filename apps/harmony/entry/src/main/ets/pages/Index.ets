@@ -480,7 +480,9 @@ struct Index {
     try { this.recentSongs = JSON.parse(await loadRecentSongs()) as Song[]; } catch (_) { this.recentSongs = []; }
     if (!this.sources.length && data.sourceScript) this.sources = [this.sourceFromScript(data.sourceScript)];
     this.activeId = data.activeSourceId || this.sources[0]?.id || ''; this.storeReady = true; this.save(); this.restorePlaybackIfReady();
-    this.restoreSource(); if (!this.sources.length) this.loadInitialSource();
+    if (!this.sources.length) this.loadInitialSource();
+    await this.upgradeBundledSource();
+    this.restoreSource();
     this.loadBundledSources().catch((error: Error) => console.warn('[Sources] ' + error.message));
     this.refreshHomeFeed().catch(() => {});
   }
@@ -838,6 +840,44 @@ struct Index {
       this.sources = [this.sourceFromScript(buffer.from(data).toString())];
       this.activeId = this.sources[0].id ?? ''; this.save(); this.restoreSource();
     }).catch(() => {});
+  }
+  private scriptVersion(script: string): number[] {
+    const version = script.match(/@version\s+v?([\d.]+)/)?.[1] ?? '';
+    const parts: number[] = [];
+    for (const segment of version.split('.')) {
+      const parsed = parseInt(segment);
+      parts.push(Number.isFinite(parsed) ? parsed : 0);
+    }
+    return parts;
+  }
+  private versionOlder(current: number[], latest: number[]): boolean {
+    const length = Math.max(current.length, latest.length);
+    for (let index = 0; index < length; index++) {
+      const left = current[index] ?? 0;
+      const right = latest[index] ?? 0;
+      if (left !== right) return left < right;
+    }
+    return false;
+  }
+  private async upgradeBundledSource(): Promise<void> {
+    if (this.disposed || !this.sources.length) return;
+    try {
+      const context = getContext(this) as common.UIAbilityContext;
+      const bytes = await context.resourceManager.getRawFileContent('dev-source.js');
+      const bundled = buffer.from(bytes).toString();
+      const bundledName = bundled.match(/@name\s+([^\r\n*]+)/)?.[1]?.trim() ?? '';
+      const bundledVersion = this.scriptVersion(bundled);
+      if (!bundledName || !bundledVersion.length) return;
+      let upgraded = false;
+      for (const source of this.sources) {
+        const name = source.script.match(/@name\s+([^\r\n*]+)/)?.[1]?.trim() ?? '';
+        if (name !== bundledName) continue;
+        const version = this.scriptVersion(source.script);
+        if (source.script === bundled || !version.length || !this.versionOlder(version, bundledVersion)) continue;
+        source.script = bundled; source.version = `v${bundledVersion.join('.')}`; upgraded = true;
+      }
+      if (upgraded) { this.save(); console.info(`[Sources] 内置音源已升级到 v${bundledVersion.join('.')}`); }
+    } catch (_) {}
   }
   private restoreSource(): void {
     const active = this.sources.find((source: SyncSourcePayload) => source.id === this.activeId);
