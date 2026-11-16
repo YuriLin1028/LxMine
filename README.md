@@ -75,9 +75,18 @@ LxMine 不是 LX Music 或 Mineradio 的官方版本，与两位作者无隶属�
 
 ### HarmonyOS（应用市场邀请测试）
 
-手机/平板另有一条免侧载通道：维护者在华为应用市场发起「邀请测试」后会给出一条
-链接，朋友点开加入测试组即可从「应用尝鲜」安装和更新。测试包包名为
-`com.lxmine.player`，只含手机/平板/PC；车机兼容包（`cn.migu.music`）始终只走 GitHub。
+[**安装 LxMine 1.0.0 邀请测试版**](https://appgallery.huawei.com/link/invite-test-wap?taskId=761342eecbf60206af1fb147f03e9276&invitationCode=1Klp9jEJXOp)
+
+使用鸿蒙系统自带浏览器打开完整链接，点击「开始测试」，首次参与时点击「同意」加入
+测试群组，然后点击「安装」。后续可从应用市场「应用尝鲜」更新。转发时请保留完整的
+`&invitationCode=1Klp9jEJXOp` 参数。
+
+当前测试包最低兼容 API 26.0.0，支持手机、平板和 PC/2in1，包名为 `com.lxmine.player`。
+邀请测试版无内置音源，音源由用户自行导入，HiCar 入口已隐藏。车机兼容包
+（`cn.migu.music`）通过上方的未签名 HAP 安装方式分发。
+
+邀请名额上限为 **10000 人**，邀请码有效至 **2026-12-16 12:46（北京时间）**。
+本轮测试至 **2027-02-14 13:15（北京时间）**。
 
 出包与 AGC 操作见 [docs/INVITE_TEST.md](docs/INVITE_TEST.md)，命令为
 `npm run build:store`。
