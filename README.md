@@ -81,6 +81,13 @@ LxMine 不是 LX Music 或 Mineradio 的官方版本，与两位作者无隶属�
 测试群组，然后点击「安装」。后续可从应用市场「应用尝鲜」更新。转发时请保留完整的
 `&invitationCode=1Klp9jEJXOp` 参数。
 
+在微信、QQ、抖音等应用中收到链接时，请复制下面的完整网址到手机系统自带浏览器的地址栏，
+再点击网页里的「开始测试」。
+
+```text
+https://appgallery.huawei.com/link/invite-test-wap?taskId=761342eecbf60206af1fb147f03e9276&invitationCode=1Klp9jEJXOp
+```
+
 当前测试包最低兼容 API 26.0.0，支持手机、平板和 PC/2in1，包名为 `com.lxmine.player`。
 邀请测试版无内置音源，音源由用户自行导入，HiCar 入口已隐藏。车机兼容包
 （`cn.migu.music`）通过上方的未签名 HAP 安装方式分发。
