@@ -1,5 +1,4 @@
 import { releaseApi, platforms, normalizeRelease, selectAsset, makeDownloadUrl, formatSize } from './releases.js?v=20261118';
-import { createLightScene } from './light-scene.js?v=20261118';
 
 const element = (id) => document.getElementById(id);
 const tabs = [...document.querySelectorAll('[data-platform]')];
@@ -168,34 +167,81 @@ if ('IntersectionObserver' in window) {
   });
 }
 
-try {
-  const scene = createLightScene(element('light-canvas'));
-  const motionButton = element('motion-toggle');
-  if (scene) {
-    function updateMotionButton() {
-      element('light-canvas').parentElement.dataset.motionPaused = String(scene.paused);
-      document.querySelector('.hero').dataset.motionPaused = String(scene.paused);
-      motionButton.textContent = scene.paused ? '播放动画' : '暂停动画';
-      motionButton.setAttribute('aria-pressed', String(scene.paused));
-      motionButton.setAttribute('aria-label', scene.paused ? '播放光感动画' : '暂停光感动画');
-    }
-    motionButton.addEventListener('click', () => scene.setPaused(!scene.paused));
-    element('light-canvas').parentElement.addEventListener('motionchange', updateMotionButton);
-    updateMotionButton();
-    document.querySelectorAll('[data-scene]').forEach((button) => button.addEventListener('click', () => {
-      scene.setScene(button.dataset.scene);
-      element('scene-name').textContent = button.textContent;
-      document.querySelectorAll('[data-scene]').forEach((option) => {
-        const selected = option === button;
-        option.classList.toggle('is-selected', selected);
-        option.setAttribute('aria-pressed', String(selected));
-      });
-    }));
-  } else {
-    motionButton.hidden = true;
-    document.querySelector('.scene-options').hidden = true;
-  }
-} catch {
-  element('motion-toggle').hidden = true;
-  document.querySelector('.scene-options').hidden = true;
+const productVideo = element('product-demo');
+const enlargedVideo = element('stage-recording');
+const motionButton = element('motion-toggle');
+const motionPreference = matchMedia('(prefers-reduced-motion: reduce)');
+const recordings = {
+  stage: { src: './assets/stage-demo.mp4', poster: './assets/stage-poster.webp', label: '粒子舞台', description: 'Windows 播放录屏，展示粒子舞台与逐字歌词' },
+  lyrics: { src: './assets/lyrics-demo.mp4', poster: './assets/lyrics-poster.webp', label: '逐字歌词', description: 'Windows 播放录屏，展示歌词随播放逐字亮起' },
+};
+let userPaused = motionPreference.matches;
+let recordingVisible = !('IntersectionObserver' in window);
+let playbackRequest = 0;
+
+function updateRecordingControls() {
+  document.querySelector('.hero').dataset.motionPaused = String(userPaused || !recordingVisible || document.hidden);
+  motionButton.textContent = userPaused ? '播放演示' : '暂停演示';
+  motionButton.setAttribute('aria-pressed', String(userPaused));
+  motionButton.setAttribute('aria-label', userPaused ? '播放实际录屏' : '暂停实际录屏');
 }
+
+function applyRecordingPlayback() {
+  const request = ++playbackRequest;
+  updateRecordingControls();
+  if (userPaused || !recordingVisible || document.hidden) {
+    productVideo.pause();
+    return;
+  }
+  productVideo.play().catch(() => {
+    if (request !== playbackRequest) return;
+    userPaused = true;
+    updateRecordingControls();
+  });
+}
+
+motionButton.addEventListener('click', () => {
+  userPaused = !userPaused;
+  applyRecordingPlayback();
+});
+document.querySelectorAll('[data-scene]').forEach((button) => button.addEventListener('click', () => {
+  const recording = recordings[button.dataset.scene];
+  productVideo.poster = recording.poster;
+  productVideo.src = recording.src;
+  productVideo.setAttribute('aria-label', recording.description);
+  productVideo.load();
+  element('recording-link').href = recording.src;
+  element('scene-name').textContent = recording.label;
+  document.querySelectorAll('[data-scene]').forEach((option) => {
+    const selected = option === button;
+    option.classList.toggle('is-selected', selected);
+    option.setAttribute('aria-pressed', String(selected));
+  });
+  applyRecordingPlayback();
+}));
+motionPreference.addEventListener('change', (event) => {
+  if (event.matches) {
+    userPaused = true;
+    enlargedVideo.pause();
+    applyRecordingPlayback();
+  }
+});
+document.addEventListener('visibilitychange', () => {
+  if (document.hidden) enlargedVideo.pause();
+  applyRecordingPlayback();
+});
+if ('IntersectionObserver' in window) {
+  const videoObserver = new IntersectionObserver((entries) => {
+    for (const entry of entries) {
+      if (entry.target === productVideo) {
+        recordingVisible = entry.isIntersecting;
+        applyRecordingPlayback();
+      } else if (!entry.isIntersecting) {
+        enlargedVideo.pause();
+      }
+    }
+  }, { threshold: .15 });
+  videoObserver.observe(productVideo);
+  videoObserver.observe(enlargedVideo);
+}
+applyRecordingPlayback();

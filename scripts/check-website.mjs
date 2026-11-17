@@ -46,8 +46,12 @@ const websiteMark = await readFile(resolve(root, 'website/assets/lm-mark.svg'), 
 const officialMark = await readFile(resolve(root, 'apps/desktop/build/lm-mark.svg'), 'utf8');
 assert.equal(websiteMark.trim(), officialMark.trim(), 'The website must use the official LxMine LM mark');
 assert.deepEqual(await readFile(resolve(root, 'website/assets/icon.png')), await readFile(resolve(root, 'apps/desktop/build/icon.png')));
-for (const match of html.matchAll(/(?:src|href)="\.\/([^"?#]+)(?:[?#][^"]*)?"/g)) {
+for (const match of html.matchAll(/(?:src|href|poster)="\.\/([^"?#]+)(?:[?#][^"]*)?"/g)) {
   await readFile(resolve(root, 'website', match[1]));
 }
 assert.ok(html.includes('https://github.com/YuriLin1028/LxMine'));
+assert.ok(html.includes('© 2026 咩霸与贡献者 · GPL-3.0-only'));
+assert.ok(html.includes('id="product-demo" src="./assets/stage-demo.mp4"'));
+assert.ok(html.includes('./assets/android-lyrics.webp'));
+assert.ok(!html.includes('phone-player.jpeg'));
 console.log(`Website checks passed. ${release.assets.length} release assets, four platform/variant routes, two mirrors, release validation and local assets.`);
