@@ -1,0 +1,3 @@
+User-agent: *
+Allow: /
+Sitemap: https://yurilin1028.github.io/LxMine/sitemap.xml
