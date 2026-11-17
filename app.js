@@ -1,5 +1,5 @@
-import { releaseApi, platforms, normalizeRelease, selectAsset, makeDownloadUrl, formatSize } from './releases.js';
-import { createLightScene } from './light-scene.js';
+import { releaseApi, platforms, normalizeRelease, selectAsset, makeDownloadUrl, formatSize } from './releases.js?v=20261118';
+import { createLightScene } from './light-scene.js?v=20261118';
 
 const element = (id) => document.getElementById(id);
 const tabs = [...document.querySelectorAll('[data-platform]')];
@@ -173,6 +173,8 @@ try {
   const motionButton = element('motion-toggle');
   if (scene) {
     function updateMotionButton() {
+      element('light-canvas').parentElement.dataset.motionPaused = String(scene.paused);
+      document.querySelector('.hero').dataset.motionPaused = String(scene.paused);
       motionButton.textContent = scene.paused ? '播放动画' : '暂停动画';
       motionButton.setAttribute('aria-pressed', String(scene.paused));
       motionButton.setAttribute('aria-label', scene.paused ? '播放光感动画' : '暂停光感动画');
