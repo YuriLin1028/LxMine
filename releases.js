@@ -1,4 +1,3 @@
-export const repository = 'https://github.com/YuriLin1028/LxMine';
 export const releaseApi = 'https://api.github.com/repos/YuriLin1028/LxMine/releases/latest';
 
 export const downloadSources = Object.freeze({
