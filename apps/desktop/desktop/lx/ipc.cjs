@@ -7,19 +7,18 @@ const { ipcMain, app, dialog } = require('electron');
 const fs = require('node:fs');
 const path = require('node:path');
 const { createLxManager, defaultLxSourcesPath } = require('./manager.cjs');
-const { seedDefaultSourcesIfMissing } = require('./seed.cjs');
 const { searchKuwo } = require('./kw.cjs');
 const { searchKugou } = require('./kg.cjs');
 const { searchNetease } = require('./wy.cjs');
 const { searchQQ } = require('./tx.cjs');
 const { importPlaylist } = require('./playlist.cjs');
+const { importSourceFiles } = require('./import-files.cjs');
 
 let manager = null;
 
 function getManager() {
   if (!manager) {
     const filePath = defaultLxSourcesPath(app.getPath('userData'));
-    seedDefaultSourcesIfMissing(filePath);
     manager = createLxManager({ filePath });
   }
   return manager;
@@ -50,16 +49,14 @@ function registerLxIpc() {
   ipcMain.handle('lx-sources-import-file', async () => {
     const result = await dialog.showOpenDialog({
       title: '选择 LX 自定义源脚本',
-      properties: ['openFile'],
+      properties: ['openFile', 'multiSelections'],
       filters: [
         { name: 'LX 自定义源', extensions: ['js', 'txt'] },
         { name: '所有文件', extensions: ['*'] },
       ],
     });
-    const filePath = result.filePaths?.[0];
-    if (result.canceled || !filePath) return null;
-    const script = fs.readFileSync(filePath, 'utf8');
-    return getManager().importScript(script);
+    if (result.canceled || !result.filePaths?.length) return null;
+    return importSourceFiles(getManager(), result.filePaths);
   });
   // 按路径导入（命令行 / 自动化测试用，不弹文件选择框）。
   ipcMain.handle('lx-sources-import-path', (_event, filePath) => {

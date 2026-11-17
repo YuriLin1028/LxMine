@@ -1,3 +1,4 @@
+import { musicButtonPress } from './MaterialControls';
 import { TEXT, MUTED } from './Theme';
 
 // 所有歌曲列表统一的头部动作：播放全部 + 排列；删除歌单只由歌单库详情传入。
@@ -26,12 +27,12 @@ export struct SongListTools {
     Row({ space: 8 }) {
       Text(this.countText).fontSize(13).fontColor(MUTED).layoutWeight(1)
         .maxLines(1).textOverflow({ overflow: TextOverflow.Ellipsis })
-      Button('播放全部').fontSize(13).fontColor(TEXT).backgroundColor(Color.Transparent)
+      Button('播放全部').attributeModifier(musicButtonPress).fontSize(13).fontColor(TEXT).backgroundColor(Color.Transparent)
         .buttonStyle(ButtonStyleMode.TEXTUAL).enabled(!this.disabled).onClick(() => this.onPlayAll())
-      Button('排列').fontSize(13).fontColor(TEXT).backgroundColor(Color.Transparent)
+      Button('排列').attributeModifier(musicButtonPress).fontSize(13).fontColor(TEXT).backgroundColor(Color.Transparent)
         .buttonStyle(ButtonStyleMode.TEXTUAL).bindMenu(this.sortMenu())
       if (this.showDelete) {
-        Button('删除歌单').fontSize(13).fontColor(MUTED).backgroundColor(Color.Transparent)
+        Button('删除歌单').attributeModifier(musicButtonPress).fontSize(13).fontColor(MUTED).backgroundColor(Color.Transparent)
           .buttonStyle(ButtonStyleMode.TEXTUAL).onClick(() => this.onDelete())
       }
     }.width('100%').height(52)

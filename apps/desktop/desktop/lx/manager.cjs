@@ -66,6 +66,7 @@ function createLxManager(options) {
     },
     list: () => store.list(),
     importScript: (raw) => store.importScript(raw),
+    importScripts: (files) => store.importScripts(files),
     remove: (ids) => {
       generation++; pendingRuntimes.clear();
       const targets = Array.isArray(ids) ? ids : [ids];
@@ -77,6 +78,12 @@ function createLxManager(options) {
       return store.list();
     },
     getActiveId: () => store.getActiveId(),
+    async supportedSources(action) {
+      const source = store.getActiveSource();
+      if (!source) return [];
+      const runtime = await getRuntime(source.id);
+      return Object.keys(runtime.sourceInfo.sources).filter(key => runtime.sourceInfo.sources[key].actions.includes(action));
+    },
     getActiveSource: () => {
       const source = store.getActiveSource();
       return source ? { id: source.id, name: source.name, version: source.version } : null;

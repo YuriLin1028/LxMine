@@ -133,7 +133,7 @@ function lyricRowDepthScale(entry, index, activeLine) {
 function makeLyricBackfaceReadableMaterial(opts) {
   opts = opts || {};
   var color = opts.color && opts.color.isColor ? opts.color.clone() : new THREE.Color(opts.color == null ? 0xffffff : opts.color);
-  return new THREE.ShaderMaterial({
+  return applyLyricViewportFade(new THREE.ShaderMaterial({
     uniforms: {
       uMap: { value: opts.map || null },
       uColor: { value: color },
@@ -163,7 +163,7 @@ function makeLyricBackfaceReadableMaterial(opts) {
     depthTest: false,
     side: THREE.DoubleSide,
     blending: opts.blending || THREE.NormalBlending
-  });
+  }));
 }
 function setLyricTextureMaterialOpacity(mat, value) {
   value = clampRange(Number(value) || 0, 0, 1);
@@ -1325,6 +1325,7 @@ function updateLyricRowLayers(data, opts) {
   if (!data || !data.rowLayers || !data.rowLayers.length) return;
   opts = opts || {};
   var opacity = clampRange(Number(opts.opacity) || 0, 0, 1);
+  var nativeLightInk = window.__LXMINE_NATIVE_STAGE && typeof LxMineAppearance !== 'undefined' && LxMineAppearance.isLight();
   var readability = clampRange(Number(opts.readability) || 0.58, 0, 1);
   var contextIntro = opts.contextIntro == null ? 1 : clampRange(Number(opts.contextIntro) || 0, 0, 1);
   var shownProgress = clampRange(Number(opts.shownProgress) || 0, 0, 1);
@@ -1351,7 +1352,7 @@ function updateLyricRowLayers(data, opts) {
   var frameScale = isFinite(frameDelta) && frameDelta > 0 ? clampRange(frameDelta * 60, 0.25, 3) : 1;
   // Preserve the 60 Hz feel while keeping the same motion duration when a
   // low-spec machine briefly renders at 30/45 Hz.
-  var ease = 1 - Math.pow(1 - baseEase, frameScale);
+  var ease = LxMineLyrics.frameEase(baseEase, frameScale / 60);
   var pendingPayload = data.trackPersistent && data.trackPendingPayload ? data.trackPendingPayload : null;
   var pendingTargetLineIndex = pendingPayload && pendingPayload.trackIndex != null && isFinite(Number(pendingPayload.trackIndex))
     ? Number(pendingPayload.trackIndex)
@@ -1370,7 +1371,7 @@ function updateLyricRowLayers(data, opts) {
       ? Number(opts.targetVirtualIndex)
       : (isFinite(Number(data.trackTargetVirtualIndex)) ? Number(data.trackTargetVirtualIndex) : lyricPrimaryVirtualIndex(targetLineIndex)));
   var baseTrackEase = opts.trackEase == null ? clampRange(baseEase * 1.16, 0.08, 0.34) : clampRange(Number(opts.trackEase) || 0.18, 0.04, 0.60);
-  var trackEase = 1 - Math.pow(1 - baseTrackEase, frameScale);
+  var trackEase = LxMineLyrics.frameEase(baseTrackEase, frameScale / 60);
   var nowMs = (typeof performance !== 'undefined' && performance.now) ? performance.now() : Date.now();
   var trackTargetJustCommitted = !!(data.trackPersistent && isFinite(Number(data.trackTargetCommittedAt)) && nowMs - Number(data.trackTargetCommittedAt) <= 34);
   var initialTextRevealPending = !!(data.usesTrack && data.renderInitialTextReady !== true);
@@ -1400,16 +1401,8 @@ function updateLyricRowLayers(data, opts) {
     data.trackScrollOffset = targetIndex;
     data.trackScrollPrimed = true;
   } else {
-    var trackStep = (targetIndex - data.trackScrollOffset) * trackEase;
-    if (data.usesTrack && persistentPrimedTrack) {
-      // Bound the shared phase, not individual meshes: no rendered frame may
-      // skip across a complete primary lyric row, while normal adjacent-line
-      // easing keeps exactly the same timing as before.
-      var continuousTrackMaxRowsPerFrame = 0.68;
-      var continuousTrackMaxStep = continuousTrackSlotStep * continuousTrackMaxRowsPerFrame;
-      trackStep = clampRange(trackStep, -continuousTrackMaxStep, continuousTrackMaxStep);
-    }
-    data.trackScrollOffset += trackStep;
+    var continuousTrackMaxStep = data.usesTrack && persistentPrimedTrack ? continuousTrackSlotStep * 0.68 : Infinity;
+    data.trackScrollOffset = LxMineLyrics.followStep(data.trackScrollOffset, targetIndex, trackEase, continuousTrackMaxStep);
   }
   var scrollOffset = data.trackScrollOffset;
   var lineStepWorld = clampRange(Number(data.lineWorldStep) || 0.38, 0.20, 0.94);
@@ -1519,7 +1512,7 @@ function updateLyricRowLayers(data, opts) {
     var motionAnchor = isActive || currentTranslation;
     var rowIntro = motionAnchor ? 1 : contextIntro;
     var visibleRadius = Math.max(0.85, Number(data.trackVisibleRadius) || 3);
-    var visibleFade = lineWindowAllowed ? (motionAnchor ? 1 : clampRange((visibleRadius + 1.10 - visibilityAbs) / 1.10, 0, 1)) : 0;
+    var visibleFade = lineWindowAllowed ? (window.__LXMINE_NATIVE_STAGE || motionAnchor ? 1 : clampRange((visibleRadius + 1.10 - visibilityAbs) / 1.10, 0, 1)) : 0;
     visibleFade = visibleFade * visibleFade * (3 - 2 * visibleFade);
     var renderWindowActive = !!(lineWindowAllowed && (motionAnchor || visibleFade > 0.002));
     if (renderWindowActive && !row.renderWindowActive) {
@@ -1543,10 +1536,10 @@ function updateLyricRowLayers(data, opts) {
     }
     var rowRevealAt = Number(row.renderRevealAt) || nowMs;
     var lineLayerVisible = renderWindowActive && (initialTextRevealPending || nowMs >= rowRevealAt);
-    var readabilityLayerVisible = textureEffectsAllowed && lineLayerVisible && readability > 0.001 && nowMs >= rowRevealAt + 18;
+    var readabilityLayerVisible = !nativeLightInk && textureEffectsAllowed && lineLayerVisible && readability > 0.001 && nowMs >= rowRevealAt + 18;
     var existingGlowOpacity = row.glowMat ? getLyricTextureMaterialOpacity(row.glowMat) : 0;
     var glowLayerWanted = rowGlow > 0.001 || rowGlowBeat > 0.001 || existingGlowOpacity > 0.004;
-    var glowLayerVisible = textureEffectsAllowed && lineLayerVisible && glowLayerWanted && nowMs >= rowRevealAt + 40;
+    var glowLayerVisible = !nativeLightInk && textureEffectsAllowed && lineLayerVisible && glowLayerWanted && nowMs >= rowRevealAt + 40;
     var anchorRevealPriority = isActive ? 0 : (currentTranslation ? 1 : null);
     var contextRevealPriority = 20 + Math.min(8, visibilityAbs) * 6 + (row.isTranslation ? 1 : 0);
     if (row.mesh) {
@@ -1578,9 +1571,9 @@ function updateLyricRowLayers(data, opts) {
       var pendingPriority = pendingDistance * 4 + (row.isTranslation ? 1 : 0);
       if (row.mesh && !row.renderLineUploaded) {
         renderRevealCandidates.push({ row: row, mesh: row.mesh, flag: 'renderLineUploaded', priority: 4 + pendingPriority, transparentPrewarm: true });
-      } else if (row.readability && !row.renderReadabilityUploaded) {
+      } else if (!nativeLightInk && row.readability && !row.renderReadabilityUploaded) {
         renderRevealCandidates.push({ row: row, mesh: row.readability, flag: 'renderReadabilityUploaded', priority: 104 + pendingPriority, transparentPrewarm: true });
-      } else if (row.glow && !row.renderGlowUploaded) {
+      } else if (!nativeLightInk && row.glow && !row.renderGlowUploaded) {
         renderRevealCandidates.push({ row: row, mesh: row.glow, flag: 'renderGlowUploaded', priority: 204 + pendingPriority, transparentPrewarm: true });
       }
     }
@@ -1588,13 +1581,15 @@ function updateLyricRowLayers(data, opts) {
       var trackPrewarmOrder = Math.max(0, rowLineIndex == null ? i : Math.round(rowLineIndex)) * 2 + (row.isTranslation ? 1 : 0);
       if (row.mesh && !row.renderLineUploaded) {
         renderRevealCandidates.push({ row: row, mesh: row.mesh, flag: 'renderLineUploaded', priority: 300 + trackPrewarmOrder * 0.01, transparentPrewarm: true });
-      } else if (row.readability && !row.renderReadabilityUploaded) {
+      } else if (!nativeLightInk && row.readability && !row.renderReadabilityUploaded) {
         renderRevealCandidates.push({ row: row, mesh: row.readability, flag: 'renderReadabilityUploaded', priority: 400 + trackPrewarmOrder * 0.01, transparentPrewarm: true });
-      } else if (row.glow && !row.renderGlowUploaded) {
+      } else if (!nativeLightInk && row.glow && !row.renderGlowUploaded) {
         renderRevealCandidates.push({ row: row, mesh: row.glow, flag: 'renderGlowUploaded', priority: 500 + trackPrewarmOrder * 0.01, transparentPrewarm: true });
       }
     }
-    var target = opacity * (isActive ? 1 : contextAlpha) * rowIntro * visibleFade;
+    var readableContext = window.__LXMINE_NATIVE_STAGE && typeof LxMineAppearance !== 'undefined' && LxMineAppearance.isLight()
+      ? Math.max(contextAlpha, 0.88) : contextAlpha;
+    var target = opacity * (isActive ? 1 : readableContext) * rowIntro * visibleFade;
     var depthFade = motionAnchor ? 1 : clampRange(1 - visibilityAbs * 0.055, 0.54, 1) * visibleFade;
     var yTarget = -liveDelta * lineStepWorld + (motionAnchor ? 0 : rowDrift * clampRange(0.70 + abs * 0.10, 0.65, 1.20));
     if (row.isTranslation) {
@@ -1628,13 +1623,8 @@ function updateLyricRowLayers(data, opts) {
     if (row.mesh) {
       row.mesh.position.x += ((isActive ? jitterX : (currentTranslation ? jitterX * 0.82 : jitterX * 0.28)) - row.mesh.position.x) * (opts.glitchPulse ? 0.48 : 0.13);
       var rowYTarget = yTarget + (verticalFloatOn ? (isActive ? jitterY : (currentTranslation ? jitterY * 0.78 : jitterY * 0.24)) : 0);
-      var rowYStep = (rowYTarget - row.mesh.position.y) * ease;
-      if (data.usesTrack && persistentPrimedTrack) {
-        var continuousRowMaxRowsPerFrame = 0.66;
-        var continuousRowMaxStepWorld = continuousTrackSlotStep * lineStepWorld * continuousRowMaxRowsPerFrame;
-        rowYStep = clampRange(rowYStep, -continuousRowMaxStepWorld, continuousRowMaxStepWorld);
-      }
-      row.mesh.position.y += rowYStep;
+      var continuousRowMaxStepWorld = data.usesTrack && persistentPrimedTrack ? continuousTrackSlotStep * lineStepWorld * 0.66 : Infinity;
+      row.mesh.position.y = LxMineLyrics.followStep(row.mesh.position.y, rowYTarget, ease, continuousRowMaxStepWorld);
       row.mesh.position.z += (zTarget - row.mesh.position.z) * ease;
       row.mesh.scale.setScalar(row.mesh.scale.x + (scaleTarget - row.mesh.scale.x) * ease);
       row.mesh.renderOrder = isActive ? (renderBase + 0.40) : (row.isTranslation ? (renderBase + 0.05 + (currentTranslation ? 0.34 : translationFocus * 0.30)) : (renderBase - 0.40 - Math.min(5.5, abs) * 0.015));

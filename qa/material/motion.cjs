@@ -59,8 +59,8 @@ const tone = () => {
         const bg = document.createElement('div');
         bg.style.cssText = 'position:fixed;inset:0;z-index:1;background:repeating-linear-gradient(90deg,#173e59 0 38px,#d1b36b 38px 76px,#783b42 76px 114px);font:bold 42px sans-serif;color:white;line-height:42px';
         bg.textContent = ('曲面折射 背景文字 0123456789 ').repeat(120); document.body.prepend(bg);
-        const button = document.createElement('button'); button.id = 'optical-probe'; button.className = 'glass light';
-        button.style.cssText = 'position:fixed;left:100px;top:300px;width:640px;height:90px;border-radius:45px;z-index:50;font:bold 28px sans-serif;color:white';
+        const button = document.createElement('div'); button.id = 'optical-probe'; button.className = 'glass light';
+        button.style.cssText = 'position:fixed;left:100px;top:300px;width:640px;height:90px;border:2px solid transparent;border-radius:45px;z-index:50;font:bold 28px sans-serif;color:white;display:grid;place-items:center';
         button.innerHTML = '<span style="position:relative">LxMine · 清晰文字</span>'; document.body.append(button);
       });
       await page.waitForTimeout(600);
@@ -85,23 +85,40 @@ const tone = () => {
       assert(result.opticalPixels.rimMAD > 2, 'Displacement must affect real rendered pixels');
       assert(result.opticalPixels.centreMAD < 1, 'Refraction must decay before readable centre');
       await page.mouse.move(400, 345); await page.mouse.down(); await page.mouse.move(470, 355, { steps: 12 }); await page.mouse.up(); await page.waitForTimeout(700);
-      // Neutralize ONLY the moving backdrop for the foreground-pixel invariant.
+      // Keep the backdrop constant when checking the foreground after release.
       await page.addStyleTag({ content: '#optical-probe .glass-surface{background:#202224!important;backdrop-filter:none!important} #optical-probe::after{display:none}' });
       const before = await png('content-before');
-      const read = () => probe.evaluate(n => ({ rect: n.getBoundingClientRect().toJSON(), skin: getComputedStyle(n.querySelector('.glass-surface')).transform, filter: n.querySelector('.glass-surface').style.getPropertyValue('--lens-filter') }));
+      const read = () => probe.evaluate(n => ({ rect: n.getBoundingClientRect().toJSON(),
+        content: n.querySelector('span:not(.glass-surface)').getBoundingClientRect().toJSON(),
+        skin: getComputedStyle(n.querySelector('.glass-surface')).transform,
+        filter: n.querySelector('.glass-surface').style.getPropertyValue('--lens-filter') }));
       result.before = await read(); await sample();
       await page.mouse.down(); await page.mouse.move(540, 369, { steps: 12 }); await page.waitForTimeout(100);
-      result.drag = await read(); const dragged = await png('content-drag');
+      result.drag = await read(); await png('content-drag');
       await page.mouse.up(); result.release = [];
       for (const wait of [60, 80, 160, 350]) { await page.waitForTimeout(wait); result.release.push(await read()); }
       result.frames = await finish();
+      const returned = await png('content-returned');
       result.contentMAD = await page.evaluate(async ([a, b]) => {
         const decode = async p => { const i = new Image(); i.src = 'data:image/png;base64,' + p; await i.decode(); const c = document.createElement('canvas'); c.width = i.width; c.height = i.height; const x = c.getContext('2d'); x.drawImage(i, 0, 0); return x.getImageData(180, 25, 280, 40).data; };
         const aa = await decode(a), bb = await decode(b); let sum = 0; for (let i = 0; i < aa.length; i++) sum += Math.abs(aa[i] - bb[i]); return sum / aa.length;
-      }, [before, dragged]);
-      assert(result.contentMAD < 1); assert.deepEqual(result.before.rect, result.drag.rect);
+      }, [before, returned]);
+      fs.writeFileSync(path.join(out, 'report.json'), JSON.stringify(result, null, 2));
+      assert(result.contentMAD < 1, 'Released foreground pixels must return to their original position');
+      const sx = result.drag.rect.width / result.before.rect.width;
+      const sy = result.drag.rect.height / result.before.rect.height;
+      assert(sx > 1.02 && sy > 1.02, 'Dragging must visibly enlarge the whole control');
+      const expectedContent = {
+        x: result.drag.rect.x + (result.before.content.x - result.before.rect.x) * sx,
+        y: result.drag.rect.y + (result.before.content.y - result.before.rect.y) * sy,
+        width: result.before.content.width * sx,
+        height: result.before.content.height * sy
+      };
+      for (const key of ['x', 'y', 'width', 'height']) {
+        assert(Math.abs(result.drag.content[key] - expectedContent[key]) < .15, 'Dragged foreground did not follow the glass: ' + key);
+      }
       assert.equal(new Set([result.before, result.drag, ...result.release].map(s => s.filter)).size, 1);
-      assert.notEqual(result.before.skin, result.drag.skin);
+      assert.notDeepEqual(result.before.rect, result.drag.rect);
     } else if (scenario === 'resize') {
       const sequence = [[980,700], [900,700], [1440,900], [800,1100], [1200,800]];
       const resize = async ([w,h]) => {

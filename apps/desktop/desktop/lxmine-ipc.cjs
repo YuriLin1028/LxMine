@@ -1,45 +1,39 @@
 'use strict';
 
 const fs = require('node:fs');
-const { ipcMain, dialog } = require('electron');
+const { ipcMain, dialog, shell } = require('electron');
 const { createLxManager, defaultLxSourcesPath } = require('./lx/manager.cjs');
 const { searchKuwo } = require('./lx/kw.cjs');
 const { searchKugou } = require('./lx/kg.cjs');
 const { searchNetease } = require('./lx/wy.cjs');
 const { searchQQ } = require('./lx/tx.cjs');
-const { importPlaylist } = require('./lx/playlist.cjs');
-const { seedDefaultSourcesIfMissing } = require('./lx/seed.cjs');
+const { importPlaylist, resolveImportedSong, songAssets } = require('./lx/playlist.cjs');
+const { hasLyrics } = require('../shared/lx-song-assets.cjs');
 const { toMineTrack, toLxRequest } = require('../shared/lxmine-track.cjs');
 const { searchEntities, entityTracks, discovery } = require('./lx/catalogue.cjs');
 const path = require('node:path');
 const { app } = require('electron');
 const { MusicDownloads } = require('./downloads.cjs');
+const { decodePlaylistFile, MAX_PLAYLIST_BYTES } = require('../shared/lx-playlist-file.cjs');
+const { importSourceFiles } = require('./lx/import-files.cjs');
 
 function registerLxMineIpc({ userDataPath, trusted, library }) {
   const sourcesPath = defaultLxSourcesPath(userDataPath);
-  // 种子必须先于下方的 音源/ 目录自动导入：否则自动导入会抢先写盘、种子被跳过，
-  // 用户原来的启用音源（activeId）也会丢失。
-  seedDefaultSourcesIfMissing(sourcesPath);
   const manager = createLxManager({ filePath: sourcesPath });
-  // Mirror the tablet build's bundled sources; duplicates are rejected by the store.
-  try {
-    const roots = [path.join(__dirname, '..', '..', '..', '音源'), path.join(app.getAppPath(), '音源'), path.join(process.cwd(), '音源')];
-    const bundled = roots.find(root => { try { return fs.existsSync(root) && fs.statSync(root).isDirectory(); } catch (_) { return false; } });
-    if (bundled) {
-      for (const file of fs.readdirSync(bundled)) {
-        if (!/\.js$/i.test(file)) continue;
-        try { manager.importScript(fs.readFileSync(path.join(bundled, file), 'utf8')); } catch (_) {}
-      }
-    }
-  } catch (_) {}
   const searches = { kw: searchKuwo, kg: searchKugou, wy: searchNetease, tx: searchQQ };
   const downloads = new MusicDownloads({ userDataPath, onChange: jobs => {
     for (const window of require('electron').BrowserWindow.getAllWindows()) window.webContents.send('lxmine-downloads-changed', jobs);
   } });
   handle('downloads', () => downloads.snapshot());
   handle('cancel-download', id => downloads.cancel(String(id)));
+  handle('reveal-download', id => {
+    const job = downloads.snapshot().find(item => item.id === id && item.state === 'complete');
+    if (!job || !fs.existsSync(job.filePath)) throw new Error('下载文件已被移动或删除');
+    shell.showItemInFolder(job.filePath);
+  });
   handle('download', async (song, quality = '128k') => {
-    const info = toLxRequest(song, quality);
+    const info = toLxRequest(await resolveImportedSong({ ...song, source: song.lxSource || song.source,
+      singer: song.singer || song.artist }, await manager.supportedSources('musicUrl')), quality);
     const url = await manager.getMusicUrl(info);
     if (!url) throw new Error('音源未返回可下载地址');
     const extension = /flac/i.test(info.type) ? 'flac' : 'mp3';
@@ -66,9 +60,9 @@ function registerLxMineIpc({ userDataPath, trusted, library }) {
   handle('feed-tracks', async item=>{const r=await discovery.tracks(item);return {...r,items:r.items.map(song=>toMineTrack(song,song.source||item.source))};});
   handle('import-source', script => manager.importScript(String(script || '')));
   handle('import-source-file', async () => {
-    const result = await dialog.showOpenDialog({ title: '导入 LX 自定义源', properties: ['openFile'], filters: [{ name: 'LX 音源脚本', extensions: ['js', 'txt'] }] });
-    if (result.canceled || !result.filePaths[0]) return null;
-    return manager.importScript(fs.readFileSync(result.filePaths[0], 'utf8'));
+    const result = await dialog.showOpenDialog({ title: '批量导入 LX 音源', properties: ['openFile', 'multiSelections'], filters: [{ name: 'LX 音源脚本', extensions: ['js', 'txt'] }] });
+    if (result.canceled || !result.filePaths.length) return null;
+    return importSourceFiles(manager, result.filePaths);
   });
   handle('activate-source', id => manager.setActive(String(id)));
   handle('remove-source', id => manager.remove(String(id)));
@@ -86,15 +80,50 @@ function registerLxMineIpc({ userDataPath, trusted, library }) {
     return {...result,items:result.items.map(track=>toMineTrack(track,track.source||params.source))};
   });
   handle('resolve', async (song, quality) => {
-    const info = toLxRequest(song, quality);
+    const portable = song.lxSource === 'qishui' || song.provider === 'qishui' ? { ...song, source: 'qishui', singer: song.singer || song.artist } : song;
+    const info = toLxRequest(await resolveImportedSong(portable, portable.source === 'qishui' ? await manager.supportedSources('musicUrl') : undefined), quality);
     const url = await manager.getMusicUrl(info);
     if (!url) throw new Error('自定义源没有返回播放地址，请切换音源或音质');
     return { url, provider: song.provider, source: info.source, level: quality || 'standard', lxSource: true };
   });
-  handle('lyric', async (song, quality) => manager.getLyric(toLxRequest(song, quality)));
+  handle('song-assets', song => songAssets({ ...song, source: song.lxSource || song.source || toLxRequest(song).source, singer: song.singer || song.artist, coverUrl: song.coverUrl || song.cover }));
+  handle('lyric', async (song, quality) => {
+    const portable = { ...song, source: song.lxSource || song.source || toLxRequest(song).source, singer: song.singer || song.artist, coverUrl: song.coverUrl || song.cover };
+    const [custom, publicData] = await Promise.allSettled([
+      resolveImportedSong(portable).then(resolved => manager.getLyric(toLxRequest(resolved, quality))), songAssets(portable)
+    ]);
+    const provided = custom.status === 'fulfilled' ? custom.value : {};
+    const data = typeof provided === 'string' ? { lyric: provided } : (provided || {});
+    const fallback = publicData.status === 'fulfilled' ? publicData.value : {};
+    if (!fallback.coverUrl) {
+      try {
+        const resolved = await resolveImportedSong(portable);
+        if ((await manager.supportedSources('pic')).includes(resolved.source)) {
+          const picture = await manager.getPic(toLxRequest(resolved, quality));
+          const url = typeof picture === 'string' ? picture : picture?.url;
+          if (/^https?:\/\//i.test(url || '')) fallback.coverUrl = url.replace(/^http:/i, 'https:');
+        }
+      } catch (_) {}
+    }
+    const customLyric = data.lxlyric || data.lyric || '';
+    return { ...fallback, ...data, lyric: hasLyrics(customLyric) ? customLyric : fallback.lyric || customLyric,
+      tlyric: data.tlyric || fallback.tlyric || '', romalrc: data.romalrc || data.rlyric || fallback.romalrc || '' };
+  });
   handle('import-playlist', async (input, source) => {
     const portable = await importPlaylist(String(input || ''), source);
-    return library.importLists(portable.map(list => ({ name: list.name, tracks: list.songs.map(song => toMineTrack(song, song.source)) })));
+    const result = library.importLists(portable.map(list => ({ name: list.name, tracks: list.songs.map(song => toMineTrack(song, song.source)) })));
+    return { ...result, warnings: portable.map(list => list.warning).filter(Boolean) };
+  });
+  handle('import-playlist-file', async () => {
+    const selected = await dialog.showOpenDialog({ title: '导入歌单文件', properties: ['openFile'],
+      filters: [{ name: 'LX 歌单备份', extensions: ['lxmc', 'json'] }, { name: '所有文件', extensions: ['*'] }] });
+    if (selected.canceled || !selected.filePaths[0]) return null;
+    const filePath = selected.filePaths[0];
+    if (fs.statSync(filePath).size > MAX_PLAYLIST_BYTES) throw new Error('歌单文件超过 32 MB');
+    const text = await decodePlaylistFile(await fs.promises.readFile(filePath));
+    const portable = await importPlaylist(text);
+    const result = library.importLists(portable.map(list => ({ name: list.name, tracks: list.songs.map(song => toMineTrack(song, song.source)) })));
+    return { ...result, warnings: portable.map(list => list.warning).filter(Boolean) };
   });
   return { ...manager, dispose() { downloads.dispose(); manager.dispose(); } };
 }

@@ -1,3 +1,4 @@
+import { musicButtonPress } from './MaterialControls';
 import { Song } from '../model/Song';
 import { LyricLine } from '../services/LyricParser';
 import { MaterialIcon, musicMaterial } from './MaterialControls';
@@ -68,24 +69,24 @@ export struct NativePlayer {
       Blank()
       Button({ type: ButtonType.Circle }) {
         Text('SQ').fontSize(11).fontWeight(FontWeight.Medium).fontColor(TEXT).letterSpacing(0.4)
-      }.width(38).height(38).padding(0).backgroundColor(Color.Transparent).stateEffect(false).systemMaterial(musicMaterial())
+      }.attributeModifier(musicButtonPress).width(38).height(38).padding(0).backgroundColor(Color.Transparent).stateEffect(false).systemMaterial(musicMaterial())
         .bindMenu(this.qualityMenu()).accessibilityText('选择音质').id('player-quality')
       Stack() {
         Button({ type: ButtonType.Circle }) {
           Image($r('sys.media.ohos_ic_public_cast_stream')).width(20).height(20).fillColor(TEXT)
-        }.width(38).height(38).padding(0).backgroundColor(Color.Transparent).stateEffect(false).systemMaterial(musicMaterial())
+        }.attributeModifier(musicButtonPress).width(38).height(38).padding(0).backgroundColor(Color.Transparent).stateEffect(false).systemMaterial(musicMaterial())
         // AVCastPicker 透明覆盖拉起系统投播；Transparent 让触点同时落到下层球体，形变才跟手。
-        AVCastPicker({ normalColor: TEXT, activeColor: '#F4D28A', pickerStyle: AVCastPickerStyle.STYLE_PANEL, colorMode: AVCastPickerColorMode.AUTO, sessionType: 'audio' })
+        AVCastPicker({ normalColor: '#F4F4F4', activeColor: '#F4D28A', pickerStyle: AVCastPickerStyle.STYLE_PANEL, colorMode: AVCastPickerColorMode.AUTO, sessionType: 'audio' })
           .width(38).height(38).opacity(0.01).hitTestBehavior(HitTestMode.Transparent)
       }.width(38).height(38).id('player-cast')
       MaterialIcon({ icon: $r('app.media.ic_share_official'), label: '分享歌曲', diameter: 38, raw: true, action: () => this.onShare() }).id('player-share')
       Button({ type: ButtonType.Circle }) {
         Image($r('app.media.ic_comment_official')).width(20).height(20).fillColor(TEXT)
-      }.width(38).height(38).padding(0).backgroundColor(Color.Transparent).systemMaterial(musicMaterial())
+      }.attributeModifier(musicButtonPress).width(38).height(38).padding(0).backgroundColor(Color.Transparent).systemMaterial(musicMaterial())
         .accessibilityText('查看评论').onClick(() => this.onComments()).id('player-comments')
       Button({ type: ButtonType.Circle }) {
         Image($r('app.media.ic_style_wand')).width(20).height(20).fillColor(TEXT)
-      }.width(38).height(38).padding(0).backgroundColor(Color.Transparent).stateEffect(false).systemMaterial(musicMaterial())
+      }.attributeModifier(musicButtonPress).width(38).height(38).padding(0).backgroundColor(Color.Transparent).stateEffect(false).systemMaterial(musicMaterial())
         .bindMenu(this.styleMenu()).accessibilityText('选择动效').id('player-style')
       // 沉浸模式入口：只在横屏详情页出现；进入后连本按钮一起隐藏，退出只能双指上滑。
       if (this.landscape) {
@@ -101,8 +102,8 @@ export struct NativePlayer {
         .hideBackButton(true).hideToolBar(true).mode(NavigationMode.Stack).width('100%').height(96).clip(false)
         // 视觉球顶必须与二级页一致（statusInset + 6）：宿主上移 16vp 供材质上伸，
         // 再由 header 的 margin top 16 补偿；禁止再用 max(24,statusInset)+6 把整排压下。
-        .backgroundColor(Color.Transparent).position({ top: this.statusInset - 10, left: 0 })
+        .backgroundColor(Color.Transparent).position({ top: this.statusInset - 10, left: 0 }).hitTestBehavior(HitTestMode.Default)
 
-    }.width('100%').height('100%').backgroundColor(Color.Transparent).hitTestBehavior(HitTestMode.Transparent).expandSafeArea([SafeAreaType.SYSTEM], [SafeAreaEdge.TOP, SafeAreaEdge.BOTTOM])
+    }.width('100%').height('100%').backgroundColor(Color.Transparent).hitTestBehavior(HitTestMode.None).expandSafeArea([SafeAreaType.SYSTEM], [SafeAreaEdge.TOP, SafeAreaEdge.BOTTOM])
   }
 }

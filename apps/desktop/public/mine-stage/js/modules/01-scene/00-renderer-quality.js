@@ -30,7 +30,9 @@ var adaptiveFrameLoadState = {
   lastCostMs: 0,
   lastTargetFps: 0,
   pressure: 0,
-  level: 0
+  level: 0,
+  resolutionScale: 1,
+  lastResolutionAt: 0
 };
 function roundRenderNumber(value, digits) {
   var scale = Math.pow(10, digits || 0);
@@ -77,6 +79,19 @@ function sampleAdaptiveFrameCost(costMs, targetFps) {
     adaptiveFrameLoadState.pressure = Math.max(0, adaptiveFrameLoadState.pressure - 0.10);
   }
   adaptiveFrameLoadState.level = adaptiveFrameLoadState.pressure >= 4 ? 2 : (adaptiveFrameLoadState.pressure >= 2 ? 1 : 0);
+  var now = performance.now();
+  var foregroundStage = !window.__lxmineStagePresentation || window.__lxmineStagePresentation.detail;
+  if (foregroundStage && now > 5000) {
+    var scale = adaptiveFrameLoadState.resolutionScale;
+    var elapsed = now - adaptiveFrameLoadState.lastResolutionAt;
+    if (adaptiveFrameLoadState.level >= 2 && elapsed > 2000) scale = Math.max(0.6, scale * 0.85);
+    else if (adaptiveFrameLoadState.level === 0 && adaptiveFrameLoadState.avgMs < budget * 0.45 && elapsed > 10000) scale = Math.min(1, scale * 1.05);
+    if (Math.abs(scale - adaptiveFrameLoadState.resolutionScale) > 0.001) {
+      adaptiveFrameLoadState.resolutionScale = scale;
+      adaptiveFrameLoadState.lastResolutionAt = now;
+      if (typeof applyRendererPowerMode === 'function') applyRendererPowerMode();
+    }
+  }
   return adaptiveFrameLoadSnapshot();
 }
 function adaptiveFrameLoadSnapshot() {
@@ -85,7 +100,8 @@ function adaptiveFrameLoadSnapshot() {
     lastCostMs: roundRenderNumber(adaptiveFrameLoadState.lastCostMs, 3),
     lastTargetFps: roundRenderNumber(adaptiveFrameLoadState.lastTargetFps, 1),
     pressure: roundRenderNumber(adaptiveFrameLoadState.pressure, 2),
-    level: adaptiveFrameLoadState.level || 0
+    level: adaptiveFrameLoadState.level || 0,
+    resolutionScale: adaptiveFrameLoadState.resolutionScale
   };
 }
 function clampAdaptiveCadenceDivisor(displayHz, divisor, minFps) {
@@ -136,10 +152,13 @@ function getRenderPixelRatio() {
   var device = window.devicePixelRatio || 1;
   if (isDeepBackgroundMode()) return Math.min(device, 0.30);
   var cssPixels = Math.max(1, innerWidth * innerHeight);
+  if (window.__lxmineStagePresentation && !window.__lxmineStagePresentation.detail) {
+    return Math.min(device, 0.65, Math.sqrt(420000 / cssPixels));
+  }
   var quality = renderQualityProfile();
   var budgetCap = Math.sqrt(quality.budget / cssPixels);
   var cap = Math.min(quality.cap, budgetCap);
-  return Math.max(quality.min, Math.min(device, cap));
+  return Math.max(0.4, Math.max(quality.min, Math.min(device, cap)) * adaptiveFrameLoadState.resolutionScale);
 }
 function getRenderPixelLoad() {
   var ratio = getRenderPixelRatio();
@@ -174,7 +193,7 @@ function getRenderLoadTier() {
   if (cssPixels >= 3200000 || renderPixels >= 3600000) return 1;
   return 0;
 }
-var renderer = new THREE.WebGLRenderer({ antialias: false, alpha: true, powerPreference: 'high-performance' });
+var renderer = new THREE.WebGLRenderer({ antialias: false, alpha: true, powerPreference: 'default' });
 renderer.setClearColor(0x000000, 0);
 renderer.setPixelRatio(getRenderPixelRatio());
 renderer.setSize(innerWidth, innerHeight);

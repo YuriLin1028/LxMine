@@ -1250,6 +1250,11 @@ function ensureStageLyricPersistentTrackRows(mesh, targetIndex, options) {
   // build's continuous track, without paying its 200+ row startup cost.
   var desiredStart = Math.max(0, targetIndex + minOffset - (interactivePreview ? 4 : 6));
   var desiredEnd = Math.min(last, targetIndex + maxOffset + (interactivePreview ? 10 : 24));
+  if (window.__LXMINE_NATIVE_STAGE) {
+    var viewportWindow = lyricMeshTrackWindow(targetIndex, data.displayMode || (fx && fx.lyricDisplayMode));
+    desiredStart = viewportWindow.start;
+    desiredEnd = viewportWindow.end;
+  }
   var visibleStart = Math.max(0, targetIndex + minOffset);
   var visibleEnd = Math.min(last, targetIndex + maxOffset);
   var targetMissing = !stageLyricPersistentLineRowsResident(data, targetIndex, residentRowMap);
@@ -1288,7 +1293,7 @@ function ensureStageLyricPersistentTrackRows(mesh, targetIndex, options) {
     // track in the background until the whole song is resident.  This restores
     // the private build's one-piece scroll without paying for off-screen glow
     // and readability layers.
-    if (!interactivePreview && !data.trackPendingPayload) {
+    if (!window.__LXMINE_NATIVE_STAGE && !interactivePreview && !data.trackPendingPayload) {
       var activeRunwayJob = stageLyricResidentBuild.job;
       if (activeRunwayJob && activeRunwayJob.mesh === mesh) return true;
       var runwayRange = stageLyricPersistentNextTextRunwayRange(data, targetIndex, residentRowMap);
@@ -1350,6 +1355,11 @@ function trimStageLyricPersistentTrackRows(mesh, targetIndex, options) {
   var interactive = options.interactive === true;
   var keepStart = Math.max(0, targetIndex + minOffset - (interactive ? 3 : 6));
   var keepEnd = Math.min(lyricsLines.length - 1, targetIndex + maxOffset + (interactive ? 5 : 24));
+  if (window.__LXMINE_NATIVE_STAGE) {
+    var viewportWindow = lyricMeshTrackWindow(targetIndex, data.displayMode || (fx && fx.lyricDisplayMode));
+    keepStart = viewportWindow.start;
+    keepEnd = viewportWindow.end;
+  }
   var preserveTargetIndex = Number(options.preserveTargetIndex);
   var preserveStart = Infinity;
   var preserveEnd = -Infinity;
@@ -1359,6 +1369,7 @@ function trimStageLyricPersistentTrackRows(mesh, targetIndex, options) {
     preserveEnd = Math.min(lyricsLines.length - 1, preserveTargetIndex + maxOffset + 2);
   }
   var releasedEffects = 0;
+  var retainedRows = [];
   for (var i = 0; i < data.rowLayers.length; i++) {
     var row = data.rowLayers[i];
     var lineIndex = row && row.isTranslation
@@ -1369,7 +1380,13 @@ function trimStageLyricPersistentTrackRows(mesh, targetIndex, options) {
     var keepForCommittedWindow = roundedLineIndex != null && roundedLineIndex >= preserveStart && roundedLineIndex <= preserveEnd;
     var keepEffects = roundedLineIndex == null || keepForTarget || keepForCommittedWindow ||
       roundedLineIndex === targetIndex || roundedLineIndex === preserveTargetIndex;
-    if (keepEffects) continue;
+    if (keepEffects) { retainedRows.push(row); continue; }
+    if (window.__LXMINE_NATIVE_STAGE) {
+      disposeStageLyricResidentRow(row);
+      releasedEffects += 1;
+      continue;
+    }
+    retainedRows.push(row);
     // Text rows are the continuous whole-song runway.  Only their expensive
     // off-screen effect layers are evicted; deleting the text row itself would
     // reintroduce the load/merge break the user sees while seeking.
@@ -1388,6 +1405,7 @@ function trimStageLyricPersistentTrackRows(mesh, targetIndex, options) {
       releasedEffects += 1;
     }
   }
+  data.rowLayers = retainedRows;
   updateStageLyricPersistentResidentBounds(data);
   return releasedEffects > 0;
 }
@@ -1538,6 +1556,7 @@ function stageLyricProgressSeekVisualReady(seconds) {
 function chooseStageLyricPrewarmIndex() {
   if (!lyricsLines || !lyricsLines.length) return -1;
   if (
+    !window.lxmineNativeTime &&
     (Number(stageLyricTrackSwitchBootstrapUntil) || 0) > stageLyricNowMs() &&
     (!stageLyrics || stageLyrics.currentIdx < 0)
   ) {
@@ -1707,7 +1726,7 @@ function runStageLyricCooperativePrewarm(job) {
   var startedAt = stageLyricNowMs();
   var done = false;
   try {
-    done = stepCooperativeLyricMeshBuild(job.state, 1, 4.2);
+    done = stepCooperativeLyricMeshBuild(job.state, 32, 4.2);
   } catch (e) {
     cancelStageLyricPrewarmBuildOnly();
     return;
@@ -2301,14 +2320,8 @@ function updateStageLyrics3D(dt) {
     if (isCurrent && data.textMat && data.textMat.uniforms && data.textMat.uniforms.uProgress) {
       var targetProgress = clampRange(Number(mesh.userData.targetLyricProgress) || 0, 0, 1);
       shownProgress = clampRange(Number(data.textMat.uniforms.uProgress.value) || 0, 0, 1);
-      if (mesh.userData.nativeKaraokeProgress) {
-        shownProgress = targetProgress;
-      } else {
-        var progressDiff = targetProgress - shownProgress;
-        var progressEase = Math.abs(progressDiff) > 0.42 ? Math.max(0.52, lyricMotion.progressEase * 1.55) : lyricMotion.progressEase;
-        if (mesh.userData.age < 0.16) progressEase = Math.max(progressEase, 0.28);
-        shownProgress = clampRange(shownProgress + progressDiff * progressEase, 0, 1);
-      }
+      shownProgress = LxMineLyrics.progressStep(shownProgress, targetProgress,
+        mesh.userData.nativeKaraokeProgress, lyricMotion.progressEase, mesh.userData.age);
       data.textMat.uniforms.uProgress.value = shownProgress;
       mesh.userData.shownLyricProgress = shownProgress;
     }
@@ -2413,7 +2426,7 @@ function updateStageLyrics3D(dt) {
         deltaTime: dt,
         previewMotionLock: previewMotionLock,
         motionBlend: previewMotionBlend,
-        ease: contextIntro < 0.98 ? 0.19 : 0.135
+        ease: LxMineLyrics.scrollEase(mesh.userData.age)
       });
       if (data.textMat && data.textMat.uniforms.uSolar) {
         var solarTarget = stageLyrics.highBloom * shelfDetailLyricDim;
@@ -2598,20 +2611,8 @@ function lyricKaraokeWordRanges(line) {
   var key = lyricKaraokeMetricsKey(line);
   if (line._karaokeMetricKey === key && Array.isArray(line._karaokeWordRanges)) return line._karaokeWordRanges;
   var ctx = lyricKaraokeMeasureContext();
-  var text = String(line.text || '');
-  var fontSize = 128;
-  var fullWidth = Math.max(1, lyricMeasureTextAtSize(ctx, text, fontSize, lyricFontWeightValue()));
-  var ranges = line.words.map(function (w) {
-    var c0 = Math.max(0, Math.min(text.length, Math.floor(Number(w.c0) || 0)));
-    var c1 = Math.max(c0, Math.min(text.length, Math.ceil(Number(w.c1) || c0)));
-    var p0 = lyricMeasureTextAtSize(ctx, text.slice(0, c0), fontSize, lyricFontWeightValue()) / fullWidth;
-    var p1 = lyricMeasureTextAtSize(ctx, text.slice(0, c1), fontSize, lyricFontWeightValue()) / fullWidth;
-    if (!isFinite(p0)) p0 = c0 / Math.max(1, line.charCount || text.length);
-    if (!isFinite(p1)) p1 = c1 / Math.max(1, line.charCount || text.length);
-    return {
-      p0: clampRange(p0, 0, 1),
-      p1: clampRange(Math.max(p1, p0), 0, 1)
-    };
+  var ranges = LxMineLyrics.wordRanges(line, function (text) {
+    return lyricMeasureTextAtSize(ctx, text, 128, lyricFontWeightValue());
   });
   line._karaokeMetricKey = key;
   line._karaokeWordRanges = ranges;
@@ -2621,32 +2622,7 @@ function lyricLineHasNativeKaraoke(line) {
   return !!(line && Array.isArray(line.words) && line.words.length && Number(line.charCount) > 0);
 }
 function getLyricLineProgress(line, nextLine, now) {
-  if (!line) return 0;
-  if (lyricLineHasNativeKaraoke(line)) {
-    now = Math.max(0, Number(now) || 0);
-    var ranges = lyricKaraokeWordRanges(line);
-    var lastP = 0;
-    for (var i = 0; i < line.words.length; i++) {
-      var w = line.words[i];
-      var ws = w.t;
-      var we = w.t + Math.max(0.08, w.d || 0.24);
-      if (now < ws) return lastP;
-      var local = now >= we ? 1 : (now - ws) / Math.max(0.08, we - ws);
-      local = Math.max(0, Math.min(1, local));
-      var range = ranges && ranges[i] || null;
-      var p0 = range ? range.p0 : ((w.c0 || 0) / line.charCount);
-      var p1 = range ? range.p1 : ((w.c1 || 0) / line.charCount);
-      var p = p0 + (p1 - p0) * local;
-      lastP = Math.max(lastP, p);
-      if (now < we) return lastP;
-    }
-    return 1;
-  }
-  now += 0.020;
-  var nextT = nextLine && nextLine.t > line.t ? nextLine.t : Math.min((audio && audio.duration) || now + 4, line.t + (line.duration || 4.8));
-  var span = Math.max(0.75, nextT - line.t);
-  var prog = Math.max(0, Math.min(1, (now - line.t) / span));
-  return prog * prog * (3 - 2 * prog);
+  return LxMineLyrics.lineProgress(line, nextLine, now, audio && audio.duration, lyricKaraokeWordRanges(line));
 }
 
 function lyricLineDisplayTextAt(index) {
@@ -2824,6 +2800,13 @@ function lyricMeshTrackWindow(index, mode, options) {
   var hasTranslations = translationMode !== 'off';
   var total = last + 1;
   var lightweightTrack = !!options.lightweightTrack;
+  if (window.__LXMINE_NATIVE_STAGE && mode === 'cinema') {
+    var nativePageSize = Math.min(total, lineCount + 8);
+    var nativePageStep = 4;
+    var nativeStart = Math.floor((idx - Math.floor(nativePageSize / 2)) / nativePageStep) * nativePageStep;
+    nativeStart = Math.max(0, Math.min(last - nativePageSize + 1, nativeStart));
+    return { start: nativeStart, end: nativeStart + nativePageSize - 1, lightweight: lightweightTrack };
+  }
   if (lightweightTrack) {
     var denseMultiLine = mode !== 'single' || translationMode === 'multi' || translationMode === 'dual';
     var lightFullTrackLimit = hasTranslations ? (denseMultiLine ? 6 : 10) : (denseMultiLine ? 10 : 14);
@@ -2994,7 +2977,8 @@ function buildStageLyricDisplayPayload(index, options) {
     trackEntries: track.entries,
     trackStart: track.start,
     trackEnd: track.end,
-    trackLightweight: !!track.lightweight
+    trackLightweight: !!track.lightweight,
+    trackTextOnly: !!(window.__LXMINE_NATIVE_STAGE && options.lightweightTrack)
   };
 }
 function buildStageLyricPlaybackPayload(index) {
@@ -3015,22 +2999,7 @@ function buildStageLyricPlaybackPayload(index) {
 }
 
 function findStageLyricIndexAtTime(t) {
-  if (!lyricsLines || !lyricsLines.length) return -1;
-  var target = (Number(t) || 0) + 0.05;
-  var lo = 0;
-  var hi = lyricsLines.length - 1;
-  var ans = -1;
-  while (lo <= hi) {
-    var mid = (lo + hi) >> 1;
-    var lineTime = Number(lyricsLines[mid] && lyricsLines[mid].t) || 0;
-    if (lineTime <= target) {
-      ans = mid;
-      lo = mid + 1;
-    } else {
-      hi = mid - 1;
-    }
-  }
-  return ans;
+  return window.LxMineLyrics.indexAt(lyricsLines || [], (Number(t) || 0) * 1000, 't', 1000);
 }
 
 function retireCurrentStageLyricForIdle() {
@@ -3090,25 +3059,29 @@ function tickLyricsParticles() {
   }
   var previewingSeek = stageLyricProgressPreviewActive();
   var holdLyricsOnPause = !fx || fx.lyricPauseHold !== false;
-  var pausedWithTrack = !!(holdLyricsOnPause && audio && audio.src && audio.paused && !audio.ended && lyricsLines && lyricsLines.length);
+  var nativeTrack = typeof window.lxmineNativeTime === 'function';
+  var pausedWithTrack = !!(holdLyricsOnPause && !isAnalysisPlaybackActive() && lyricsLines && lyricsLines.length &&
+    (nativeTrack || (audio && audio.src && !audio.ended)));
   if (!audio || !lyricsLines.length || (audio && audio.ended)) {
-    retireCurrentStageLyricForIdle();
-    return;
-  }
-  if (!playing && !previewingSeek) {
-    if (pausedWithTrack) {
-      if (stageLyrics.current && stageLyrics.current.userData) {
-        stageLyrics.current.userData.state = 'in';
-        stageLyrics.current.userData.age = Math.max(Number(stageLyrics.current.userData.age) || 0, 0.18);
-      }
-      return;
-    }
     retireCurrentStageLyricForIdle();
     return;
   }
   var t = stageLyricPlaybackSeconds();
   var lyricT = typeof getAdjustedLyricPlaybackTime === 'function' ? getAdjustedLyricPlaybackTime(t) : t;
   var newIdx = findStageLyricIndexAtTime(lyricT);
+  if (!playing && !previewingSeek) {
+    if (pausedWithTrack && stageLyrics.current && stageLyrics.currentIdx === newIdx) {
+      if (stageLyrics.current.userData) {
+        stageLyrics.current.userData.state = 'in';
+        stageLyrics.current.userData.age = Math.max(Number(stageLyrics.current.userData.age) || 0, 0.18);
+      }
+      return;
+    }
+    if (!pausedWithTrack) {
+      retireCurrentStageLyricForIdle();
+      return;
+    }
+  }
   if (newIdx < 0) {
     var introText = currentLyricFallbackText();
     if (!introText) {

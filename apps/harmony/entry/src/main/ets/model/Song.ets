@@ -12,6 +12,8 @@ export interface Song {
   durationMs: number;
   qualitys: string[];
   coverUrl: string;
+  strMediaMid?: string;
+  songId?: string;
 }
 
 export interface KuwoSearchResult {

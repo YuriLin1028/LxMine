@@ -1,6 +1,7 @@
+import { musicButtonPress } from './MaterialControls';
 import { GripSide } from '../services/GripService';
 import { Song } from '../model/Song';
-import { MaterialIcon, MaterialSurface, musicMaterial, musicSurfaceMaterial } from './MaterialControls';
+import { MaterialIcon, MaterialSurface, musicMaterial, musicSurfaceMaterial, MATERIAL_PRESS_SCALE } from './MaterialControls';
 import { curves, uiMaterial } from '@kit.ArkUI';
 import { TEXT, MUTED, ACCENT, formatTime } from './Theme';
 
@@ -85,12 +86,12 @@ struct DockPlayback {
         MaterialIcon({ icon: $r('app.media.ic_download'), label: '下载歌曲', diameter: 30, grouped: true, disabled: !this.model.song, action: () => this.model.onDownload() })
         MaterialIcon({ icon: $r('app.media.ic_queue'), label: '播放队列', diameter: 30, grouped: true, action: () => this.model.onQueue() })
       } else {
-        Button({ type: ButtonType.Circle }) { SymbolGlyph($r('sys.symbol.ellipsis_circle')).fontSize(20).fontColor([TEXT]) }
+        Button({ type: ButtonType.Circle }) { SymbolGlyph($r('sys.symbol.ellipsis_circle')).fontSize(20).fontColor([TEXT]) }.attributeModifier(musicButtonPress)
           .width(28).height(34).padding(0).backgroundColor(Color.Transparent).stateEffect(false).buttonStyle(ButtonStyleMode.TEXTUAL)
           .systemMaterial(uiMaterial.Material.empty).accessibilityText('更多播放操作').bindMenu(this.options()).id('dock-more')
       }
     }.width(this.model.playbackWidth()).height(this.model.playbackHeight()).padding({ left: 6, right: 6 }).borderRadius(28).backgroundColor(Color.Transparent).systemMaterial(musicSurfaceMaterial()).clip(false).id('dock-playback')
-      .scale({ x: this.pressed ? 0.99 : 1, y: this.pressed ? 0.99 : 1 })
+      .scale({ x: this.pressed ? MATERIAL_PRESS_SCALE : 1, y: this.pressed ? MATERIAL_PRESS_SCALE : 1 })
       .animation({ curve: curves.springMotion(0.36, 0.9) })
       .onTouch((event: TouchEvent) => {
         if (event.type === TouchType.Down) this.pressed = true;
@@ -119,7 +120,7 @@ struct DockNavigation {
           Text(label).fontSize(8).fontColor(this.model.tab === tab ? ACCENT : MUTED)
         }
       }
-    }.width(this.model.collapsed() ? 56 : 40).height(this.model.collapsed() ? 56 : 46).padding(0).borderRadius(this.model.collapsed() ? 28 : 14).stateEffect(false).backgroundColor(Color.Transparent).buttonStyle(ButtonStyleMode.TEXTUAL)
+    }.attributeModifier(musicButtonPress).width(this.model.collapsed() ? 56 : 40).height(this.model.collapsed() ? 56 : 46).padding(0).borderRadius(this.model.collapsed() ? 28 : 14).stateEffect(false).backgroundColor(Color.Transparent).buttonStyle(ButtonStyleMode.TEXTUAL)
       .systemMaterial(uiMaterial.Material.empty).id('dock-nav-' + tab).accessibilityText(index === 0 && this.model.collapsed() ? '展开导航' : label)
       .position({ x: this.model.collapsed() ? 0 : this.model.width() * ((index + 0.5) / 3) - 20, y: this.model.collapsed() ? 0 : 7 })
       .scale({ x: index > 0 && this.model.collapsed() ? 0 : 1, y: index > 0 && this.model.collapsed() ? 0 : 1 })
@@ -149,7 +150,7 @@ struct DockNavigation {
       const index = Math.max(0, Math.min(2, Math.floor(x / (this.model.width() / 3))));
       if (tabs[index] !== this.model.tab) this.model.onTab(tabs[index]);
     }).width(this.model.collapsed() ? 56 : this.model.width()).height(56).clip(false).borderRadius(28).backgroundColor(Color.Transparent).systemMaterial(musicSurfaceMaterial())
-      .scale({ x: this.navPressed ? 0.99 : 1, y: this.navPressed ? 0.99 : 1 })
+      .scale({ x: this.navPressed ? MATERIAL_PRESS_SCALE : 1, y: this.navPressed ? MATERIAL_PRESS_SCALE : 1 })
       .animation({ curve: curves.springMotion(0.36, 0.9) })
       .position({ x: 16 + this.model.navigationX(), y: 16 }).animation({ curve: curves.springMotion(0.44, 0.83) })
     }.width('100%').height(96).clip(false).hitTestBehavior(HitTestMode.Transparent)

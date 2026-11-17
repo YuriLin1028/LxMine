@@ -6,7 +6,7 @@
   'use strict';
   const NS = 'http://www.w3.org/2000/svg';
   const states = new Map(), cache = new Map();
-  let serial = 0, resizeFrame = 0, motionFrame = 0, lastTime = 0, pointer = null;
+  let serial = 0, resizeFrame = 0, motionFrame = 0, lastTime = 0, pointer = null, cacheTrimTask = 0;
   const reduced = matchMedia('(prefers-reduced-motion: reduce)');
   // CSS-pixel units, fitted jointly to the grid and text references. The native
   // normal-field measurements are retained in qa/material/artifacts/inferred-*.
@@ -18,25 +18,50 @@
     parent.append(n); return n;
   };
   const clamp = (v, a, b) => Math.max(a, Math.min(b, v));
+  const neutralMap = 'data:image/svg+xml,' + encodeURIComponent('<svg xmlns="http://www.w3.org/2000/svg" width="1" height="1"><path fill="#808080" d="M0 0h1v1H0z"/></svg>');
   function materialProfile(kind) {
     const {menu,sheet,popup,...base}=optical;
-    return Object.assign(base, kind === 'popup'?popup:kind === 'menu' ? menu : kind === 'sheet' ? sheet : {});
+    const profile = Object.assign(base, kind === 'popup'?popup:kind === 'menu' ? menu : kind === 'sheet' ? sheet : {});
+    if (document.body?.classList?.contains?.('light-theme')) profile.color = [228,232,237];
+    return profile;
+  }
+  function trimUnusedFilters() {
+    cacheTrimTask = 0;
+    if (cache.size <= 72) return;
+    const used = new Set([...states.values()].map(state => state.key));
+    for (const [key, entry] of cache) {
+      if (used.has(key)) continue;
+      entry.filter.remove();
+      entry.urls.forEach(url => URL.revokeObjectURL(url));
+      cache.delete(key);
+      if (cache.size > 72) scheduleCacheTrim();
+      return;
+    }
+  }
+  function scheduleCacheTrim() {
+    if (cacheTrimTask) return;
+    cacheTrimTask = typeof requestIdleCallback === 'function'
+      ? requestIdleCallback(trimUnusedFilters, { timeout: 1000 }) : setTimeout(trimUnusedFilters, 32);
   }
   function lens(width, height, radii, kind) {
     const profile=materialProfile(kind);
     // Quantization keeps a resizing window from retaining hundreds of GPU filters.
     const w = Math.max(2, Math.round(width / 2) * 2), h = Math.max(2, Math.round(height / 2) * 2);
     const corners = radii.map(r => Math.round(Math.min(r, w / 2, h / 2)));
-    const key = [w, h, ...corners, kind, JSON.stringify(profile)].join(':');
+    const { color, alpha, ...vectorProfile } = profile;
+    const key = [w, h, ...corners, kind, JSON.stringify(kind === 'popup' ? profile : vectorProfile)].join(':');
     if (cache.has(key)) return cache.get(key);
     const resolution = Math.min(profile.mapDensity || 1, 2048 / Math.max(w, h));
     const canvas = document.createElement('canvas');
     canvas.width = Math.max(2, Math.round(w * resolution));
     canvas.height = Math.max(2, Math.round(h * resolution));
-    const ctx = canvas.getContext('2d'), pixels = ctx.createImageData(canvas.width, canvas.height);
+    // These canvases only encode CPU-generated normal fields. Keep them in CPU
+    // memory so toBlob does not synchronously read each field back from the GPU
+    // while the window is resizing and its backdrop filters are being rebuilt.
+    const ctx = canvas.getContext('2d', { willReadFrequently: true }), pixels = ctx.createImageData(canvas.width, canvas.height);
     const environmentCanvas = document.createElement('canvas');
     environmentCanvas.width=canvas.width;environmentCanvas.height=canvas.height;
-    const environmentContext=environmentCanvas.getContext('2d'),environmentPixels=environmentContext.createImageData(canvas.width,canvas.height);
+    const environmentContext=environmentCanvas.getContext('2d', { willReadFrequently: true }),environmentPixels=environmentContext.createImageData(canvas.width,canvas.height);
     const displacementScale=Math.min(profile.amplitudeCap,h*profile.amplitude),environmentScale=64;
     // Deep inside the shape all encoded channels already round to their neutral
     // bytes. Bound each contribution below 1/8 of a byte; skipping its math is
@@ -88,12 +113,12 @@
     environmentContext.putImageData(environmentPixels,0,0);
     const id = 'lm-lens-' + (++serial);
     const filter = svg('filter', { id, x: '0%', y: '0%', width: '100%', height: '100%', 'color-interpolation-filters': 'sRGB' }, defs);
-    svg('feImage', { href: canvas.toDataURL(), x: 0, y: 0, width: w, height: h, preserveAspectRatio: 'none', result: 'lens' }, filter);
+    const lensImage = svg('feImage', { href: neutralMap, x: 0, y: 0, width: w, height: h, preserveAspectRatio: 'none', result: 'lens' }, filter);
     // A small vector-field blur removes 8-bit contour steps without blurring
     // the source image. The rim mask still samples the unsmoothed lens B channel.
     const neutral = svg('feComponentTransfer', { in: 'lens', result: 'vectors' }, filter);
     for (const channel of ['R', 'G']) svg('feFunc' + channel, { type: 'linear', slope: 1, intercept: -1 / 510 }, neutral);
-    svg('feImage',{href:environmentCanvas.toDataURL(),x:0,y:0,width:w,height:h,preserveAspectRatio:'none',result:'environmentLens'},filter);
+    const environmentImage = svg('feImage',{href:neutralMap,x:0,y:0,width:w,height:h,preserveAspectRatio:'none',result:'environmentLens'},filter);
     const environmentNeutral=svg('feComponentTransfer',{in:'environmentLens',result:'environmentVectors'},filter);
     for(const channel of ['R','G'])svg('feFunc'+channel,{type:'linear',slope:1,intercept:-1/510},environmentNeutral);
     svg('feGaussianBlur', { in: 'SourceGraphic', stdDeviation: profile.sigma, result: 'diffuse' }, filter);
@@ -127,13 +152,18 @@
       svg('feComposite',{in:'popupTint',in2:'popupTintMask',operator:'in',result:'popupInnerTint'},filter);
       svg('feComposite',{in:'popupInnerTint',in2:'saturated',operator:'over'},filter);
     }
-    const entry = { id, filter, key };
+    const entry = { id, filter, key, urls: [] };
     cache.set(key, entry);
+    // PNG encoding runs off the UI thread. Publish the two matching fields together.
+    Promise.all([canvas, environmentCanvas].map(surface => new Promise(resolve => surface.toBlob(resolve))))
+      .then(blobs => {
+        if (!filter.isConnected || blobs.some(blob => !blob)) return;
+        entry.urls = blobs.map(blob => URL.createObjectURL(blob));
+        lensImage.setAttribute('href', entry.urls[0]);
+        environmentImage.setAttribute('href', entry.urls[1]);
+      });
     // Filters currently in use must survive cache pressure.
-    if (cache.size > 96) for (const [k, e] of cache) {
-      if (k !== key && ![...states.values()].some(s => s.key === k)) { e.filter.remove(); cache.delete(k); }
-      if (cache.size <= 72) break;
-    }
+    if (cache.size > 96) scheduleCacheTrim();
     return entry;
   }
   function measure(host) {
@@ -155,13 +185,13 @@
     const {w,h,inset,radii,kind,borderRadius,panel}=measured;
     const profile=materialProfile(kind);
     const entry = lens(w, h, radii, kind);
-    const signature=entry.id+'|'+inset+'|'+borderRadius;
+    const tint=`rgba(${(profile.color || [10,12,14]).join(',')},${profile.alpha})`;
+    const signature=entry.id+'|'+inset+'|'+borderRadius+'|'+tint;
     if(state.appliedSignature===signature)return;
     state.appliedSignature=signature;
     state.key = entry.key;
     state.surface.style.inset=inset;
     state.surface.style.setProperty('--lens-filter', `url(#${entry.id})`);
-    const tint=`rgba(${(profile.color || [10,12,14]).join(',')},${profile.alpha})`;
     state.surface.style.backgroundColor = tint;
     if (kind !== 'control') host.style.backgroundColor = kind==='popup'?'transparent':tint;
     if (panel) host.style.setProperty('--lens-filter', `url(#${entry.id})`);
@@ -212,11 +242,51 @@
       for (const [el] of states) if (!el.isConnected) { sizes.unobserve(el); states.delete(el); }
     }).observe(document.body, { childList: true, subtree: true });
   }
+  function prepareContentMotion(host, state) {
+    if (host.id !== 'dock' && host.id !== 'nav') {
+      if (!state.hostMotion) state.hostMotion = { translate: host.style.translate, scale: host.style.scale };
+      return;
+    }
+    state.content = [...host.children].filter(child => !child.classList.contains('glass-surface'));
+    for (const child of state.content) {
+      // The optical skin and every content group share the dock's centre.
+      // Individual transforms preserve existing navigation/swap animations.
+      child.style.setProperty('--material-origin-x', (host.clientWidth / 2 - child.offsetLeft) + 'px');
+      child.style.setProperty('--material-origin-y', (host.clientHeight / 2 - child.offsetTop) + 'px');
+    }
+  }
+  function syncContentMotion(host, state) {
+    const resting = state.x === 0 && state.y === 0 && state.sx === 1 && state.sy === 1;
+    if (state.hostMotion) {
+      if (resting) {
+        host.style.translate = state.hostMotion.translate;
+        host.style.scale = state.hostMotion.scale;
+        state.hostMotion = null;
+      } else {
+        host.style.translate = `${state.x}px ${state.y}px`;
+        host.style.scale = `${state.sx} ${state.sy}`;
+      }
+      return;
+    }
+    if (!state.content) return;
+    if (resting) {
+      host.style.removeProperty('--material-content-scale');
+      host.style.removeProperty('--material-content-translate');
+      for (const child of state.content) {
+        child.style.removeProperty('--material-origin-x');
+        child.style.removeProperty('--material-origin-y');
+      }
+      state.content = null;
+    } else {
+      host.style.setProperty('--material-content-scale', `${state.sx} ${state.sy}`);
+      host.style.setProperty('--material-content-translate', `${state.x}px ${state.y}px`);
+    }
+  }
   function animate(t) {
     motionFrame = 0;
     const dt = Math.min(.032, Math.max(.001, (t - (lastTime || t - 16)) / 1000)); lastTime = t;
     let moving = false;
-    for (const s of states.values()) {
+    for (const [host, s] of states) {
       const keys = ['x', 'y', 'sx', 'sy'], velocities = ['vx', 'vy', 'vsx', 'vsy'];
       keys.forEach((key, i) => {
         const vk = velocities[i], delta = s.target[i] - s[key];
@@ -225,14 +295,20 @@
         if (Math.abs(delta) < .00015 && Math.abs(s[vk]) < .001) { s[key] = s.target[i]; s[vk] = 0; }
         else moving = true;
       });
-      // Only the optical skin moves. Hit testing and readable content stay put.
-      s.surface.style.transform = `translate(${s.x}px,${s.y}px) scale(${s.sx},${s.sy})`;
+      s.surface.style.transform = s.hostMotion ? '' : `translate(${s.x}px,${s.y}px) scale(${s.sx},${s.sy})`;
+      syncContentMotion(host, s);
     }
     if (moving) motionFrame = requestAnimationFrame(animate); else lastTime = 0;
   }
   function target(state, values) {
     state.target = values;
-    if (reduced.matches) { state.surface.style.transform = ''; return; }
+    if (reduced.matches) {
+      state.surface.style.transform = '';
+      state.x = state.y = state.vx = state.vy = state.vsx = state.vsy = 0;
+      state.sx = state.sy = 1;
+      syncContentMotion(state.surface.parentElement, state);
+      return;
+    }
     if (!motionFrame) motionFrame = requestAnimationFrame(animate);
   }
   function light(host, event) {
@@ -246,18 +322,12 @@
     host.style.removeProperty('--my');
   }
   function release(event) {
-    // A synthetic blur or a pointer capture change can leave a stale pressed
-    // class even when the original pointer id never reaches us. Always clear
-    // the visual state; only the active pointer owns the spring target.
+    // Secondary fingers must not abandon the active pointer's spring target.
     if (!pointer) {
       document.querySelectorAll('.material-dragging,.light-active').forEach(el => el.classList.remove('material-dragging','light-active'));
       return;
     }
-    if (event?.pointerId != null && event.pointerId !== pointer.id) {
-      document.querySelectorAll('.material-dragging,.light-active').forEach(el => el.classList.remove('material-dragging','light-active'));
-      pointer = null;
-      return;
-    }
+    if (event?.pointerId != null && pointer.id != null && event.pointerId !== pointer.id) return;
     const { host, state } = pointer;
     host.classList.remove('light-active', 'material-dragging');
     target(state, [0, 0, 1, 1]); pointer = null;
@@ -265,13 +335,14 @@
   function bindInteractions() {
     document.addEventListener('pointerdown', event => {
       if (event.button !== 0 || event.isPrimary === false || event.target.closest('input,textarea,select,[contenteditable=true]')) return;
-      const host = event.target.closest('.glass');
-      if (!host || !states.has(host)) return;
+      const host = event.target.closest('#dock,#nav') || event.target.closest('.glass');
+      if (!host || host.matches('.modal,.popover,:disabled,[aria-disabled="true"]') || !states.has(host)) return;
       release();
       const state = states.get(host);
+      prepareContentMotion(host, state);
       pointer = { id: event.pointerId, host, state, x: event.clientX, y: event.clientY };
       light(host, event); host.classList.add('light-active', 'material-dragging');
-      target(state, [0, 0, .997, .967]);
+      target(state, [0, 0, 1.03, 1.03]);
       // Deliberately don't capture: navigation scrub and range sliders retain
       // native pointer targets/click behaviour. Window-level release cleans up.
     }, { passive: true });
@@ -281,10 +352,23 @@
       if (!pointer || pointer.id !== event.pointerId) return;
       light(pointer.host, event);
       const dx = clamp(event.clientX - pointer.x, -100, 100), dy = clamp(event.clientY - pointer.y, -70, 70);
-      target(pointer.state, [dx * .025, dy * .025, .997 + Math.abs(dx) * .00003, .967 + Math.abs(dy) * .00012]);
+      target(pointer.state, [dx * .025, dy * .025, 1.03 + Math.abs(dx) * .00003, 1.03 + Math.abs(dy) * .00003]);
     }, { passive: true });
     window.addEventListener('pointerup', release, { passive: true });
     window.addEventListener('pointercancel', release, { passive: true });
+    document.addEventListener('keydown', event => {
+      if (event.repeat || (event.key !== ' ' && event.key !== 'Enter')) return;
+      if (event.target.closest?.('input,textarea,select,[contenteditable=true]')) return;
+      const host = event.target.closest?.('#dock,#nav') || event.target.closest?.('.glass');
+      if (!host || host.matches('.modal,.popover,:disabled,[aria-disabled="true"]') || !states.has(host)) return;
+      release();
+      const state = states.get(host), rect = host.getBoundingClientRect();
+      prepareContentMotion(host, state);
+      pointer = { id: null, host, state, x: rect.x + rect.width / 2, y: rect.y + rect.height / 2 };
+      light(host, { clientX: pointer.x, clientY: pointer.y }); host.classList.add('light-active', 'material-dragging');
+      target(state, [0, 0, 1.03, 1.03]);
+    });
+    document.addEventListener('keyup', event => { if (pointer?.id === null && (event.key === ' ' || event.key === 'Enter')) release(); });
     window.addEventListener('blur', () => release());
     document.addEventListener('visibilitychange', () => { if (document.hidden) release(); });
     document.addEventListener('pointerout', event => {
@@ -298,7 +382,9 @@
       document.querySelectorAll('.glass.light').forEach(resetLight);
     }, { passive: true });
   }
-  window.LxGlass = { install, bindInteractions, prepare(host) {
+  window.LxGlass = { install, bindInteractions, release: () => release(), refresh() {
+    for (const host of states.keys()) queue(host);
+  }, prepare(host) {
     decorate(host);const state=states.get(host);if(state)refresh(host,state);
   } };
   // Only the isolated calibration page enables parameter sweeps. Normal app

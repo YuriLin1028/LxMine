@@ -8,12 +8,13 @@ export interface LxHash { hash: string; }
 export interface LxSongInfo {
   source: string; songmid: string; name: string; singer: string; albumName: string;
   albumId: string; interval: number; type: string; hash?: string; _types?: Record<string, LxHash>;
+  strMediaMid?: string; songId?: string;
 }
 interface HttpPayload { url: string; method?: string; headers?: Record<string, string>; body?: string; form?: Record<string, string>; timeout?: number; }
 interface InitSource { actions?: string[]; qualitys?: string[]; }
 interface LxInitPayload { sources?: Record<string, InitSource>; }
-interface BridgeResult { ok: boolean; error?: string; data?: Object | string; }
-interface Pending { resolve: (json: string) => void; reject: (error: Error) => void; timer: number; }
+interface BridgeResult { ok: boolean; progress?: boolean; error?: string; data?: Object | string; }
+interface Pending { resolve: (json: string) => void; reject: (error: Error) => void; timer: number; timeoutMs?: number; }
 interface RequestInfo { musicInfo: LxSongInfo; type: string; }
 interface RequestPayload { source: string; action: string; info: RequestInfo; }
 interface NativeResponse { statusCode: number; headers: Object; body: Object | string; }
@@ -28,6 +29,7 @@ export class LxHost {
   private declarations: Record<string, InitSource> = {};
   attach(controller: webview.WebviewController): void { this.controller = controller; }
   supports(source: string, action: string): boolean { return this.declarations[source]?.actions?.includes(action) ?? false; }
+  supportedSources(action: string): string[] { return Object.keys(this.declarations).filter((source: string) => this.supports(source, action)); }
   quality(source: string, preferred: string): string {
     const options = this.declarations[source]?.qualitys ?? [];
     return options.includes(preferred) ? preferred : (options[0] ?? '128k');
@@ -47,13 +49,25 @@ export class LxHost {
   onResult(id: string, json: string): void {
     const task = this.pending.get(id);
     if (!task) return;
-    this.pending.delete(id);
-    clearTimeout(task.timer);
     try {
       const result = JSON.parse(json) as BridgeResult;
+      if (result.progress && task.timeoutMs) {
+        clearTimeout(task.timer);
+        task.timer = setTimeout(() => {
+          this.pending.delete(id);
+          task.reject(new Error('请求超时，请稍后重试'));
+        }, task.timeoutMs);
+        return;
+      }
+      this.pending.delete(id);
+      clearTimeout(task.timer);
       if (!result.ok) throw new Error(result.error ?? '音源请求失败');
       task.resolve(typeof result.data === 'string' ? result.data : JSON.stringify(result.data));
-    } catch (error) { task.reject(error as Error); }
+    } catch (error) {
+      this.pending.delete(id);
+      clearTimeout(task.timer);
+      task.reject(error as Error);
+    }
   }
   /** 一个请求一个 HttpRequest 实例，避免 URL 与歌词并发时互相取消。 */
   httpRequest(id: string, json: string): void {
@@ -98,16 +112,16 @@ export class LxHost {
     const id = String(++this.seq);
     return new Promise<string>((resolve, reject) => {
       const timer = setTimeout(() => { this.pending.delete(id); reject(new Error('请求超时，请稍后重试')); }, timeoutMs);
-      this.pending.set(id, { resolve, reject, timer });
+      this.pending.set(id, { resolve, reject, timer, timeoutMs });
       this.controller!.runJavaScript(expression.replace('__REQUEST_ID__', JSON.stringify(id))).catch((error: BusinessError) => {
         clearTimeout(timer); this.pending.delete(id); reject(new Error(error.message));
       });
     });
   }
-  request(action: string, info: LxSongInfo): Promise<string> {
+  request(action: string, info: LxSongInfo, timeoutMs: number = 20000): Promise<string> {
     if (!this.supports(info.source, action)) return Promise.reject(new Error(`当前音源不支持 ${info.source} 的 ${action}，请切换音源`));
     const payload: RequestPayload = { source: info.source, action, info: { musicInfo: info, type: info.type } };
-    return this.bridge(`window.__lxRequest(__REQUEST_ID__,${JSON.stringify(JSON.stringify(payload))})`);
+    return this.bridge(`window.__lxRequest(__REQUEST_ID__,${JSON.stringify(JSON.stringify(payload))})`, timeoutMs);
   }
   requestMusicUrl(info: LxSongInfo): Promise<string> { return this.request('musicUrl', info); }
   async requestLyricBundle(info: LxSongInfo): Promise<LyricResult> {

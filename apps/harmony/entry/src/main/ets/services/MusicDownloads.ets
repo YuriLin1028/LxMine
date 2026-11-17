@@ -7,6 +7,7 @@ import { songKey } from './MusicLibrary';
 
 export interface MusicDownload {
   id: string; song: Song; quality: string; state: string; received: number; total: number; path: string; error: string;
+  exportUri?: string; exported?: boolean; exportError?: string;
 }
 export class MusicDownloads {
   private context: common.UIAbilityContext | null = null;
@@ -14,6 +15,7 @@ export class MusicDownloads {
   private tasks: Map<string, request.DownloadTask> = new Map();
   private streams: Map<string, http.HttpRequest> = new Map();
   private streamEnds: Map<string, (error?: Error) => void> = new Map();
+  private exporting: Set<string> = new Set();
   onChange: (items: MusicDownload[]) => void = () => {};
   onError: (message: string) => void = () => {};
   initialize(context: common.UIAbilityContext): void {
@@ -42,20 +44,25 @@ export class MusicDownloads {
     if (!item || !this.context || !item.path.startsWith(`${this.context.filesDir}/Downloads/`)) return '';
     return fileIo.accessSync(item.path) ? item.path : '';
   }
-  async start(song: Song, quality: string, url: string): Promise<void> {
+  async start(song: Song, quality: string, url: string, exportUri: string = ''): Promise<void> {
     if (!this.context || !/^https?:\/\//i.test(url)) throw new Error('无法开始下载');
     if (this.items.some((item: MusicDownload) => songKey(item.song) === songKey(song) && item.state === 'downloading')) throw new Error('这首歌曲正在下载');
     const id = `${Date.now()}-${Math.random().toString(36).slice(2)}`;
     const extension = quality.includes('flac') ? 'flac' : 'mp3';
     const temp = `${this.context.cacheDir}/lxmine-download-${id}.part`;
     const item: MusicDownload = { id, song, quality, state: 'downloading', received: 0, total: 0,
-      path: `${this.context.filesDir}/Downloads/${id}.${extension}`, error: '' };
+      path: `${this.context.filesDir}/Downloads/${id}.${extension}`, error: '', exportUri, exported: false };
     this.items.unshift(item); this.publish(true);
     try {
       const task = await request.downloadFile(this.context, { url, filePath: temp, title: song.name, description: song.singer, enableMetered: true, background: true });
       if (item.state === 'cancelled') { await task.remove(); return; }
       this.tasks.set(id, task);
-      task.on('progress', (received: number, total: number) => { if (item.state !== 'downloading') return; item.received = received; item.total = total; this.publish(); });
+      let lastProgress = 0;
+      task.on('progress', (received: number, total: number) => {
+        if (item.state !== 'downloading') return;
+        item.received = received; item.total = total;
+        if (Date.now() - lastProgress >= 250) { lastProgress = Date.now(); this.publish(); }
+      });
       task.on('complete', () => {
         if (item.state !== 'downloading') { this.cleanTemp(temp); return; }
         try {
@@ -69,6 +76,7 @@ export class MusicDownloads {
           fileIo.renameSync(temp, item.path); item.received = size; item.total = size; item.state = 'complete';
         } catch (error) { item.state = 'failed'; item.error = (error as Error).message; this.cleanTemp(temp); }
         this.tasks.delete(id); this.publish(true);
+        if (item.state === 'complete' && item.exportUri) this.exportFile(item.id, item.exportUri).catch((error: Error) => this.onError(error.message));
       });
       task.on('fail', (code: number) => {
         if (item.state !== 'downloading') return;
@@ -124,6 +132,28 @@ export class MusicDownloads {
     const prefix = Array.from(new Uint8Array(bytes)).map((byte: number) => String.fromCharCode(byte)).join('').trim().toLowerCase();
     if (prefix.startsWith('<!doctype') || prefix.startsWith('<html') || prefix.startsWith('{') || prefix.startsWith('[')) throw new Error('音源返回了错误页面');
     fileIo.renameSync(temp, item.path); item.total = item.received; item.state = 'complete'; this.publish(true);
+    if (item.exportUri) await this.exportFile(item.id, item.exportUri);
+  }
+  async exportFile(id: string, uri: string): Promise<void> {
+    const item = this.items.find((entry: MusicDownload) => entry.id === id && entry.state === 'complete');
+    if (!item || this.exporting.has(id)) return;
+    this.exporting.add(id);
+    let source: fileIo.File | null = null;
+    let destination: fileIo.File | null = null;
+    try {
+      source = await fileIo.open(item.path, fileIo.OpenMode.READ_ONLY);
+      destination = await fileIo.open(uri, fileIo.OpenMode.WRITE_ONLY | fileIo.OpenMode.TRUNC);
+      await fileIo.copyFile(source.fd, destination.fd);
+      await fileIo.fsync(destination.fd);
+      item.exportUri = uri; item.exported = true; item.exportError = '';
+    } catch (error) {
+      item.exportError = `保存到系统失败：${(error as Error).message}`;
+      throw new Error(item.exportError);
+    } finally {
+      if (source) fileIo.closeSync(source.fd);
+      if (destination) fileIo.closeSync(destination.fd);
+      this.exporting.delete(id); this.publish(true);
+    }
   }
   private cleanTemp(path: string): void { try { if (fileIo.accessSync(path)) fileIo.unlinkSync(path); } catch (_) {} }
   async cancel(id: string): Promise<void> {

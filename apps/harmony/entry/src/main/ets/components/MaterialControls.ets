@@ -1,5 +1,6 @@
-import { uiMaterial, curves } from '@kit.ArkUI';
+import { uiMaterial, curves, SymbolGlyphModifier } from '@kit.ArkUI';
 import { musicSymbol } from './MusicSymbols';
+import { TEXT, ACCENT } from './Theme';
 
 // ImmersiveMaterial 的普通控件必须位于 Navigation 标题区；这个容器同时用于浮动播控。
 // 不叠加自制背景、边框或 BlurStyle，让系统负责折射、触摸光效和降级。
@@ -10,13 +11,62 @@ const MATERIAL: uiMaterial.ImmersiveMaterial = new uiMaterial.ImmersiveMaterial(
 const SURFACE: uiMaterial.ImmersiveMaterial = new uiMaterial.ImmersiveMaterial({ style: uiMaterial.ImmersiveStyle.ULTRA_THIN,
   materialColor: Color.Transparent, interactive: true, applyShadow: false, lightEffect: { color: '#FFFFFF' } });
 const SHEET: uiMaterial.ImmersiveMaterial = new uiMaterial.ImmersiveMaterial({ style: uiMaterial.ImmersiveStyle.THICK,
-  materialColor: '#A01A1C1F', interactive: false, applyShadow: true });
+  materialColor: $r('app.color.sheet_surface'), interactive: false, applyShadow: true });
 const MENU: uiMaterial.ImmersiveMaterial = new uiMaterial.ImmersiveMaterial({ style: uiMaterial.ImmersiveStyle.THIN,
-  materialColor: '#D91A1C1F', interactive: false, applyShadow: true });
+  materialColor: $r('app.color.menu_surface'), interactive: false, applyShadow: true });
 export function musicMaterial(): uiMaterial.ImmersiveMaterial { return MATERIAL; }
 export function musicSurfaceMaterial(): uiMaterial.ImmersiveMaterial { return SURFACE; }
 export function musicSheetMaterial(): uiMaterial.ImmersiveMaterial { return SHEET; }
 export function musicMenuMaterial(): uiMaterial.ImmersiveMaterial { return MENU; }
+export const MATERIAL_PRESS_SCALE: number = 1.03;
+class MusicButtonPress implements AttributeModifier<ButtonAttribute> {
+  applyNormalAttribute(instance: ButtonAttribute): void {
+    instance.stateEffect(false).scale({ x: 1, y: 1 });
+  }
+  applyPressedAttribute(instance: ButtonAttribute): void {
+    instance.stateEffect(false).scale({ x: MATERIAL_PRESS_SCALE, y: MATERIAL_PRESS_SCALE });
+  }
+}
+export const musicButtonPress: AttributeModifier<ButtonAttribute> = new MusicButtonPress();
+@Component
+export struct MaterialSelect {
+  @Prop labels: string[] = [];
+  @Prop values: string[] = [];
+  @Prop value: string = '';
+  @Prop label: string = '';
+  @State private pressed: boolean = false;
+  onChange: (value: string) => void = () => {};
+  build() {
+    Select(this.labels.map((value: string): SelectOption => { return { value }; }))
+      .selected(Math.max(0, this.values.indexOf(this.value))).value(this.labels[Math.max(0, this.values.indexOf(this.value))])
+      .width(148).height(40).font({ size: 13 }).fontColor(TEXT)
+      .arrowModifier(new SymbolGlyphModifier().fontSize(0)).showDefaultSelectedIcon(false)
+      .backgroundColor(Color.Transparent).systemMaterial(musicMaterial()).accessibilityText(this.label)
+      .scale({ x: this.pressed ? MATERIAL_PRESS_SCALE : 1, y: this.pressed ? MATERIAL_PRESS_SCALE : 1 })
+      .onTouch((event: TouchEvent) => {
+        if (event.type !== TouchType.Down && event.type !== TouchType.Up && event.type !== TouchType.Cancel) return;
+        this.getUIContext().animateTo({ duration: 150, curve: Curve.EaseOut }, () => { this.pressed = event.type === TouchType.Down; });
+      })
+      .onSelect((index: number) => { this.pressed = false; this.onChange(this.values[index]); })
+  }
+}
+@Component
+export struct MaterialToggle {
+  @Prop value: boolean = false;
+  @Prop label: string = '';
+  @State private pressed: boolean = false;
+  onChange: (value: boolean) => void = () => {};
+  build() {
+    Toggle({ type: ToggleType.Switch, isOn: this.value })
+      .backgroundColor(Color.Transparent).systemMaterial(musicMaterial()).accessibilityText(this.label)
+      .scale({ x: this.pressed ? MATERIAL_PRESS_SCALE : 1, y: this.pressed ? MATERIAL_PRESS_SCALE : 1 })
+      .onTouch((event: TouchEvent) => {
+        if (event.type !== TouchType.Down && event.type !== TouchType.Up && event.type !== TouchType.Cancel) return;
+        this.getUIContext().animateTo({ duration: 150, curve: Curve.EaseOut }, () => { this.pressed = event.type === TouchType.Down; });
+      })
+      .onChange(this.onChange)
+  }
+}
 @Component
 export struct MaterialSurface {
   @Prop surfaceHeight: number = 72;
@@ -43,28 +93,30 @@ export struct MaterialIcon {
   @Prop tint: boolean = true;
   @State private pressed: boolean = false;
   action: () => void = () => {};
-  build() {
-    Button({ type: ButtonType.Circle }) {
+  @Builder private glyph() {
       if (this.raw) {
         // 二级页顶栏也用 38 球 + 20 图标；raw 与 MaterialBall 的 24×24 SVG 同源，避免描边粗细不一。
         if (this.tint) {
-          Image(this.icon).width(this.diameter > 56 ? 22 : 20).height(this.diameter > 56 ? 22 : 20).fillColor(this.selected ? '#F4D28A' : '#F4F4F4')
+          Image(this.icon).width(this.diameter > 56 ? 22 : 20).height(this.diameter > 56 ? 22 : 20).fillColor(this.selected ? ACCENT : TEXT)
         } else {
           Image(this.icon).width(this.diameter > 56 ? 22 : 20).height(this.diameter > 56 ? 22 : 20)
         }
       } else {
         SymbolGlyph(musicSymbol(this.icon)).fontSize(this.diameter > 56 ? 26 : this.diameter === 38 ? 20 : 21)
-          .fontColor([this.selected ? '#F4D28A' : '#F4F4F4'])
+          .fontColor([this.selected ? ACCENT : TEXT])
       }
-    }.width(this.diameter).height(this.diameter).padding(0).stateEffect(false).buttonStyle(this.grouped ? ButtonStyleMode.TEXTUAL : ButtonStyleMode.NORMAL)
-      .backgroundColor(Color.Transparent).fontColor('#F2F1F7').systemMaterial(this.grouped ? uiMaterial.Material.empty : musicMaterial()).accessibilityText(this.label).enabled(!this.disabled)
+  }
+  build() {
+    Button({ type: ButtonType.Circle }) { this.glyph() }
+      .width(this.diameter).height(this.diameter).padding(0).stateEffect(false).buttonStyle(this.grouped ? ButtonStyleMode.TEXTUAL : ButtonStyleMode.NORMAL)
+      .backgroundColor(Color.Transparent).fontColor(TEXT).systemMaterial(this.grouped ? uiMaterial.Material.empty : musicMaterial()).accessibilityText(this.label).enabled(!this.disabled)
       .id(this.componentId)
-      .scale({ x: this.pressed ? 0.94 : 1, y: this.pressed ? 0.94 : 1 })
-      .animation({ curve: curves.springMotion(0.36, 0.9) })
+      // The enclosing dock owns its single press scale, including its contents.
+      .scale({ x: this.pressed && !this.grouped ? MATERIAL_PRESS_SCALE : 1, y: this.pressed && !this.grouped ? MATERIAL_PRESS_SCALE : 1 })
       .onTouch((event: TouchEvent) => {
         if (this.disabled) return;
-        if (event.type === TouchType.Down) this.pressed = true;
-        else if (event.type === TouchType.Up || event.type === TouchType.Cancel) this.pressed = false;
+        if (event.type !== TouchType.Down && event.type !== TouchType.Up && event.type !== TouchType.Cancel) return;
+        this.getUIContext().animateTo({ curve: curves.springMotion(0.36, 0.9) }, () => { this.pressed = event.type === TouchType.Down; });
       })
       .onClick(() => this.action())
   }
@@ -88,18 +140,17 @@ export struct MaterialBall {
     Button({ type: ButtonType.Circle }) {
       // 图标必须在承载 systemMaterial 的 Button 内部：拖拽形变时图标才会跟球一起动。
       if (this.symbol) {
-        SymbolGlyph(musicSymbol(this.icon)).fontSize(this.diameter >= 38 ? 20 : 18).fontColor(['#F4F4F4'])
+        SymbolGlyph(musicSymbol(this.icon)).fontSize(this.diameter >= 38 ? 20 : 18).fontColor([TEXT])
       } else {
-        Image(this.icon).width(this.diameter >= 38 ? 20 : 18).height(this.diameter >= 38 ? 20 : 18).fillColor('#F4F4F4')
+        Image(this.icon).width(this.diameter >= 38 ? 20 : 18).height(this.diameter >= 38 ? 20 : 18).fillColor(TEXT)
       }
     }.width(this.diameter).height(this.diameter).margin({ left: 16, top: 16 }).padding(0)
       .backgroundColor(Color.Transparent).stateEffect(false).buttonStyle(ButtonStyleMode.NORMAL)
       .systemMaterial(musicMaterial()).accessibilityText(this.label)
-      .scale({ x: this.pressed ? 0.94 : 1, y: this.pressed ? 0.94 : 1 })
-      .animation({ curve: curves.springMotion(0.36, 0.9) })
+      .scale({ x: this.pressed ? MATERIAL_PRESS_SCALE : 1, y: this.pressed ? MATERIAL_PRESS_SCALE : 1 })
       .onTouch((event: TouchEvent) => {
-        if (event.type === TouchType.Down) this.pressed = true;
-        else if (event.type === TouchType.Up || event.type === TouchType.Cancel) this.pressed = false;
+        if (event.type !== TouchType.Down && event.type !== TouchType.Up && event.type !== TouchType.Cancel) return;
+        this.getUIContext().animateTo({ curve: curves.springMotion(0.36, 0.9) }, () => { this.pressed = event.type === TouchType.Down; });
       })
       .onClick(() => this.action()).id(this.componentId)
   }

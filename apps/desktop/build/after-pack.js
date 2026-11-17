@@ -2,6 +2,26 @@ const fs = require('fs');
 const path = require('path');
 const { execFileSync } = require('child_process');
 
+function assertNoBundledSources(appOutDir) {
+  const resources = path.join(appOutDir, 'resources');
+  const archive = path.join(resources, 'app.asar');
+  const sourcePath = /(?:^|\/)(?:dev-source\.js|lx-sources-default\.json)$|^\/?(?:desktop\/)?(?:音源|sources)\//;
+  let bundled;
+  if (fs.existsSync(archive)) {
+    bundled = require('@electron/asar').listPackage(archive).filter(entry => sourcePath.test(entry));
+  } else {
+    const appRoot = path.join(resources, 'app');
+    const candidates = ['desktop/lx-sources-default.json', 'dev-source.js', 'desktop/dev-source.js', 'sources', 'desktop/sources', '音源', 'desktop/音源'];
+    bundled = candidates.filter(candidate => {
+      const fullPath = path.join(appRoot, candidate);
+      if (!fs.existsSync(fullPath)) return false;
+      if (fs.statSync(fullPath).isFile()) return true;
+      return fs.readdirSync(fullPath, { recursive: true, withFileTypes: true }).some(entry => entry.isFile());
+    });
+  }
+  if (bundled.length) throw new Error(`安装包包含预置音源资源：${bundled.join(', ')}`);
+}
+
 function findNewestRceditInCache(cacheRoot) {
   if (!cacheRoot || !fs.existsSync(cacheRoot)) return null;
   var newest = null;
@@ -41,6 +61,7 @@ function resolveRcedit(projectDir) {
 }
 
 module.exports = async function afterPack(context) {
+  assertNoBundledSources(context.appOutDir);
   if (context.electronPlatformName !== 'win32') return;
 
   const appName = context.packager.appInfo.productFilename || 'LxMine';

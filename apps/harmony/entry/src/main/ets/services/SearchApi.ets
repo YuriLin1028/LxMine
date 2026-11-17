@@ -170,7 +170,7 @@ async function searchKugou(keyword: string, page: number, limit: number): Promis
     if (seen.has(key)) return;
     seen.add(key);
     const duration = parseInt(entry.Duration ?? '0');
-    const image = entry.Image && entry.Image.includes('{size}')
+    const image = entry.Image
       ? entry.Image.replace('{size}', '400').replace(/^http:/, 'https:')
       : '';
     items.push({
@@ -309,32 +309,57 @@ export async function searchLx(
 }
 
 /** One search action automatically enumerates every accessible provider page. */
-export async function searchAllLx(source:LxSearchSource, keyword:string, onProgress:(items:Song[],total:number)=>void=()=>{}, cancelled:()=>boolean=()=>false):Promise<LxSearchResult> {
-  const sources:LxSearchSource[]=source==='all'?['kw','kg','wy','tx']:[source];
-  const collected:Song[][]=sources.map(()=>[]);const totals:number[]=sources.map(()=>0);
-  const pending=await Promise.allSettled(sources.map(async(platform:LxSearchSource,index:number)=>{
-    const seen:Set<string>=new Set<string>();let page=1,warning='';
-    for(;;){
-      if(cancelled())break;
-      let result:LxSearchResult;
-      try {result=await searchLx(platform,keyword,page,50);}catch(error){if(!collected[index].length)throw new Error((error as Error).message);warning='网络中断，已保留获取的结果，请重新搜索重试';break;}
-      totals[index]=Math.max(totals[index],result.total);let added=0;
-      for(const item of result.items){const key=`${item.source}:${item.id}`;if(!seen.has(key)){seen.add(key);collected[index].push(item);added++;}}
-      if(cancelled())break;
-      const items:Song[]=[];for(const list of collected)items.push(...list);
-      onProgress(items,totals.reduce((sum:number,value:number)=>sum+value,0));
-      if(!result.items.length||!added){if(page*50<totals[index])warning='平台已停止返回新结果，已显示全部可获取结果';break;}
-      if(result.hasMore===false)break;
-      if(totals[index]>result.items.length&&page*50>=totals[index])break;
-      if(totals[index]<=result.items.length&&result.items.length<50)break;
+export async function searchAllLx(
+  source: LxSearchSource,
+  keyword: string,
+  onProgress: (items: Song[], total: number) => void = () => {},
+  cancelled: () => boolean = () => false
+): Promise<LxSearchResult> {
+  const sources: LxSearchSource[] = source === 'all' ? ['kw', 'kg', 'wy', 'tx'] : [source];
+  const items: Song[] = [];
+  const totals: number[] = sources.map(() => 0);
+  const pending = await Promise.allSettled(sources.map(async (platform: LxSearchSource, index: number) => {
+    const seen: Set<string> = new Set<string>();
+    let page = 1, warning = '';
+    for (;;) {
+      if (cancelled()) break;
+      let result: LxSearchResult;
+      try {
+        result = await searchLx(platform, keyword, page, 50);
+      } catch (error) {
+        if (!seen.size) throw new Error((error as Error).message);
+        warning = '网络中断，已保留获取的结果，请重新搜索重试';
+        break;
+      }
+      if (cancelled()) break;
+      totals[index] = Math.max(totals[index], result.total);
+      let added = 0;
+      for (const item of result.items) {
+        const key = `${item.source}:${item.id}`;
+        if (seen.has(key)) continue;
+        seen.add(key);
+        items.push(item);
+        added++;
+      }
+      onProgress(items.slice(), totals.reduce((sum: number, value: number) => sum + value, 0));
+      if (!result.items.length || !added) {
+        if (page * 50 < totals[index]) warning = '平台已停止返回新结果，已显示全部可获取结果';
+        break;
+      }
+      if (result.hasMore === false) break;
+      if (totals[index] > result.items.length && page * 50 >= totals[index]) break;
+      if (totals[index] <= result.items.length && result.items.length < 50) break;
       page++;
     }
     return warning;
   }));
-  const items:Song[]=[];for(const list of collected)items.push(...list);
-  const warnings:string[]=[];let failed=0;
-  for(const result of pending){if(result.status==='rejected')failed++;else if(result.value)warnings.push(result.value);}
-  if(failed===sources.length)throw new Error('检索平台暂时不可用，请稍后重试');
-  if(failed)warnings.push(`${failed} 个平台暂时不可用`);
-  return {items,total:totals.reduce((sum:number,value:number)=>sum+value,0),warning:warnings.join('；')};
+  const warnings: string[] = [];
+  let failed = 0;
+  for (const result of pending) {
+    if (result.status === 'rejected') failed++;
+    else if (result.value) warnings.push(result.value);
+  }
+  if (failed === sources.length) throw new Error('检索平台暂时不可用，请稍后重试');
+  if (failed) warnings.push(`${failed} 个平台暂时不可用`);
+  return { items, total: totals.reduce((sum: number, value: number) => sum + value, 0), warning: warnings.join('；') };
 }

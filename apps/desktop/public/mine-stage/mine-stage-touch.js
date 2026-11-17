@@ -1,5 +1,6 @@
 (function () {
   'use strict';
+  if (typeof renderer === 'undefined' || !renderer) return;
   // Reuse the PC engine's drag, spin, ripple and recenter handlers. Prevent the
   // browser's compatibility mouse events, which otherwise fire a second click.
   var canvas = renderer.domElement;
@@ -32,8 +33,10 @@
     canvas.setPointerCapture(event.pointerId);
     if (fingers.size === 1) {
       primary = event.pointerId;
-      mouse('mousemove', fingers.get(primary), 0);
-      mouse('mousedown', fingers.get(primary), 1);
+      if (!window.lxmineLyricGestureActive || !window.lxmineLyricGestureActive()) {
+        mouse('mousemove', fingers.get(primary), 0);
+        mouse('mousedown', fingers.get(primary), 1);
+      }
     } else { clear(); primary = null; pinchDistance = distance(); }
   }, { passive: false });
   canvas.addEventListener('pointermove', function (event) {
@@ -43,13 +46,13 @@
     window.lxmineMultiTouchActive = fingers.size > 1;
     if (fingers.size > 1) {
       var next = distance();
-      if (pinchDistance > 0) {
+      if (pinchDistance > 0 && !window.__LXMINE_NATIVE_STAGE) {
         canvas.dispatchEvent(new WheelEvent('wheel', { bubbles: true, cancelable: true,
           clientX: event.clientX, clientY: event.clientY, deltaY: (pinchDistance - next) * 2 }));
         stats.pinches++;
       }
       pinchDistance = next;
-    } else if (primary === event.pointerId) {
+    } else if (primary === event.pointerId && (!window.lxmineLyricGestureActive || !window.lxmineLyricGestureActive())) {
       mouse('mousemove', fingers.get(primary), 1); stats.moves++;
     }
   }, { passive: false });
@@ -57,13 +60,17 @@
     if (!fingers.has(event.pointerId)) return;
     event.preventDefault();
     var point = { x: event.clientX, y: event.clientY };
-    if (!cancelled && primary === event.pointerId && fingers.size === 1) {
+    if (event.lxmineLyricGesture) {
+      clear(); stats.taps++;
+    } else if (!cancelled && primary === event.pointerId && fingers.size === 1) {
       var tap = !mouseDownAt.hadDrag;
       mouse('mouseup', point, 0);
       if (tap) {
         stats.taps++;
+        var workshopTap = window.MineradioSonicWorkshop && typeof MineradioSonicWorkshop.tap === 'function' &&
+          MineradioSonicWorkshop.tap(point.x, point.y);
         // The original topography handler emits its own terrain ripple.
-        if (!(window.MineradioSonicTopography && MineradioSonicTopography.isActive(fx)) &&
+        if (!workshopTap && !(window.MineradioSonicTopography && MineradioSonicTopography.isActive(fx)) &&
             particleLocalPointFromNdc(point.x / innerWidth * 2 - 1, 1 - point.y / innerHeight * 2, particlePointerLocalHit)) {
           triggerRipple(particlePointerLocalHit.x, particlePointerLocalHit.y, 1.15);
           rippleActiveCount = Math.max(1, rippleActiveCount);

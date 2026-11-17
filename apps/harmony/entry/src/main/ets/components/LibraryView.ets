@@ -199,7 +199,7 @@ export struct LibraryView {
         }.width('100%')
         Blank()
         Column({ space: 3 }) {
-          Text(slot.tile.name).fontSize(15).fontWeight(FontWeight.Medium).fontColor(TEXT)
+          Text(slot.tile.name).fontSize(15).fontWeight(FontWeight.Medium).fontColor('#F4F4F4')
             .maxLines(1).textOverflow({ overflow: TextOverflow.Ellipsis }).width('100%')
           Text(slot.tile.detail).fontSize(11).fontColor('#C9FFFFFF')
             .maxLines(1).textOverflow({ overflow: TextOverflow.Ellipsis }).width('100%')

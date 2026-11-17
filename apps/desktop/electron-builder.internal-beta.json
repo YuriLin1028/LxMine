@@ -12,7 +12,7 @@
   "extraMetadata": {
     "name": "lxmine-preview",
     "productName": "LxMine Preview",
-    "version": "1.0.0",
+    "version": "1.1.0",
     "lxmine": {
       "internalBeta": true,
       "runtimeName": "LxMine Preview",
@@ -40,6 +40,10 @@
     "docs/THIRD_PARTY_PORTS.md",
     "package.json",
     "!public/index.*.html",
+    "!**/lx-sources-default.json",
+    "!**/dev-source.js",
+    "!**/音源/**/*",
+    "!desktop/sources/**/*",
     "public/index.html",
     "shared/**/*"
   ],

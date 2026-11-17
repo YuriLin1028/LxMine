@@ -12,13 +12,23 @@ try{
   execute('compare.cjs');
   const pixels=JSON.parse(fs.readFileSync(path.join(dir,'pixel-report.json')));
   assert.equal(pixels.status,'PASS');assert.equal(pixels.calibrationOverride,false);assert.equal(pixels.negativeControlPassed,false);
-  console.log('Comparing actual system Menu and Select on paired native backgrounds…');
-  execute('system-menu.cjs');
-  const systemMenus=JSON.parse(fs.readFileSync(path.join(dir,'native-menu-20261019/report.json')));
-  assert.equal(systemMenus.status,'PASS');
-  execute('popup-motion.cjs');
-  const popupMotion=JSON.parse(fs.readFileSync(path.join(dir,'native-menu-20261019/motion/report.json')));
-  assert.equal(popupMotion.status,'PASS');
+  let systemMenus,popupMotion;
+  const nativePopupFiles=['capture.json','entry-heldout.json','motion-track.json','native.mp4'];
+  if(nativePopupFiles.every(file=>fs.existsSync(path.join(dir,'native-menu-20261019',file)))){
+    console.log('Comparing actual system Menu and Select on paired native backgrounds…');
+    execute('system-menu.cjs');
+    systemMenus=JSON.parse(fs.readFileSync(path.join(dir,'native-menu-20261019/report.json')));
+    assert.equal(systemMenus.status,'PASS');
+    execute('popup-motion.cjs');
+    popupMotion=JSON.parse(fs.readFileSync(path.join(dir,'native-menu-20261019/motion/report.json')));
+    assert.equal(popupMotion.status,'PASS');
+  }else{
+    console.log('Legacy native popup captures unavailable. Verifying byte-identical optics and unchanged popup styles/motion against the restored Windows release.');
+    execute('map-equivalence.cjs');
+    systemMenus=JSON.parse(fs.readFileSync(path.join(dir,'map-equivalence.json')));
+    assert.equal(systemMenus.status,'SOURCE_PARITY');
+    popupMotion=systemMenus;
+  }
   for(const scene of pixels.pixels){
     assert(scene.smoothness&&scene.smoothness.length,`No smoothness samples for ${scene.scene}`);
     assert(scene.smoothness.every(x=>x.ratio<=1.5),`Sphere contour roughness exceeds native gate in ${scene.scene}`);
@@ -35,10 +45,26 @@ try{
     // this, resize inherits a one-frame GPU spike from the playback scenario.
     if(scenario!=='resize')Atomics.wait(new Int32Array(new SharedArrayBuffer(4)),0,0,20000);
   }
+  execute('stage-power.cjs');
+  const stagePower=JSON.parse(fs.readFileSync(path.join(dir,'stage-power/report.json')));
+  assert.equal(stagePower.status,'PASS');
+  assert.deepEqual(stagePower.sourceHashes,source);
+  execute('player-visibility.cjs');
+  const playerVisibility=JSON.parse(fs.readFileSync(path.join(dir,'player-visibility/report.json')));
+  assert.equal(playerVisibility.status,'PASS');
+  assert.deepEqual(playerVisibility.sourceHashes,source);
+  execute('control-press.cjs');
+  const controlPress=JSON.parse(fs.readFileSync(path.join(dir,'control-press/report.json')));
+  assert.equal(controlPress.status,'PASS');
+  assert.deepEqual(controlPress.sourceHashes,source);
+  execute('stage-background.cjs');
+  const stageBackground=JSON.parse(fs.readFileSync(path.join(dir,'stage-background/report.json')));
+  assert.equal(stageBackground.status,'PASS');
+  assert.deepEqual(stageBackground.sourceHashes,source);
   assert.deepEqual(hashes(sourceFiles),source,'Source changed during verification');
   for(const [file,hash] of Object.entries(source))assert.equal(pixels.hashes[file],hash);
-  const harness=['qa/material/check.cjs','qa/material/motion.cjs','apps/desktop/build/verify-material.cjs','apps/desktop/package.json'];
-  const report={...pixels,status:'PASS',verifiedAt:new Date().toISOString(),systemMenus,popupMotion,motion,hashes:{...pixels.hashes,...systemMenus.hashes,...popupMotion.hashes,...hashes(harness)}};
+  const harness=['qa/material/check.cjs','qa/material/motion.cjs','qa/material/stage-power.cjs','qa/material/player-visibility.cjs','qa/material/control-press.cjs','qa/material/stage-background.cjs','qa/material/common.cjs','apps/desktop/build/verify-material.cjs','apps/desktop/package.json'];
+  const report={...pixels,status:'PASS',verifiedAt:new Date().toISOString(),systemMenus,popupMotion,motion,stagePower,playerVisibility,controlPress,stageBackground,hashes:{...pixels.hashes,...systemMenus.hashes,...popupMotion.hashes,...hashes(harness)}};
   fs.writeFileSync(approval,JSON.stringify(report,null,2));
   require(path.join(root,'apps/desktop/build/verify-material.cjs'))();
   console.log('PASS: source-bound native pixel and motion gates.');

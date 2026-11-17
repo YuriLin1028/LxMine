@@ -9,16 +9,13 @@ export struct AmbientBackdrop {
   @Prop coverUrl: string = '';
   @Prop colorFirst: string = '#FFFFFF';
   @Prop colorLast: string = '#B8B8B8';
+  @Prop light: boolean = false;
   build() {
     Stack() {
       if (this.coverUrl) {
-        Image(this.coverUrl).width('100%').height('100%').objectFit(ImageFit.Cover).blur(36).opacity(0.82)
-      } else {
-        Column().width('100%').height('100%')
-          .linearGradient({ angle: 155, colors: [[this.colorFirst, 0], [this.colorLast, 0.55], [INK, 1]] })
-          .opacity(0.55)
+        Image(this.coverUrl).sourceSize({ width: 512, height: 512 }).width('100%').height('100%').objectFit(ImageFit.Cover).blur(36).opacity(this.light ? 0.32 : 0.82)
       }
-      Column().width('100%').height('100%').backgroundColor('#3D08090B')
-    }.width('100%').height('100%').backgroundColor(INK).hitTestBehavior(HitTestMode.None)
+      Column().width('100%').height('100%').backgroundColor(this.light ? '#59C8CDD4' : '#9E151619')
+    }.width('100%').height('100%').backgroundColor(this.light ? '#D0D4DB' : INK).hitTestBehavior(HitTestMode.None)
   }
 }

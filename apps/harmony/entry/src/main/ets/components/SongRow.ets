@@ -1,3 +1,4 @@
+import { musicButtonPress } from './MaterialControls';
 import { Song } from '../model/Song';
 import { ACCENT, TEXT, MUTED, formatTime, sourceBadge } from './Theme';
 import { MaterialIcon } from './MaterialControls';
@@ -50,7 +51,7 @@ export struct SongRow {
         MaterialIcon({ icon: $r('app.media.ic_download'), label: '下载歌曲', grouped: true, action: () => this.onDownload() })
       }
       if (!this.wide) {
-        Button({ type: ButtonType.Circle }) { SymbolGlyph($r('sys.symbol.chevron_down')).fontSize(16).fontColor([MUTED]).rotate({ angle: this.expanded ? 180 : 0 }) }
+        Button({ type: ButtonType.Circle }) { SymbolGlyph($r('sys.symbol.chevron_down')).fontSize(16).fontColor([MUTED]).rotate({ angle: this.expanded ? 180 : 0 }) }.attributeModifier(musicButtonPress)
           .width(36).height(44).padding(0).stateEffect(false).backgroundColor(Color.Transparent).accessibilityText('展开歌曲操作')
           .onClick(() => { this.getUIContext().animateTo({ duration: 220, curve: Curve.Friction }, () => { this.expanded = !this.expanded; }); })
       }

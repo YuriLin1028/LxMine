@@ -59,6 +59,10 @@
     lastPropertiesAt: 0,
     lastMediaKey: '',
     lastPropertiesKey: '',
+    cameraStartedAt: 0,
+    cameraAngleX: 150,
+    nativeTheta: null,
+    nativePhi: null,
     samples: zeroSamples.slice(),
     media: null,
     displayedTheme: null,
@@ -489,7 +493,7 @@
       cover = typeof global.coverUrlWithSize === 'function' ? global.coverUrlWithSize(song.cover, 512) : song.cover;
     }
     var pal = global.stageLyrics && (global.stageLyrics.coverPalette || global.stageLyrics.palette) || {};
-    var duration = global.audio && isFinite(global.audio.duration) ? Number(global.audio.duration) : Number(song && (song.duration || song.durationSec || 0)) || 0;
+    var duration = global.audio && isFinite(global.audio.duration) ? Number(global.audio.duration) : Number(song && (song.durationMs ? song.durationMs / 1000 : song.duration || song.durationSec || 0)) || 0;
     if (duration > 10000) duration /= 1000;
     return {
       title: String((song && (song.name || song.title)) || ''),
@@ -497,8 +501,8 @@
       thumbnail: cover || '',
       primaryColor: cssColorToHex(pal.primary || pal.secondary || pal.highlight, '#6bd9ff'),
       textColor: cssColorToHex(pal.highlight || pal.primary, '#f8fbff'),
-      isPlaying: !!(global.playing && global.audio && !global.audio.paused),
-      position: global.audio && isFinite(global.audio.currentTime) ? Number(global.audio.currentTime) : 0,
+      isPlaying: !!(global.playing && global.isAnalysisPlaybackActive()),
+      position: global.analysisPlaybackTime(),
       duration: duration
     };
   }
@@ -563,6 +567,9 @@
     iframe.setAttribute('inert', '');
     iframe.onload = function () {
       state.ready = true;
+      state.cameraStartedAt = nowMs();
+      state.nativeTheta = null;
+      state.nativePhi = null;
       pushProperties(true);
       pushMedia(true);
       pushAudio(true);
@@ -597,6 +604,19 @@
     fx = fx || {};
     var coverHexes = workshopPaletteHexesFromCover();
     var props = Object.assign({}, WORKSHOP_DEFAULT_PROPERTIES);
+    if (global.__LXMINE_NATIVE_STAGE && global.orbit) {
+      var theta = Number(global.orbit.userTheta) || 0;
+      var phi = (Number(global.orbit.userPhi) || 0) - (Number(global.orbit.baselinePhi) || 0);
+      if (theta !== state.nativeTheta || phi !== state.nativePhi) {
+        state.nativeTheta = theta;
+        state.nativePhi = phi;
+        // Match the workshop's continuous auto-rotation when applying a user orbit.
+        state.cameraAngleX = props.cameraAngleX + theta * 180 / Math.PI +
+          Math.max(0, nowMs() - state.cameraStartedAt) * props.autoRotateSpeed / 1000;
+      }
+      props.cameraAngleX = state.cameraAngleX;
+      props.cameraAngleY = clamp(props.cameraAngleY + phi * 180 / Math.PI, -85, 85);
+    }
     props.audioIntensity = clamp(fx.sonicWorkshopAudioIntensity == null ? props.audioIntensity : Number(fx.sonicWorkshopAudioIntensity), 0.3, 2.5);
     props.responseRange = clamp(fx.sonicWorkshopResponseRange == null ? props.responseRange : Number(fx.sonicWorkshopResponseRange), 0.3, 2);
     props.peakColorIntensity = clamp(fx.sonicWorkshopPeakIntensity == null ? props.peakColorIntensity : Number(fx.sonicWorkshopPeakIntensity), 0, 1.4);
@@ -741,7 +761,7 @@
         out[j] = clamp(Math.pow(clamp01(v), 1.35) * 0.30 + fallbackLift, 0, WORKSHOP_AUDIO_TARGET_MAX_SAMPLE) * inputGain;
       }
     }
-    if (!(global.playing && global.audio && !global.audio.paused)) {
+    if (!(global.playing && global.isAnalysisPlaybackActive())) {
       for (var k = 0; k < out.length; k++) out[k] = out[k] * WORKSHOP_AUDIO_PAUSED_GAIN;
     }
     state.samples = out;
@@ -762,6 +782,7 @@
     state.active = targetActive;
     bodyClass(targetActive || state.opacity > 0.02);
     if (targetActive) ensureLayer();
+    if (state.iframe && state.ready && typeof state.iframe.contentWindow.__mineradioSetPresentation === 'function') state.iframe.contentWindow.__mineradioSetPresentation(targetActive);
     var targetOpacity = targetActive ? 1 : 0;
     var rate = targetOpacity > state.opacity ? 7.5 : 5.0;
     state.opacity += (targetOpacity - state.opacity) * clamp(1 - Math.exp(-rate * Math.max(0.001, dt || 1 / 60)), 0, 1);
@@ -771,7 +792,7 @@
       pushMedia(false);
       pushAudio(false, ctx.audio);
     } else if (state.layer && state.opacity <= 0.01) {
-      removeLayer();
+      if (!global.__LXMINE_NATIVE_STAGE) removeLayer();
       bodyClass(false);
     }
   }
@@ -812,6 +833,26 @@
     isActive: isActive,
     update: update,
     clear: clear,
+    prewarm: function () {
+      ensureLayer();
+      if (state.ready) return Promise.resolve();
+      return new Promise(function (resolve) { state.iframe.addEventListener('load', resolve, { once: true }); });
+    },
+    isReady: function () { return state.ready; },
+    presentation: function (visible) {
+      var frame = state.iframe && state.iframe.contentWindow;
+      if (frame && typeof frame.__mineradioSetPresentation === 'function') frame.__mineradioSetPresentation(visible && isActive(global.fx));
+    },
+    tap: function (x, y) {
+      if (!isActive(global.fx) || !state.ready || !state.iframe) return false;
+      var frame = state.iframe.contentWindow;
+      var canvas = frame.document.querySelector('canvas');
+      if (!canvas) return false;
+      canvas.dispatchEvent(new frame.MouseEvent('click', { bubbles: true, cancelable: true,
+        clientX: x / Math.max(1, global.innerWidth) * frame.innerWidth,
+        clientY: y / Math.max(1, global.innerHeight) * frame.innerHeight, button: 0 }));
+      return true;
+    },
     pushProperties: function (force) { pushProperties(force === true); },
     onPresetChange: onPresetChange
   };

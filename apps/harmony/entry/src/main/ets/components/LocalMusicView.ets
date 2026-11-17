@@ -1,4 +1,5 @@
 import { Song } from '../model/Song';
+import { ArrayDataSource } from '../services/ArrayDataSource';
 import { songKey } from '../services/MusicLibrary';
 import { SongRow } from './SongRow';
 import { TEXT, MUTED } from './Theme';
@@ -7,7 +8,10 @@ import { SongListTools } from './SongListTools';
 // 本地音乐页：右上角识别/导入由页面标题层提供；列表内提供搜索、播放全部与排序。
 @Component
 export struct LocalMusicView {
-  @Prop songs: Song[] = [];
+  @Prop @Watch('songsChanged') songs: Song[] = [];
+  private source: ArrayDataSource<Song> = new ArrayDataSource<Song>();
+  aboutToAppear(): void { this.songsChanged(); }
+  private songsChanged(): void { this.source.reset(this.songs); }
   @Prop wide: boolean = false;
   @Prop contentTop: number = 82;
   @Prop selectedKey: string = '';
@@ -36,45 +40,42 @@ export struct LocalMusicView {
   }
 
   build() {
-    Scroll(this.scroller) {
-      Column({ space: 10 }) {
-        SongListTools({ countText: `${this.songs.length} 首本地歌曲`, disabled: !this.songs.length,
-          onPlayAll: () => this.onPlayAll(),
-          onSort: (mode: string) => this.onSort(mode),
-          onManual: () => this.onManualSort() })
-        if (this.searchOpen) {
-          Row({ space: 8 }) {
-            Image($r('app.media.ic_search')).width(18).height(18).opacity(0.7)
-            TextInput({ text: this.searchQuery, placeholder: '搜索本列表' }).layoutWeight(1).height(40).fontSize(14)
-              .fontColor(TEXT).placeholderColor(MUTED).backgroundColor(Color.Transparent).padding(0)
-              .onChange((value: string) => this.onSearchChange(value))
-            Text('取消').fontSize(13).fontColor(MUTED).padding({ left: 6, right: 2, top: 8, bottom: 8 })
-              .onClick(() => this.onSearchClose())
-          }.width('100%').height(44).padding({ left: 14, right: 14 })
-            .backgroundColor('#0DFFFFFF').borderRadius(16).border({ width: 1, color: '#14FFFFFF' })
+    List({ space: 2, scroller: this.scroller }) {
+      ListItem() {
+        Column({ space: 10 }) {
+          SongListTools({ countText: `${this.songs.length} 首本地歌曲`, disabled: !this.songs.length,
+            onPlayAll: () => this.onPlayAll(), onSort: (mode: string) => this.onSort(mode), onManual: () => this.onManualSort() })
+          if (this.searchOpen) {
+            Row({ space: 8 }) {
+              Image($r('app.media.ic_search')).width(18).height(18).opacity(0.7)
+              TextInput({ text: this.searchQuery, placeholder: '搜索本列表' }).layoutWeight(1).height(40).fontSize(14)
+                .fontColor(TEXT).placeholderColor(MUTED).backgroundColor(Color.Transparent).padding(0)
+                .onChange((value: string) => this.onSearchChange(value))
+              Text('取消').fontSize(13).fontColor(MUTED).padding({ left: 6, right: 2, top: 8, bottom: 8 })
+                .onClick(() => this.onSearchClose())
+            }.width('100%').height(44).padding({ left: 14, right: 14 })
+              .backgroundColor('#0DFFFFFF').borderRadius(16).border({ width: 1, color: '#14FFFFFF' })
+          }
+        }.width('100%')
+      }
+      LazyForEach(this.source, (song: Song, index: number) => {
+        ListItem() {
+          SongRow({ song, index, wide: this.wide, showDownload: false, hideDownload: true,
+            active: this.selectedKey === songKey(song), liked: this.likedSong(song),
+            onPlay: () => this.onPlay(song), onLike: () => this.onLike(song), onMore: () => this.onMore(song) })
         }
-        if (this.songs.length) {
-          Column({ space: 2 }) {
-            ForEach(this.songs, (song: Song, index: number) => {
-              SongRow({ song, index, wide: this.wide, showDownload: false, hideDownload: true,
-                active: this.selectedKey === songKey(song), liked: this.likedSong(song),
-                onPlay: () => this.onPlay(song), onLike: () => this.onLike(song), onMore: () => this.onMore(song) })
-            }, (song: Song) => songKey(song))
-          }.width('100%')
-        } else if (this.searchQuery.trim().length) {
+      }, (song: Song) => songKey(song))
+      if (!this.songs.length) {
+        ListItem() {
           Column({ space: 8 }) {
-            Text('没有匹配的本地歌曲').fontSize(14).fontColor(MUTED)
-            Text('换个歌名、歌手或专辑试试').fontSize(12).fontColor(MUTED)
-          }.width('100%').padding({ top: 44 })
-        } else {
-          Column({ space: 8 }) {
-            Text('还没有本地音乐').fontSize(14).fontColor(MUTED)
-            Text('点击右上角「智能识别」或「导入」添加手机里的音频').fontSize(12).fontColor(MUTED)
+            Text(this.searchQuery.trim().length ? '没有匹配的本地歌曲' : '还没有本地音乐').fontSize(14).fontColor(MUTED)
+            Text(this.searchQuery.trim().length ? '换个歌名、歌手或专辑试试' : '点击右上角「智能识别」或「导入」添加手机里的音频').fontSize(12).fontColor(MUTED)
           }.width('100%').padding({ top: 44 })
         }
-      }.width('100%').padding({ top: this.contentTop + 12, bottom: 180 })
+      }
     }.width('100%').height('100%').scrollBar(BarState.Off)
-      .onDidScroll((x: number, y: number, state: ScrollState) => {
+      .contentStartOffset(this.contentTop + 12).contentEndOffset(180)
+      .onDidScroll((offset: number, state: ScrollState) => {
         if (state !== ScrollState.Idle) this.onScroll(this.scroller.currentOffset().yOffset);
       })
   }

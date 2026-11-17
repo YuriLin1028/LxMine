@@ -1,3 +1,18 @@
+var stageLyricViewportHeight = { value: renderer.domElement.height };
+function applyLyricViewportFade(material) {
+  if (!window.__LXMINE_NATIVE_STAGE) return material;
+  var previous = material.onBeforeCompile.bind(material);
+  material.onBeforeCompile = function (shader, renderer) {
+    previous(shader, renderer);
+    shader.uniforms.uLyricViewportHeight = stageLyricViewportHeight;
+    shader.fragmentShader = 'uniform highp float uLyricViewportHeight;\n' + shader.fragmentShader.replace(/}\s*$/, [
+      'float lyricScreenY = gl_FragCoord.y / max(1.0, uLyricViewportHeight);',
+      'gl_FragColor.a *= smoothstep(0.0, 0.12, lyricScreenY) * smoothstep(0.0, 0.08, 1.0 - lyricScreenY);',
+      '}'
+    ].join('\n'));
+  };
+  return material;
+}
 var lyricSunBloomTexture = null;
 function getLyricSunBloomTexture() {
   if (lyricSunBloomTexture) return lyricSunBloomTexture;
@@ -63,7 +78,7 @@ function getLyricSunBloomTexture() {
 
 function makeLyricShaderMaterial(mask, pal, motionProfile) {
   motionProfile = motionProfile || lyricMotionProfile();
-  return new THREE.ShaderMaterial({
+  return applyLyricViewportFade(new THREE.ShaderMaterial({
     uniforms: {
       uMap: { value: mask.texture },
       uTime: uniforms.uTime,
@@ -71,11 +86,13 @@ function makeLyricShaderMaterial(mask, pal, motionProfile) {
       uTextMin: { value: mask.textMin },
       uTextMax: { value: mask.textMax },
       uOpacity: { value: 0 },
+      uThemeLight: typeof LxMineAppearance !== 'undefined' ? LxMineAppearance.uniform : { value: 0 },
+      uMaskTexel: { value: new THREE.Vector2(2 / Math.max(1, Number(mask.width) || 1), 2 / Math.max(1, Number(mask.height) || 1)) },
       uBaseColor: { value: lyricThreeColor(pal.primary, '#d6f8ff', 0.38) },
       uHiColor: { value: lyricThreeColor(pal.highlight || pal.primary, '#fff0b8', 0.48) },
       uGlowColor: { value: lyricStageGlowThreeColor(pal, '#9cffdf', 0.36) },
       uSolarColor: { value: lyricBeatGlowThreeColor(pal, '#fff0b8', 0.50) },
-      uFeather: { value: lyricsHasNativeKaraoke ? 0.030 : 0.055 },
+      uFeather: { value: LxMineLyrics.feather(lyricsHasNativeKaraoke) },
       uSolar: { value: 0 },
       uSweep: { value: motionProfile.sweep || 0 },
       uShimmer: { value: motionProfile.shimmer || 0 },
@@ -94,6 +111,8 @@ function makeLyricShaderMaterial(mask, pal, motionProfile) {
       'uniform sampler2D uMap;',
       'uniform float uTime,uProgress,uTextMin,uTextMax,uOpacity,uFeather,uSolar,uSweep,uShimmer,uGlitch,uGlitchSlice,uGlitchChroma,uGlitchRate,uGlitchSeed,uGlitchBurst,uEdgeBoost,uActiveMix;',
       'uniform vec3 uBaseColor,uHiColor,uGlowColor,uSolarColor;',
+      'uniform float uThemeLight;',
+      'uniform vec2 uMaskTexel;',
       'varying vec2 vUv;',
       'float hash(float n){ return fract(sin(n) * 43758.5453123); }',
       'float hash2(vec2 p){ return fract(sin(dot(p, vec2(127.1,311.7))) * 43758.5453123); }',
@@ -110,7 +129,18 @@ function makeLyricShaderMaterial(mask, pal, motionProfile) {
       '  float glitchWave = (phaseRnd * 2.0 - 1.0) * (0.55 + micro * 0.95);',
       '  float glitchWidth = (0.0020 + rowRnd * rowRnd * 0.0085) * (0.55 + uGlitchBurst * 1.85);',
       '  vec2 sampleUv = uv + vec2(glitchGate * glitchDir * glitchWave * uGlitch * uGlitchSlice * glitchWidth, 0.0);',
+      '  sampleUv = mix(sampleUv, uv, uThemeLight);',
       '  float mask = texture2D(uMap, sampleUv).a;',
+      '  if (uThemeLight > 0.5) {',
+      '    float outline = max(max(texture2D(uMap, uv + vec2(uMaskTexel.x,0.0)).a,texture2D(uMap, uv - vec2(uMaskTexel.x,0.0)).a),max(texture2D(uMap, uv + vec2(0.0,uMaskTexel.y)).a,texture2D(uMap, uv - vec2(0.0,uMaskTexel.y)).a));',
+      '    float outlineAlpha = outline * 0.78 * (1.0 - mask);',
+      '    float alpha = mask + outlineAlpha;',
+      '    if (alpha < 0.01) discard;',
+      '    float p = clamp((uv.x-uTextMin)/max(0.001,uTextMax-uTextMin),0.0,1.0);',
+      '    float filled = (1.0-smoothstep(uProgress,uProgress+uFeather,p))*clamp(uActiveMix,0.0,1.0);',
+      '    vec3 ink = mix(uBaseColor,uHiColor,filled*0.88);',
+      '    gl_FragColor = vec4((ink*mask+vec3(0.78,0.80,0.83)*outlineAlpha)/max(alpha,0.001),alpha*uOpacity);',
+      '  } else {',
       '  if(mask < 0.01) discard;',
       '  float activeMix = clamp(uActiveMix, 0.0, 1.0);',
       '  float denom = max(0.001, uTextMax - uTextMin);',
@@ -132,11 +162,12 @@ function makeLyricShaderMaterial(mask, pal, motionProfile) {
       '  color = mix(color, color + solar * 0.34, uSolar * activeMix * (0.25 + filled * 0.45));',
       '  color += solar * edge * uSolar * 0.22;',
       '  float lum = dot(color, vec3(0.299, 0.587, 0.114));',
-      '  color += vec3(max(0.0, 0.30 - lum));',
+      '  color += vec3(max(0.0, 0.30 - lum)) * (1.0 - uThemeLight);',
       '  float alpha = max(mask, max(chromaR, chromaB) * glitchGate * uGlitch * (0.30 + uGlitchBurst * 0.32));',
       '  gl_FragColor = vec4(color, alpha * uOpacity);',
+      '  }',
       '}',
     ].join('\n'),
     transparent: true, depthWrite: false, depthTest: false, side: THREE.DoubleSide,
-  });
+  }));
 }

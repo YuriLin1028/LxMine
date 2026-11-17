@@ -10,7 +10,7 @@ async function searchPlaylists({ query, source, page = 1, limit = 20 }) {
     items = (result.abslist || []).map(item => ({ id: String(item.playlistid || item.PLAYLISTID || item.id), name: clean(item.name || item.NAME), cover: item.pic || item.picurl || item.img || '', artist: clean(item.nickname || item.uname || item.username), count: Number(item.total || item.songnum) || 0 }));
     total = Number(result.TOTAL || result.total) || items.length;
   } else if (source === 'tx') {
-    const result = await json('http://c.y.qq.com/soso/fcgi-bin/client_music_search_songlist?' + new URLSearchParams({ page_no: String(page - 1), num_per_page: String(limit), format: 'json', query, remoteplace: 'txt.yqq.playlist', inCharset: 'utf8', outCharset: 'utf-8' }), { headers: { Referer: 'https://y.qq.com/portal/search.html' } });
+    const result = await json('https://c.y.qq.com/soso/fcgi-bin/client_music_search_songlist?' + new URLSearchParams({ page_no: String(page - 1), num_per_page: String(limit), format: 'json', query, remoteplace: 'txt.yqq.playlist', inCharset: 'utf8', outCharset: 'utf-8' }), { headers: { Referer: 'https://y.qq.com/portal/search.html' } });
     if (result.code !== 0) throw new Error('QQ 歌单检索暂时不可用');
     items = (result.data?.list || []).map(item => ({ id: String(item.dissid), name: clean(item.dissname), cover: item.imgurl || '', artist: clean(item.creator?.name), count: Number(item.song_count) || 0 })); total = Number(result.data?.sum) || items.length;
   } else if (source === 'kg') {

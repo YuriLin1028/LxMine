@@ -7,16 +7,20 @@
   <title>LxMine</title>
   <meta name="referrer" content="no-referrer">
   
-  <script src="vendor/three.r128.min.js"></script>
-  <script src="vendor/music-tempo.min.js"></script>
-  <script src="vendor/gsap.min.js"></script>
-  <script>window.__LXMINE_NATIVE_STAGE=true;window.lxMusic={};window.__lxmineFetch=window.fetch.bind(window);window.fetch=function(url,options){if(new URL(typeof url==='string'?url:url.url,location.href).pathname.startsWith('/api/'))return Promise.resolve({ok:false,status:503,json:async function(){return {}},text:async function(){return ''}});return window.__lxmineFetch(url,options)};</script>
-  <link rel="stylesheet" href="css/index.css?v=20260716-we-continuity-vsync">
+  <script src="vendor/three.r128.min.js?revision=4349ad1b58d31e23"></script>
+  <script src="vendor/music-tempo.min.js?revision=4349ad1b58d31e23"></script>
+  <script src="vendor/gsap.min.js?revision=4349ad1b58d31e23"></script>
+  <script>window.__LXMINE_NATIVE_STAGE=true;window.__LXMINE_STAGE_REVISION='4349ad1b58d31e23';window.__lxmineStagePresentation={visible:false,detail:false};window.lxMusic={};window.__lxmineFetch=window.fetch.bind(window);window.fetch=function(url,options){if(new URL(typeof url==='string'?url:url.url,location.href).pathname.startsWith('/api/'))return Promise.resolve({ok:false,status:503,json:async function(){return {}},text:async function(){return ''}});return window.__lxmineFetch(url,options)};</script>
+  <script src="mine-stage-lyrics.js?revision=4349ad1b58d31e23"></script>
+  <link rel="stylesheet" href="css/index.css?v=20260716-we-continuity-vsync&revision=4349ad1b58d31e23">
 <style>
-html,body,#desktop-window-shell,#canvas-container{width:100%;height:100%;margin:0;overflow:hidden;background:transparent}
+html,body,#desktop-window-shell,#canvas-container{width:100%;height:100%;margin:0;overflow:hidden;background:transparent!important}
+html,body{width:100vw;height:100vh}
+/* Native shells own the cover and theme wash beneath the transparent effects. */
+#album-bg,#album-bg-next,#custom-bg{display:none!important}
 body>:not(#desktop-window-shell){display:none!important}
 #desktop-window-shell>:not(#canvas-container):not(#album-bg):not(#album-bg-next):not(#custom-bg):not(#wallpaper-engine-layer){display:none!important}
-#canvas-container{position:fixed!important;inset:0!important;opacity:1!important;visibility:visible!important;transform:none!important}
+#canvas-container{position:fixed!important;inset:0!important;opacity:1!important;visibility:visible!important;transform:none!important;transition:opacity .12s ease!important}
 </style></head>
 
 <body>
@@ -1956,7 +1960,7 @@ body>:not(#desktop-window-shell){display:none!important}
     </section>
     <p id="lxmine-library-status" role="status" aria-live="polite"></p>
   </dialog>
-  <script src="mine-stage-engine.js"></script><script src="mine-stage-bridge.js"></script><script src="mine-stage-touch.js"></script>
+  <script src="mine-stage-appearance.js?revision=4349ad1b58d31e23"></script><script src="mine-stage-engine.js?revision=4349ad1b58d31e23"></script><script src="mine-stage-bridge.js?revision=4349ad1b58d31e23"></script><script src="mine-stage-touch.js?revision=4349ad1b58d31e23"></script><script src="mine-stage-gestures.js?revision=4349ad1b58d31e23"></script><script>if(typeof renderer!=="undefined"&&renderer)LxMineGestures.bind(renderer.domElement, false)</script>
 </body>
 
 </html>

@@ -12,6 +12,17 @@ out/
 # electron packaging output (icons/scripts under apps/desktop/build are source)
 apps/desktop/release/
 
+# android
+apps/android/.gradle/
+apps/android/.kotlin/
+apps/android/build/
+apps/android/app/build/
+apps/android/local.properties
+apps/android/app/src/main/assets/sources/
+apps/android/app/src/main/assets/dev-source.js
+# Generated from apps/desktop by build:harmony-stage.
+apps/android/app/src/main/assets/mine-stage/
+
 # harmony
 apps/harmony/.hvigor/
 apps/harmony/.idea/
@@ -70,3 +81,4 @@ apps/harmony/entry/src/main/resources/rawfile/mine-stage/
 !/qa/material/artifacts/references/
 /qa/catalogue/artifacts/
 /qa/startup/artifacts/
+/qa/harmony/artifacts/

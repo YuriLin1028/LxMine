@@ -36,7 +36,7 @@ function primeCinemaAfterTrackStart(reason) {
   if (!fx || !fx.cinema || !beatCam) return;
   var shake = clampRange(Number(fx.cinemaShake) || 0, 0, 1.8);
   if (shake <= 0.001) return;
-  var currentT = audio && isFinite(audio.currentTime) ? audio.currentTime : 0;
+  var currentT = analysisPlaybackTime();
   cinemaDynamics.scale = Math.max(cinemaDynamics.scale || 0, 0.92);
   beatCam.lastTriggerAt = Math.min(beatCam.lastTriggerAt || -10, currentT - 0.48);
   beatCam.punch = Math.max(beatCam.punch || 0, 0.16);
@@ -236,7 +236,7 @@ function resetRealtimeBeatEngine() {
   rtBeat.tempoConfidence = 0;
   rtBeat.beatCount = 0;
   rtBeat.primedFrames = 0;
-  rtBeat.warmupUntil = (audio && isFinite(audio.currentTime) ? audio.currentTime : 0) + (djMode.active ? 0.24 : 0.48);
+  rtBeat.warmupUntil = (analysisPlaybackTime()) + (djMode.active ? 0.24 : 0.48);
   rtBeat.pulse = 0;
   rtBeat.score = 0;
   rtBeat.stats.hits = 0;
@@ -390,12 +390,12 @@ function beatBandRms(data, sampleRate, fftSize, hz0, hz1) {
 }
 
 function processRealtimeBeatEngine(dt) {
-  if (!beatAnalyser || !audioCtx || !audio || audio.paused) return null;
+  if (!beatAnalyser || !isAnalysisPlaybackActive()) return null;
   dt = Math.max(0.001, Math.min(0.080, dt || 0.016));
   var dj = djMode.active;
   beatAnalyser.getByteFrequencyData(beatFrequencyData);
   beatAnalyser.getByteTimeDomainData(beatTimeDomainData);
-  var sr = audioCtx.sampleRate || 44100;
+  var sr = getAnalysisSampleRate();
   var sub = beatBandRms(beatFrequencyData, sr, beatAnalyser.fftSize, 38, 74);
   var kick = beatBandRms(beatFrequencyData, sr, beatAnalyser.fftSize, 52, 165);
   var body = beatBandRms(beatFrequencyData, sr, beatAnalyser.fftSize, 165, 420);
@@ -462,7 +462,7 @@ function processRealtimeBeatEngine(dt) {
   var bodyNorm = clamp01(body / Math.max(0.045, rtBeat.bodyPeak * (dj ? 0.74 : 0.72)));
   var vocalNorm = clamp01(vocal / Math.max(0.045, rtBeat.vocalPeak * 0.72));
   var snapNorm = clamp01(snap / Math.max(0.040, rtBeat.snapPeak * (dj ? 0.78 : 0.72)));
-  var nowT = audio.currentTime || 0;
+  var nowT = analysisPlaybackTime();
   rtBeat.primedFrames++;
   var warmingUp = nowT < rtBeat.warmupUntil || rtBeat.primedFrames < (dj ? 5 : 10);
   var gapFromLast = nowT - rtBeat.lastHitAt;
@@ -615,7 +615,7 @@ function mergeRealtimeBeatCamera(time, amp, tone) {
     }
   }
   if (!best) return false;
-  var nowT = audio ? audio.currentTime : uniforms.uTime.value;
+  var nowT = analysisPlaybackTime();
   best.hit = time;
   best.start = nowT - (best.attack || beatCam.attack) * 0.42;
   var mergeMaxAmp = ((tone && tone.dj) || djMode.active) ? 0.62 : 0.62;
@@ -667,7 +667,7 @@ function scheduleBeatCamera(beat, source) {
   snapTone /= toneSum;
   var sharpness = typeof beat === 'number' ? snapTone : Math.max(0, Math.min(1, beat.sharpness == null ? snapTone : beat.sharpness));
   var mass = typeof beat === 'number' ? lowTone : Math.max(0, Math.min(1, beat.mass == null ? (lowTone * 0.72 + bodyTone * 0.36 + strength * 0.20) : beat.mass));
-  var nowT = audio ? audio.currentTime : uniforms.uTime.value;
+  var nowT = analysisPlaybackTime();
   var mode = 'deep';
   if (dj) {
     if (rawSnapTone > 0.58 && rawSnapTone > rawLowTone * 0.86 && rawSnapTone > rawBodyTone * 1.08) mode = 'snap';
@@ -918,8 +918,8 @@ function scheduleBeatCamera(beat, source) {
 }
 
 function updateBeatCamera(dt) {
-  var t = audio ? audio.currentTime : uniforms.uTime.value;
-  if (!audio || audio.paused) {
+  var t = analysisPlaybackTime();
+  if (!isAnalysisPlaybackActive()) {
     beatCam.punch *= Math.pow(0.08, dt);
     beatCam.thetaKick *= Math.pow(0.05, dt);
     beatCam.phiKick *= Math.pow(0.05, dt);

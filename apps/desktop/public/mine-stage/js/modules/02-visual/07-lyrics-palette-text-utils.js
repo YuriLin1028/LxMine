@@ -564,6 +564,11 @@ function cssColorToThreeColor(css, fallback) {
 }
 function lyricThreeColor(css, fallback, minLum) {
   var c = cssColorToThreeColor(css, fallback || '#d6f8ff');
+  if (typeof LxMineAppearance !== 'undefined' && LxMineAppearance.isLight()) {
+    // Preset palettes also contain rgb() colours. Normalize through THREE
+    // before contrast correction, after the preset's brightness adjustments.
+    return cssColorToThreeColor(LxMineAppearance.readable('#' + c.getHexString()), fallback);
+  }
   var lum = c.r * 0.299 + c.g * 0.587 + c.b * 0.114;
   var floor = minLum == null ? 0.34 : minLum;
   if (lum < floor) {

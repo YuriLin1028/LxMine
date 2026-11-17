@@ -1,3 +1,5 @@
+import { ON_ACCENT } from './Theme';
+import { musicButtonPress } from './MaterialControls';
 import { Song } from '../model/Song';
 import { songKey } from '../services/MusicLibrary';
 import { TEXT, MUTED, ACCENT } from './Theme';
@@ -67,9 +69,9 @@ export struct SongOrderDialog {
           })
         Row({ space: 12 }) {
           Blank()
-          Button('取消').height(40).padding({ left: 18, right: 18 }).fontSize(13).fontColor(TEXT)
+          Button('取消').attributeModifier(musicButtonPress).height(40).padding({ left: 18, right: 18 }).fontSize(13).fontColor(TEXT)
             .backgroundColor('#14FFFFFF').borderRadius(20).onClick(() => this.onCancel())
-          Button('完成').height(40).padding({ left: 20, right: 20 }).fontSize(13).fontColor('#17191C')
+          Button('完成').attributeModifier(musicButtonPress).height(40).padding({ left: 20, right: 20 }).fontSize(13).fontColor(ON_ACCENT)
             .backgroundColor(ACCENT).borderRadius(20)
             .onClick(() => this.onDone(this.order.map((song: Song) => songKey(song))))
         }.width('100%')

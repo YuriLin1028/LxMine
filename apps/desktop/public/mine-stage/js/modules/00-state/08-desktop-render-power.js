@@ -123,6 +123,7 @@ function runtimeAnalysisStride(kind, length) {
   return 1;
 }
 function isDeepBackgroundMode() {
+  if (window.__lxmineStagePresentation) return window.__lxmineStagePresentation.visible !== true;
   if (isLiveBackgroundKeepMode()) return false;
   // Electron may briefly leave document.hidden stale after a tray restore.
   // The native BrowserWindow state is authoritative for desktop power policy;

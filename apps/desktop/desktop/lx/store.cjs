@@ -80,18 +80,20 @@ function createLxSourceStore(options) {
     return id ? getSource(id) : null;
   };
 
-  const importScript = (raw) => {
+  const importScript = (raw, persistImmediately = true) => {
     if (typeof raw !== 'string' || !raw.trim()) throw new Error('无效的自定义源文件');
     const data = load();
     const scriptInfo = parseScriptInfo(raw);
     const scriptHash = hashScript(raw);
     for (const source of data.sources) {
-      if (source.scriptHash === scriptHash) {
-        throw new Error(`导入失败，脚本内容与已有的源「${source.name}」相同`);
+      if ((source.scriptHash || hashScript(source.script || '')) === scriptHash) {
+        const error = new Error(`导入失败，脚本内容与已有的源「${source.name}」相同`);
+        error.code = 'SOURCE_DUPLICATE';
+        throw error;
       }
     }
     const source = {
-      id: `user_api_${Math.random().toString().substring(2, 5)}_${Date.now()}`,
+      id: `user_api_${crypto.randomUUID()}`,
       ...scriptInfo,
       script: raw,
       scriptHash,
@@ -100,8 +102,22 @@ function createLxSourceStore(options) {
     };
     data.sources.push(source);
     if (!data.activeId) data.activeId = source.id;
-    save();
-    return list().find(item => item.id === source.id);
+    if (persistImmediately) save();
+    const { script, ...meta } = source;
+    return { ...meta, size: Buffer.byteLength(script, 'utf8') };
+  };
+
+  const importScripts = (files) => {
+    const result = { imported: 0, skipped: 0, failed: [] };
+    for (const { file, script } of files) {
+      try { importScript(script, false); result.imported++; }
+      catch (error) {
+        if (error.code === 'SOURCE_DUPLICATE') result.skipped++;
+        else result.failed.push({ file, message: error.message });
+      }
+    }
+    if (result.imported) save();
+    return result;
   };
 
   const remove = (ids) => {
@@ -127,6 +143,7 @@ function createLxSourceStore(options) {
     filePath,
     list,
     importScript,
+    importScripts,
     remove,
     setActive,
     getActiveId,

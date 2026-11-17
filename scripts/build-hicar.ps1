@@ -65,6 +65,11 @@ try {
 $out = Join-Path $project 'entry/build/hicar/outputs/default'
 $signed = Join-Path $out 'entry-default-signed.hap'
 $unsigned = Join-Path $out 'entry-default-unsigned.hap'
+foreach ($hapPath in @($signed, $unsigned)) {
+    if (Test-Path -LiteralPath $hapPath) {
+        & (Join-Path $PSScriptRoot 'check-harmony-sources.ps1') -Path $hapPath
+    }
+}
 $releaseRoot = Join-Path $projectRoot 'releases/harmony'
 New-Item -ItemType Directory -Force $releaseRoot | Out-Null
 $stamp = Get-Date -Format yyyyMMdd

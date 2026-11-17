@@ -1,14 +1,19 @@
-import { UIAbility, ConfigurationConstant, Want, AbilityConstant } from '@kit.AbilityKit';
+import { UIAbility, Configuration, ConfigurationConstant, Want, AbilityConstant } from '@kit.AbilityKit';
 import { window } from '@kit.ArkUI';
 import { BusinessError } from '@kit.BasicServicesKit';
 import { deviceInfo } from '@kit.BasicServicesKit';
 import { loadPlaybackSnapshot } from '../services/Store';
 import { latestPlaybackSnapshot } from '../services/Continuation';
+import { systemShare } from '@kit.ShareKit';
+import { webview } from '@kit.ArkWeb';
+import { DEBUG } from 'BuildProfile';
 
 export default class EntryAbility extends UIAbility {
+  private shareGeneration: number = 0;
   onCreate(want: Want, launchParam: AbilityConstant.LaunchParam): void {
+    webview.WebviewController.setWebDebuggingAccess(DEBUG);
     AppStorage.setOrCreate('lxliaForeground', true);
-    this.context.getApplicationContext().setColorMode(ConfigurationConstant.ColorMode.COLOR_MODE_DARK);
+    this.context.getApplicationContext().setColorMode(ConfigurationConstant.ColorMode.COLOR_MODE_NOT_SET);
     this.captureLaunch(want);
   }
   onNewWant(want: Want, launchParam: AbilityConstant.LaunchParam): void {
@@ -16,6 +21,12 @@ export default class EntryAbility extends UIAbility {
   }
   onForeground(): void { AppStorage.setOrCreate('lxliaForeground', true); }
   onBackground(): void { AppStorage.setOrCreate('lxliaForeground', false); }
+  onConfigurationUpdate(configuration: Configuration): void {
+    if (configuration.colorMode !== undefined) AppStorage.setOrCreate('lxmineSystemColorMode', configuration.colorMode);
+  }
+  onMemoryLevel(level: AbilityConstant.MemoryLevel): void {
+    if (level >= AbilityConstant.MemoryLevel.MEMORY_LEVEL_LOW) AppStorage.setOrCreate('lxmineStageMemoryPressure', Date.now());
+  }
 
   /** App continuation: hand the current playback snapshot to the target device. */
   async onContinue(wantParam: Record<string, Object>): Promise<AbilityConstant.OnContinueResult> {
@@ -36,8 +47,16 @@ export default class EntryAbility extends UIAbility {
 
   private captureLaunch(want: Want | undefined): void {
     if (!want) return;
+    const generation = ++this.shareGeneration;
+    if (want.action === 'ohos.want.action.sendData') {
+      systemShare.getSharedData(want).then((data: systemShare.SharedData) => {
+        if (generation !== this.shareGeneration) return;
+        const content = data.getRecords().map((record: systemShare.SharedRecord) => record.content ?? '').filter((text: string) => text.length > 0).join('\n');
+        if (content) AppStorage.setOrCreate('lxmine_shared_playlist', content);
+      }).catch((error: BusinessError) => console.warn(`[PlaylistShare] ${error.message}`));
+    }
     const uri = want.uri;
-    if (typeof uri === 'string' && uri.length) AppStorage.setOrCreate('lxmine_deep_link', uri);
+    if (typeof uri === 'string' && uri.startsWith('lxmine://')) AppStorage.setOrCreate('lxmine_deep_link', uri);
     const params = want.parameters;
     const continued = params ? params['lxmine_playback'] : undefined;
     if (typeof continued === 'string') AppStorage.setOrCreate('lxmine_continue_playback', continued);

@@ -1,12 +1,12 @@
 # LxMine
 
-跨端音乐播放器，面向 **Windows** 与 **HarmonyOS 手机 / 平板 / 车机**。
+跨端音乐播放器，面向 **Windows**、**Android** 与 **HarmonyOS 手机 / 平板 / 车机**。
 
 LxMine 以 [Mineradio](#上游与致谢) 2.2.0 的沉浸视觉与桌面体验为基座，接入
 [LX Music](#上游与致谢) 的自定义音源协议与音乐资料库能力，统一 PC 与鸿蒙端的首页、
-歌单、搜索、本地音乐与播放详情体验。
+歌单、搜索、本地音乐与播放详情体验，并提供 Android 原生客户端。
 
-当前版本：**1.0.0**（2026-11-14），安装包见 [Releases](https://github.com/YuriLin1028/LxMine/releases/latest)。
+当前版本 **1.1.0**（2026-11-17），安装包见 [Releases](https://github.com/YuriLin1028/LxMine/releases/latest)。
 版本内容见 [RELEASE_NOTES](docs/RELEASE_NOTES.md)，构建与发布记录见 [RELEASE](docs/RELEASE.md)。
 
 ## 界面预览
@@ -44,20 +44,29 @@ LxMine 不是 LX Music 或 Mineradio 的官方版本，与两位作者无隶属�
 - **本地音乐**：目录扫描、元数据与内嵌封面读取、歌词解析、下载收纳。
 - **PC 沉浸光感**：指针追光、系统材质、锚点弹窗、无边框窗口 chrome 与按压反馈。
 - **鸿蒙原生端**：ArkTS / ArkUI 导航与播控，应用接续、局域网同步、横屏沉浸。
-- **多音源兼容**：兼容 LX 自定义源脚本；脚本由用户自行导入，仓库不附带。
+- **Android 原生端**提供 Compose 界面，Android 13 及以上使用液态玻璃交互。
+- **外观与动效**支持深色、浅色、跟随系统，以及播放页「关闭动效」。
+- **多音源兼容**支持 LX 自定义源脚本批量导入、重复跳过和逐文件错误提示。
 
 ## 安装
 
 ### Windows
 
 从 [Releases](https://github.com/YuriLin1028/LxMine/releases/latest) 下载
-`LxMine-1.0.0-Setup.exe` 安装。安装包没有商业代码签名，SmartScreen 可能提示
+`LxMine-1.1.0-Setup.exe` 安装，或下载 `LxMine-1.1.0-Portable.exe` 运行。
+安装包没有商业代码签名，SmartScreen 可能提示
 “未知发布者”，选择“更多信息 → 仍要运行”即可。
+
+### Android
+
+从 Releases 下载 `LxMine-1.1.0-Android.apk` 安装，最低支持 Android 8.0。
+Android 13 及以上提供液态玻璃与水球导航交互，Android 12 及以下适配普通点击反馈。
+首次使用可在「设置 → 音源」多选导入自行获得的 JS/TXT 脚本。
 
 ### HarmonyOS（未签名 HAP）
 
-从 Releases 下载 `LxMine-1.0.0-HiCar-unsigned.hap`：`bundleName` 为
-`cn.migu.music`，支持 phone / tablet / car，versionName 1.0.0。
+从 Releases 下载 `LxMine-1.1.0-HiCar-unsigned.hap`，`bundleName` 为
+`cn.migu.music`，支持 phone / tablet / car，versionName 1.1.0。
 
 未签名 HAP **不能直接安装**，需要先完成签名：
 
@@ -75,10 +84,11 @@ LxMine 不是 LX Music 或 Mineradio 的官方版本，与两位作者无隶属�
 
 ### HarmonyOS（应用市场邀请测试）
 
-[**安装 LxMine 1.0.0 邀请测试版**](https://appgallery.huawei.com/link/invite-test-wap?taskId=761342eecbf60206af1fb147f03e9276&invitationCode=1Klp9jEJXOp)
+[**加入 LxMine 邀请测试（沿用原链接）**](https://appgallery.huawei.com/link/invite-test-wap?taskId=761342eecbf60206af1fb147f03e9276&invitationCode=1Klp9jEJXOp)
 
 使用鸿蒙系统自带浏览器打开完整链接，点击「开始测试」，首次参与时点击「同意」加入
-测试群组，然后点击「安装」。后续可从应用市场「应用尝鲜」更新。转发时请保留完整的
+测试群组，然后点击「安装」。1.1.0 沿用同一测试群组，已有用户可从应用市场「应用尝鲜」
+查看可用版本并更新。转发时请保留完整的
 `&invitationCode=1Klp9jEJXOp` 参数。
 
 在微信、QQ、抖音等应用中收到链接时，请复制下面的完整网址到手机系统自带浏览器的地址栏，
@@ -102,6 +112,7 @@ https://appgallery.huawei.com/link/invite-test-wap?taskId=761342eecbf60206af1fb1
 
 ```
 apps/desktop/                Electron 桌面端（Mineradio 基座 + LX 音源层）
+apps/android/                Android Kotlin / Compose 原生客户端
 apps/harmony/                HarmonyOS ArkTS 工程（手机 / 平板 / 车机）
 packages/huawei-immersive-pc 华为式沉浸光感 PC 标准包（独立 MIT 许可）
 docs/                        构建、来源、同步、版本与验收文档

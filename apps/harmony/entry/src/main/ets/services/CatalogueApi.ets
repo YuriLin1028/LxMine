@@ -8,7 +8,7 @@ export const SEARCH_KINDS: string[] = ['歌曲', '歌单', '歌手', '专辑', '
 export const SEARCH_KIND_IDS: string[] = ['music', 'songlist', 'artist', 'album', 'lyric', 'podcast'];
 export async function searchCatalogue(host: LxHost, source: LxSearchSource, kind: string, query: string, page: number, cancelled:()=>boolean=()=>false, onProgress:(items:CatalogueEntity[],total:number)=>void=()=>{}): Promise<CatalogueResult> {
   const sources: string[] = source === 'all' ? (kind === 'songlist' ? ['kw', 'kg', 'wy', 'tx'] : ['wy']) : [source];
-  const snapshots: CatalogueEntity[][] = sources.map((): CatalogueEntity[] => []);
+  const items: CatalogueEntity[] = [];
   const totals: number[] = sources.map(() => 0);
   const responses = await Promise.allSettled(sources.map(async (platform: string, index: number) => {
     let next=1,total=0,warning='';const all:CatalogueEntity[]=[];const seen:Set<string>=new Set<string>();
@@ -17,11 +17,11 @@ export async function searchCatalogue(host: LxHost, source: LxSearchSource, kind
       let result:CatalogueResult;
       try{result=JSON.parse(await host.catalogue('search',JSON.stringify({source:platform,type:kind,query,page:next,limit:30}))) as CatalogueResult;}
       catch(error){if(!all.length)throw new Error((error as Error).message);warning='网络中断，已保留获取的结果，请重新搜索重试';break;}
+      if (cancelled()) break;
       total=Math.max(total,result.total);let added=0;
-      for(const item of result.items){const key=`${item.source}:${item.kind}:${item.id}`;if(!seen.has(key)){seen.add(key);all.push(item);added++;}}
-      snapshots[index] = all.slice(); totals[index] = total;
-      const current: CatalogueEntity[] = []; for (const snapshot of snapshots) current.push(...snapshot);
-      if (!cancelled()) onProgress(current, totals.reduce((sum: number, value: number) => sum + value, 0));
+      for(const item of result.items){const key=`${item.source}:${item.kind}:${item.id}`;if(!seen.has(key)){seen.add(key);all.push(item);items.push(item);added++;}}
+      totals[index] = total;
+      if (!cancelled()) onProgress(items.slice(), totals.reduce((sum: number, value: number) => sum + value, 0));
       if(!result.items.length||!added){if(all.length<total)warning='平台已停止返回新结果，已显示全部可获取结果';break;}
       if(result.hasMore===false)break;
       if(total>result.items.length&&next*30>=total)break;
@@ -29,9 +29,9 @@ export async function searchCatalogue(host: LxHost, source: LxSearchSource, kind
     }
     const result:CatalogueResult={items:all,total,page:1,limit:all.length,warning};return result;
   }));
-  const items: CatalogueEntity[] = [];const warnings:string[]=[]; let total = 0; let failed = 0; let error: string = '';
+  const warnings:string[]=[]; let total = 0; let failed = 0; let error: string = '';
   for (const response of responses) {
-    if (response.status === 'fulfilled') { items.push(...response.value.items); total += response.value.total;if(response.value.warning)warnings.push(response.value.warning); }
+    if (response.status === 'fulfilled') { total += response.value.total;if(response.value.warning)warnings.push(response.value.warning); }
     else { failed++; error = String(response.reason); }
   }
   if (failed === sources.length) throw new Error(error || '公开检索暂不可用');

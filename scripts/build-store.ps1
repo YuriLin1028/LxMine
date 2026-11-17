@@ -4,7 +4,7 @@ $ErrorActionPreference = 'Stop'
 if ($PSVersionTable.PSVersion.Major -lt 7) { throw '请使用 PowerShell 7。' }
 
 # Store 版 = 华为应用市场「邀请测试」通道的包：product=store，bundleName com.lxmine.player，
-# 只有 phone / tablet，产物是 AGC 接受的 .app（内含 HAP）。
+# 支持 phone / tablet / 2in1，产物是 AGC 接受的 .app（内含 HAP）。
 # 车机包始终由 build-hicar.ps1 产出并只通过 GitHub 分发（cn.migu.music）。
 # 旧的 com.lxlia.player 已在华为侧被占用，Store 线改用 com.lxmine.player（AGC APP ID 6917621881923326327）。
 $projectRoot = Split-Path -Parent $PSScriptRoot
@@ -165,6 +165,8 @@ else {
     if (-not (Test-Path -LiteralPath $unsignedApp)) { throw "构建完成但未找到 APP 包：$outDir" }
     $appPack = $unsignedApp
 }
+
+& (Join-Path $PSScriptRoot 'check-harmony-sources.ps1') -Path $appPack
 
 # 4) 包内自检：AGC 合法性检测的硬性项先本地挡掉。
 Add-Type -AssemblyName System.IO.Compression.FileSystem

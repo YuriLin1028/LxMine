@@ -71,7 +71,7 @@ function currentRenderAdaptiveContext(now) {
   if (typeof isRenderInteractionActive === 'function' && isRenderInteractionActive(now)) {
     return { kind: 'interaction', tier: tier };
   }
-  var activePlayback = !!(playing && audio && !audio.paused);
+  var activePlayback = !!(playing && isAnalysisPlaybackActive());
   return { kind: activePlayback ? 'playback' : 'idle', tier: tier };
 }
 function resolveAdaptiveRenderCadence(now, mode) {
@@ -83,6 +83,7 @@ function resolveAdaptiveRenderCadence(now, mode) {
 }
 function getAdaptiveRenderFps(now) {
   if (isDeepBackgroundMode()) return 1;
+  if (window.__lxmineStagePresentation && !window.__lxmineStagePresentation.detail) return 15;
   var mode = (typeof normalizeForegroundFpsMode === 'function') ? normalizeForegroundFpsMode(fx && fx.foregroundFpsMode) : 'adaptive';
   var fixedFps = (typeof foregroundFixedFpsForMode === 'function') ? foregroundFixedFpsForMode(mode) : null;
   if (fixedFps !== null) return fixedFps;
@@ -174,12 +175,16 @@ var mainFrameGates = {
 window.__mineradioMainFrameGates = mainFrameGates;
 var mainLoopBackgroundTimer = 0;
 var mainLoopAnimationRequested = false;
+var mainLoopAnimationHandle = 0;
 function mainLoopDeepBackgroundSleeping() {
   return typeof isDeepBackgroundMode === 'function'
     && isDeepBackgroundMode()
     && !(typeof isLiveBackgroundKeepMode === 'function' && isLiveBackgroundKeepMode());
 }
 function mainLoopBackgroundDelayMs() {
+  if (window.__lxmineStagePresentation && window.__lxmineStagePresentation.visible && !window.__lxmineStagePresentation.detail) {
+    return Math.max(16, 1000 / 15 - 1000 / estimatedDisplayRefreshHz());
+  }
   if (!mainLoopDeepBackgroundSleeping()) return 0;
   if (fx && (fx.desktopLyrics || fx.wallpaperMode)) return 250;
   if (typeof isBackgroundReleaseMode === 'function' && isBackgroundReleaseMode()) return 1500;
@@ -188,7 +193,7 @@ function mainLoopBackgroundDelayMs() {
 function requestMainLoopAnimationFrame() {
   if (mainLoopAnimationRequested) return;
   mainLoopAnimationRequested = true;
-  requestAnimationFrame(animate);
+  mainLoopAnimationHandle = requestAnimationFrame(animate);
 }
 function scheduleNextMainLoopFrame() {
   var delay = mainLoopBackgroundDelayMs();
@@ -207,6 +212,9 @@ function wakeMainLoopFromBackground() {
     clearTimeout(mainLoopBackgroundTimer);
     mainLoopBackgroundTimer = 0;
   }
+  if (mainLoopAnimationHandle) cancelAnimationFrame(mainLoopAnimationHandle);
+  mainLoopAnimationHandle = 0;
+  mainLoopAnimationRequested = false;
   requestMainLoopAnimationFrame();
 }
 function tickDeepBackgroundFrame(now, dt) {
@@ -230,7 +238,7 @@ function visibleMotionFollowVsync(now) {
   if (mode !== 'vsync') return false;
   if (typeof isProgressDragPreviewActive === 'function' && isProgressDragPreviewActive()) return true;
   if (mainLoopInteractionActive(now)) return true;
-  return !!(playing && audio && !audio.paused);
+  return !!(playing && isAnalysisPlaybackActive());
 }
 function capMainLoopFpsToDisplay(fps) {
   var hz = (typeof estimatedDisplayRefreshHz === 'function') ? estimatedDisplayRefreshHz() : 60;
@@ -244,7 +252,7 @@ function capMainLoopFpsForBudget(fps, minFps) {
 function targetMainAudioFps(now) {
   if (isDeepBackgroundMode()) return 1;
   var scale = (typeof runtimeAudioAnalysisScale === 'function') ? runtimeAudioAnalysisScale() : 1;
-  if (playing && audio && !audio.paused) {
+  if (playing && isAnalysisPlaybackActive()) {
     var base = mainLoopInteractionActive(now) ? 72 : 54;
     return capMainLoopFpsToDisplay(Math.max(30, Math.round(base * scale)));
   }
@@ -264,21 +272,21 @@ function targetMainLyricsParticleFps(now) {
   if (!fx || fx.particleLyrics === false) return 12;
   if (visibleMotionFollowVsync(now)) return 0;
   if (mainLoopInteractionActive(now)) return capMainLoopFpsForBudget(120, 72);
-  return (playing && audio && !audio.paused) ? capMainLoopFpsForBudget(60, 48) : 24;
+  return (playing && isAnalysisPlaybackActive()) ? capMainLoopFpsForBudget(60, 48) : 24;
 }
 function targetMainStageLyricsFps(now) {
   if (isDeepBackgroundMode()) return 1;
   if (!fx || fx.particleLyrics === false) return 12;
   if (visibleMotionFollowVsync(now)) return 0;
   if (mainLoopInteractionActive(now)) return capMainLoopFpsForBudget(120, 72);
-  return (playing && audio && !audio.paused) ? capMainLoopFpsForBudget(60, 48) : 24;
+  return (playing && isAnalysisPlaybackActive()) ? capMainLoopFpsForBudget(60, 48) : 24;
 }
 function targetMainSkullParticleFps(now) {
   if (isDeepBackgroundMode()) return 1;
   if (!fx || fx.preset !== SKULL_PRESET_INDEX) return 10;
   if (visibleMotionFollowVsync(now)) return 0;
   if (mainLoopInteractionActive(now)) return capMainLoopFpsForBudget(120, 72);
-  return (playing && audio && !audio.paused) ? capMainLoopFpsForBudget(60, 45) : 24;
+  return (playing && isAnalysisPlaybackActive()) ? capMainLoopFpsForBudget(60, 45) : 24;
 }
 function targetMainHomeAudioFps(now) {
   if (isDeepBackgroundMode()) return 1;
@@ -310,6 +318,7 @@ function animate() {
   prevTime = now;
   sampleRenderPerf(now, dt);
   uniforms.uTime.value += dt;
+  if (typeof stageLyricViewportHeight !== 'undefined') stageLyricViewportHeight.value = renderer.domElement.height;
   if (isMainSceneCoveredBySplash()) {
     var splashWorkshopActive = window.MineradioSonicWorkshop && MineradioSonicWorkshop.isActive(fx);
     if (window.MineradioSonicWorkshop) {
@@ -359,7 +368,7 @@ function animate() {
     ? getSonicAudioMonitorSnapshot().frame
     : null;
   if (audioStepDt > 0) {
-  if (analyser && playing && audio && !audio.paused) {
+  if (analyser && playing && isAnalysisPlaybackActive()) {
     if (audioCtx && audioCtx.state === 'suspended') resumeAudioAnalysis();
     analyser.getByteFrequencyData(frequencyData);
     analyser.getByteTimeDomainData(timeDomainData);
@@ -378,7 +387,7 @@ function animate() {
       rmsCount++;
     }
     rms = Math.sqrt(rms / Math.max(1, rmsCount));
-    var analysisSampleRate = (audioCtx && audioCtx.sampleRate) || 44100;
+    var analysisSampleRate = getAnalysisSampleRate();
     var analysisFftSize = (analyser && analyser.fftSize) || len * 2;
     if (typeof beatBandRms === 'function') {
       var subKick = beatBandRms(frequencyData, analysisSampleRate, analysisFftSize, 38, 74);
@@ -408,10 +417,10 @@ function animate() {
     var realtimeBeat = processRealtimeBeatEngine(audioStepDt);
     if (realtimeBeat && realtimeBeat.hit) {
       var dj = djMode.active;
-      var djMapCoversCurrentTime = !dj || !currentDjBeatMap || !currentDjBeatMap.partialUntilSec || !audio || (audio.currentTime || 0) <= currentDjBeatMap.partialUntilSec - 1.25;
+      var djMapCoversCurrentTime = !dj || !currentDjBeatMap || !currentDjBeatMap.partialUntilSec || analysisPlaybackTime() <= currentDjBeatMap.partialUntilSec - 1.25;
       var djBeatMapReadyForCamera = dj && currentDjBeatMap && currentDjBeatMap.cameraBeats && currentDjBeatMap.cameraBeats.length >= 4 && djMapCoversCurrentTime;
       var beatMapReadyForCamera = dj ? djBeatMapReadyForCamera : (currentBeatMap && currentBeatMap.cameraBeats && currentBeatMap.cameraBeats.length >= 4);
-      var waitingForBeatMap = dj ? !djBeatMapReadyForCamera : (!beatMapReadyForCamera && (!!beatMapBusy || !!beatAnalysisTimer || ((audio && audio.currentTime) || 0) < 18));
+      var waitingForBeatMap = dj ? !djBeatMapReadyForCamera : (!beatMapReadyForCamera && (!!beatMapBusy || !!beatAnalysisTimer || analysisPlaybackTime() < 18));
       var liveKickFrame = dj
         ? (realtimeBeat.low > 0.42 && rb > 0.32 && bassOnset > 0.040 && energyOnset > 0.006 && (realtimeBeat.lowDominance || 0) > 0.72)
         : (realtimeBeat.low > 0.42 && rb > 0.34 && bassOnset > 0.048 && energyOnset > 0.008);
@@ -471,7 +480,7 @@ function animate() {
         beat: beatPulse,
         sampleRate: analysisSampleRate,
         fftSize: analysisFftSize,
-        currentTime: audio.currentTime || 0
+        currentTime: analysisPlaybackTime()
       });
       if (fx && fx.sonicAudioMonitorEnabled !== false) sonicAudioFrame = sonicMonitorFrame;
     }

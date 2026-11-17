@@ -1,3 +1,5 @@
+import { ON_ACCENT } from './Theme';
+import { musicButtonPress } from './MaterialControls';
 import { TEXT, MUTED, ACCENT } from './Theme';
 
 export interface LocalScanItem {
@@ -72,10 +74,10 @@ export struct LocalScanDialog {
         }.width('100%').layoutWeight(1).scrollBar(BarState.Off).edgeEffect(EdgeEffect.Spring)
         Row({ space: 12 }) {
           Blank()
-          Button('取消').height(40).padding({ left: 18, right: 18 }).fontSize(13).fontColor(TEXT)
+          Button('取消').attributeModifier(musicButtonPress).height(40).padding({ left: 18, right: 18 }).fontSize(13).fontColor(TEXT)
             .backgroundColor('#14FFFFFF').borderRadius(20).onClick(() => this.onCancel())
-          Button(`添加选中 ${this.selectedCount()}`).height(40).padding({ left: 18, right: 18 }).fontSize(13)
-            .fontColor('#17191C').backgroundColor(ACCENT).borderRadius(20).enabled(this.selectedCount() > 0)
+          Button(`添加选中 ${this.selectedCount()}`).attributeModifier(musicButtonPress).height(40).padding({ left: 18, right: 18 }).fontSize(13)
+            .fontColor(ON_ACCENT).backgroundColor(ACCENT).borderRadius(20).enabled(this.selectedCount() > 0)
             .onClick(() => this.confirm())
         }.width('100%')
       }.width(this.wide ? 620 : '92%').height('72%').padding(20)

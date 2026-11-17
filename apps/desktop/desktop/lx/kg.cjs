@@ -43,7 +43,7 @@ function mapKugouItems(lists) {
     }
     const duration = Number.parseInt(raw.Duration, 10);
     // 酷狗返回的图片地址带 {size} 占位符，换成 400 后统一走 https。
-    const image = typeof raw.Image === 'string' && raw.Image.includes('{size}')
+    const image = typeof raw.Image === 'string'
       ? raw.Image.replace('{size}', '400').replace(/^http:/, 'https:')
       : '';
     items.push({

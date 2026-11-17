@@ -4,6 +4,18 @@
 //  Global State
 // ============================================================
 var audio = null, audioCtx = null, source = null, audioSourceMedia = null, analyser = null, beatAnalyser = null, gainNode = null, analysisSinkNode = null, audioReady = false;
+function isAnalysisPlaybackActive() {
+  var native = window.lxmineNativeAnalysis;
+  return native && native.enabled ? native.active : !!(audio && !audio.paused);
+}
+function analysisPlaybackTime() {
+  if (window.lxmineNativeAnalysis && window.lxmineNativeAnalysis.enabled && window.lxmineNativeTime) return window.lxmineNativeTime();
+  return audio && isFinite(audio.currentTime) ? audio.currentTime : 0;
+}
+function getAnalysisSampleRate() {
+  var native = window.lxmineNativeAnalysis;
+  return native && native.enabled ? native.sampleRate : (audioCtx && audioCtx.sampleRate) || 44100;
+}
 var uiSfxCtx = null, lastShelfSelectSfxAt = 0;
 var FFT_SIZE = 2048;
 var frequencyData = new Uint8Array(FFT_SIZE / 2);
@@ -1307,6 +1319,7 @@ function runtimeAnalysisStride(kind, length) {
   return 1;
 }
 function isDeepBackgroundMode() {
+  if (window.__lxmineStagePresentation) return window.__lxmineStagePresentation.visible !== true;
   if (isLiveBackgroundKeepMode()) return false;
   // Electron may briefly leave document.hidden stale after a tray restore.
   // The native BrowserWindow state is authoritative for desktop power policy;
@@ -2253,7 +2266,9 @@ var adaptiveFrameLoadState = {
   lastCostMs: 0,
   lastTargetFps: 0,
   pressure: 0,
-  level: 0
+  level: 0,
+  resolutionScale: 1,
+  lastResolutionAt: 0
 };
 function roundRenderNumber(value, digits) {
   var scale = Math.pow(10, digits || 0);
@@ -2300,6 +2315,19 @@ function sampleAdaptiveFrameCost(costMs, targetFps) {
     adaptiveFrameLoadState.pressure = Math.max(0, adaptiveFrameLoadState.pressure - 0.10);
   }
   adaptiveFrameLoadState.level = adaptiveFrameLoadState.pressure >= 4 ? 2 : (adaptiveFrameLoadState.pressure >= 2 ? 1 : 0);
+  var now = performance.now();
+  var foregroundStage = !window.__lxmineStagePresentation || window.__lxmineStagePresentation.detail;
+  if (foregroundStage && now > 5000) {
+    var scale = adaptiveFrameLoadState.resolutionScale;
+    var elapsed = now - adaptiveFrameLoadState.lastResolutionAt;
+    if (adaptiveFrameLoadState.level >= 2 && elapsed > 2000) scale = Math.max(0.6, scale * 0.85);
+    else if (adaptiveFrameLoadState.level === 0 && adaptiveFrameLoadState.avgMs < budget * 0.45 && elapsed > 10000) scale = Math.min(1, scale * 1.05);
+    if (Math.abs(scale - adaptiveFrameLoadState.resolutionScale) > 0.001) {
+      adaptiveFrameLoadState.resolutionScale = scale;
+      adaptiveFrameLoadState.lastResolutionAt = now;
+      if (typeof applyRendererPowerMode === 'function') applyRendererPowerMode();
+    }
+  }
   return adaptiveFrameLoadSnapshot();
 }
 function adaptiveFrameLoadSnapshot() {
@@ -2308,7 +2336,8 @@ function adaptiveFrameLoadSnapshot() {
     lastCostMs: roundRenderNumber(adaptiveFrameLoadState.lastCostMs, 3),
     lastTargetFps: roundRenderNumber(adaptiveFrameLoadState.lastTargetFps, 1),
     pressure: roundRenderNumber(adaptiveFrameLoadState.pressure, 2),
-    level: adaptiveFrameLoadState.level || 0
+    level: adaptiveFrameLoadState.level || 0,
+    resolutionScale: adaptiveFrameLoadState.resolutionScale
   };
 }
 function clampAdaptiveCadenceDivisor(displayHz, divisor, minFps) {
@@ -2359,10 +2388,13 @@ function getRenderPixelRatio() {
   var device = window.devicePixelRatio || 1;
   if (isDeepBackgroundMode()) return Math.min(device, 0.30);
   var cssPixels = Math.max(1, innerWidth * innerHeight);
+  if (window.__lxmineStagePresentation && !window.__lxmineStagePresentation.detail) {
+    return Math.min(device, 0.65, Math.sqrt(420000 / cssPixels));
+  }
   var quality = renderQualityProfile();
   var budgetCap = Math.sqrt(quality.budget / cssPixels);
   var cap = Math.min(quality.cap, budgetCap);
-  return Math.max(quality.min, Math.min(device, cap));
+  return Math.max(0.4, Math.max(quality.min, Math.min(device, cap)) * adaptiveFrameLoadState.resolutionScale);
 }
 function getRenderPixelLoad() {
   var ratio = getRenderPixelRatio();
@@ -2397,7 +2429,7 @@ function getRenderLoadTier() {
   if (cssPixels >= 3200000 || renderPixels >= 3600000) return 1;
   return 0;
 }
-var renderer = new THREE.WebGLRenderer({ antialias: false, alpha: true, powerPreference: 'high-performance' });
+var renderer = new THREE.WebGLRenderer({ antialias: false, alpha: true, powerPreference: 'default' });
 renderer.setClearColor(0x000000, 0);
 renderer.setPixelRatio(getRenderPixelRatio());
 renderer.setSize(innerWidth, innerHeight);
@@ -2961,7 +2993,7 @@ function primeCinemaAfterTrackStart(reason) {
   if (!fx || !fx.cinema || !beatCam) return;
   var shake = clampRange(Number(fx.cinemaShake) || 0, 0, 1.8);
   if (shake <= 0.001) return;
-  var currentT = audio && isFinite(audio.currentTime) ? audio.currentTime : 0;
+  var currentT = analysisPlaybackTime();
   cinemaDynamics.scale = Math.max(cinemaDynamics.scale || 0, 0.92);
   beatCam.lastTriggerAt = Math.min(beatCam.lastTriggerAt || -10, currentT - 0.48);
   beatCam.punch = Math.max(beatCam.punch || 0, 0.16);
@@ -3161,7 +3193,7 @@ function resetRealtimeBeatEngine() {
   rtBeat.tempoConfidence = 0;
   rtBeat.beatCount = 0;
   rtBeat.primedFrames = 0;
-  rtBeat.warmupUntil = (audio && isFinite(audio.currentTime) ? audio.currentTime : 0) + (djMode.active ? 0.24 : 0.48);
+  rtBeat.warmupUntil = (analysisPlaybackTime()) + (djMode.active ? 0.24 : 0.48);
   rtBeat.pulse = 0;
   rtBeat.score = 0;
   rtBeat.stats.hits = 0;
@@ -3315,12 +3347,12 @@ function beatBandRms(data, sampleRate, fftSize, hz0, hz1) {
 }
 
 function processRealtimeBeatEngine(dt) {
-  if (!beatAnalyser || !audioCtx || !audio || audio.paused) return null;
+  if (!beatAnalyser || !isAnalysisPlaybackActive()) return null;
   dt = Math.max(0.001, Math.min(0.080, dt || 0.016));
   var dj = djMode.active;
   beatAnalyser.getByteFrequencyData(beatFrequencyData);
   beatAnalyser.getByteTimeDomainData(beatTimeDomainData);
-  var sr = audioCtx.sampleRate || 44100;
+  var sr = getAnalysisSampleRate();
   var sub = beatBandRms(beatFrequencyData, sr, beatAnalyser.fftSize, 38, 74);
   var kick = beatBandRms(beatFrequencyData, sr, beatAnalyser.fftSize, 52, 165);
   var body = beatBandRms(beatFrequencyData, sr, beatAnalyser.fftSize, 165, 420);
@@ -3387,7 +3419,7 @@ function processRealtimeBeatEngine(dt) {
   var bodyNorm = clamp01(body / Math.max(0.045, rtBeat.bodyPeak * (dj ? 0.74 : 0.72)));
   var vocalNorm = clamp01(vocal / Math.max(0.045, rtBeat.vocalPeak * 0.72));
   var snapNorm = clamp01(snap / Math.max(0.040, rtBeat.snapPeak * (dj ? 0.78 : 0.72)));
-  var nowT = audio.currentTime || 0;
+  var nowT = analysisPlaybackTime();
   rtBeat.primedFrames++;
   var warmingUp = nowT < rtBeat.warmupUntil || rtBeat.primedFrames < (dj ? 5 : 10);
   var gapFromLast = nowT - rtBeat.lastHitAt;
@@ -3540,7 +3572,7 @@ function mergeRealtimeBeatCamera(time, amp, tone) {
     }
   }
   if (!best) return false;
-  var nowT = audio ? audio.currentTime : uniforms.uTime.value;
+  var nowT = analysisPlaybackTime();
   best.hit = time;
   best.start = nowT - (best.attack || beatCam.attack) * 0.42;
   var mergeMaxAmp = ((tone && tone.dj) || djMode.active) ? 0.62 : 0.62;
@@ -3592,7 +3624,7 @@ function scheduleBeatCamera(beat, source) {
   snapTone /= toneSum;
   var sharpness = typeof beat === 'number' ? snapTone : Math.max(0, Math.min(1, beat.sharpness == null ? snapTone : beat.sharpness));
   var mass = typeof beat === 'number' ? lowTone : Math.max(0, Math.min(1, beat.mass == null ? (lowTone * 0.72 + bodyTone * 0.36 + strength * 0.20) : beat.mass));
-  var nowT = audio ? audio.currentTime : uniforms.uTime.value;
+  var nowT = analysisPlaybackTime();
   var mode = 'deep';
   if (dj) {
     if (rawSnapTone > 0.58 && rawSnapTone > rawLowTone * 0.86 && rawSnapTone > rawBodyTone * 1.08) mode = 'snap';
@@ -3843,8 +3875,8 @@ function scheduleBeatCamera(beat, source) {
 }
 
 function updateBeatCamera(dt) {
-  var t = audio ? audio.currentTime : uniforms.uTime.value;
-  if (!audio || audio.paused) {
+  var t = analysisPlaybackTime();
+  if (!isAnalysisPlaybackActive()) {
     beatCam.punch *= Math.pow(0.08, dt);
     beatCam.thetaKick *= Math.pow(0.05, dt);
     beatCam.phiKick *= Math.pow(0.05, dt);
@@ -9229,6 +9261,11 @@ function cssColorToThreeColor(css, fallback) {
 }
 function lyricThreeColor(css, fallback, minLum) {
   var c = cssColorToThreeColor(css, fallback || '#d6f8ff');
+  if (typeof LxMineAppearance !== 'undefined' && LxMineAppearance.isLight()) {
+    // Preset palettes also contain rgb() colours. Normalize through THREE
+    // before contrast correction, after the preset's brightness adjustments.
+    return cssColorToThreeColor(LxMineAppearance.readable('#' + c.getHexString()), fallback);
+  }
   var lum = c.r * 0.299 + c.g * 0.587 + c.b * 0.114;
   var floor = minLum == null ? 0.34 : minLum;
   if (lum < floor) {
@@ -9261,6 +9298,11 @@ function lyricCustomLineCountValue() {
 }
 function lyricDisplayLineCountForMode(mode) {
   mode = normalizeLyricDisplayMode(mode);
+  if (window.__LXMINE_NATIVE_STAGE && mode === 'cinema') {
+    var rowHeight = Math.max(32, Math.min(innerWidth, innerHeight) * 0.10);
+    var count = Math.min(31, Math.max(11, Math.ceil(innerHeight / rowHeight) + 4));
+    return count % 2 ? count : count + 1;
+  }
   if (mode === 'single') return 1;
   if (mode === 'dual') return 2;
   if (mode === 'triple') return 3;
@@ -10552,6 +10594,21 @@ function makeLyricGlowTexture(text, fontSize, textWidth, lines, lineHeight, fitS
 }
 
 ;
+var stageLyricViewportHeight = { value: renderer.domElement.height };
+function applyLyricViewportFade(material) {
+  if (!window.__LXMINE_NATIVE_STAGE) return material;
+  var previous = material.onBeforeCompile.bind(material);
+  material.onBeforeCompile = function (shader, renderer) {
+    previous(shader, renderer);
+    shader.uniforms.uLyricViewportHeight = stageLyricViewportHeight;
+    shader.fragmentShader = 'uniform highp float uLyricViewportHeight;\n' + shader.fragmentShader.replace(/}\s*$/, [
+      'float lyricScreenY = gl_FragCoord.y / max(1.0, uLyricViewportHeight);',
+      'gl_FragColor.a *= smoothstep(0.0, 0.12, lyricScreenY) * smoothstep(0.0, 0.08, 1.0 - lyricScreenY);',
+      '}'
+    ].join('\n'));
+  };
+  return material;
+}
 var lyricSunBloomTexture = null;
 function getLyricSunBloomTexture() {
   if (lyricSunBloomTexture) return lyricSunBloomTexture;
@@ -10617,7 +10674,7 @@ function getLyricSunBloomTexture() {
 
 function makeLyricShaderMaterial(mask, pal, motionProfile) {
   motionProfile = motionProfile || lyricMotionProfile();
-  return new THREE.ShaderMaterial({
+  return applyLyricViewportFade(new THREE.ShaderMaterial({
     uniforms: {
       uMap: { value: mask.texture },
       uTime: uniforms.uTime,
@@ -10625,11 +10682,13 @@ function makeLyricShaderMaterial(mask, pal, motionProfile) {
       uTextMin: { value: mask.textMin },
       uTextMax: { value: mask.textMax },
       uOpacity: { value: 0 },
+      uThemeLight: typeof LxMineAppearance !== 'undefined' ? LxMineAppearance.uniform : { value: 0 },
+      uMaskTexel: { value: new THREE.Vector2(2 / Math.max(1, Number(mask.width) || 1), 2 / Math.max(1, Number(mask.height) || 1)) },
       uBaseColor: { value: lyricThreeColor(pal.primary, '#d6f8ff', 0.38) },
       uHiColor: { value: lyricThreeColor(pal.highlight || pal.primary, '#fff0b8', 0.48) },
       uGlowColor: { value: lyricStageGlowThreeColor(pal, '#9cffdf', 0.36) },
       uSolarColor: { value: lyricBeatGlowThreeColor(pal, '#fff0b8', 0.50) },
-      uFeather: { value: lyricsHasNativeKaraoke ? 0.030 : 0.055 },
+      uFeather: { value: LxMineLyrics.feather(lyricsHasNativeKaraoke) },
       uSolar: { value: 0 },
       uSweep: { value: motionProfile.sweep || 0 },
       uShimmer: { value: motionProfile.shimmer || 0 },
@@ -10648,6 +10707,8 @@ function makeLyricShaderMaterial(mask, pal, motionProfile) {
       'uniform sampler2D uMap;',
       'uniform float uTime,uProgress,uTextMin,uTextMax,uOpacity,uFeather,uSolar,uSweep,uShimmer,uGlitch,uGlitchSlice,uGlitchChroma,uGlitchRate,uGlitchSeed,uGlitchBurst,uEdgeBoost,uActiveMix;',
       'uniform vec3 uBaseColor,uHiColor,uGlowColor,uSolarColor;',
+      'uniform float uThemeLight;',
+      'uniform vec2 uMaskTexel;',
       'varying vec2 vUv;',
       'float hash(float n){ return fract(sin(n) * 43758.5453123); }',
       'float hash2(vec2 p){ return fract(sin(dot(p, vec2(127.1,311.7))) * 43758.5453123); }',
@@ -10664,7 +10725,18 @@ function makeLyricShaderMaterial(mask, pal, motionProfile) {
       '  float glitchWave = (phaseRnd * 2.0 - 1.0) * (0.55 + micro * 0.95);',
       '  float glitchWidth = (0.0020 + rowRnd * rowRnd * 0.0085) * (0.55 + uGlitchBurst * 1.85);',
       '  vec2 sampleUv = uv + vec2(glitchGate * glitchDir * glitchWave * uGlitch * uGlitchSlice * glitchWidth, 0.0);',
+      '  sampleUv = mix(sampleUv, uv, uThemeLight);',
       '  float mask = texture2D(uMap, sampleUv).a;',
+      '  if (uThemeLight > 0.5) {',
+      '    float outline = max(max(texture2D(uMap, uv + vec2(uMaskTexel.x,0.0)).a,texture2D(uMap, uv - vec2(uMaskTexel.x,0.0)).a),max(texture2D(uMap, uv + vec2(0.0,uMaskTexel.y)).a,texture2D(uMap, uv - vec2(0.0,uMaskTexel.y)).a));',
+      '    float outlineAlpha = outline * 0.78 * (1.0 - mask);',
+      '    float alpha = mask + outlineAlpha;',
+      '    if (alpha < 0.01) discard;',
+      '    float p = clamp((uv.x-uTextMin)/max(0.001,uTextMax-uTextMin),0.0,1.0);',
+      '    float filled = (1.0-smoothstep(uProgress,uProgress+uFeather,p))*clamp(uActiveMix,0.0,1.0);',
+      '    vec3 ink = mix(uBaseColor,uHiColor,filled*0.88);',
+      '    gl_FragColor = vec4((ink*mask+vec3(0.78,0.80,0.83)*outlineAlpha)/max(alpha,0.001),alpha*uOpacity);',
+      '  } else {',
       '  if(mask < 0.01) discard;',
       '  float activeMix = clamp(uActiveMix, 0.0, 1.0);',
       '  float denom = max(0.001, uTextMax - uTextMin);',
@@ -10686,13 +10758,14 @@ function makeLyricShaderMaterial(mask, pal, motionProfile) {
       '  color = mix(color, color + solar * 0.34, uSolar * activeMix * (0.25 + filled * 0.45));',
       '  color += solar * edge * uSolar * 0.22;',
       '  float lum = dot(color, vec3(0.299, 0.587, 0.114));',
-      '  color += vec3(max(0.0, 0.30 - lum));',
+      '  color += vec3(max(0.0, 0.30 - lum)) * (1.0 - uThemeLight);',
       '  float alpha = max(mask, max(chromaR, chromaB) * glitchGate * uGlitch * (0.30 + uGlitchBurst * 0.32));',
       '  gl_FragColor = vec4(color, alpha * uOpacity);',
+      '  }',
       '}',
     ].join('\n'),
     transparent: true, depthWrite: false, depthTest: false, side: THREE.DoubleSide,
-  });
+  }));
 }
 
 ;
@@ -10831,7 +10904,7 @@ function lyricRowDepthScale(entry, index, activeLine) {
 function makeLyricBackfaceReadableMaterial(opts) {
   opts = opts || {};
   var color = opts.color && opts.color.isColor ? opts.color.clone() : new THREE.Color(opts.color == null ? 0xffffff : opts.color);
-  return new THREE.ShaderMaterial({
+  return applyLyricViewportFade(new THREE.ShaderMaterial({
     uniforms: {
       uMap: { value: opts.map || null },
       uColor: { value: color },
@@ -10861,7 +10934,7 @@ function makeLyricBackfaceReadableMaterial(opts) {
     depthTest: false,
     side: THREE.DoubleSide,
     blending: opts.blending || THREE.NormalBlending
-  });
+  }));
 }
 function setLyricTextureMaterialOpacity(mat, value) {
   value = clampRange(Number(value) || 0, 0, 1);
@@ -12023,6 +12096,7 @@ function updateLyricRowLayers(data, opts) {
   if (!data || !data.rowLayers || !data.rowLayers.length) return;
   opts = opts || {};
   var opacity = clampRange(Number(opts.opacity) || 0, 0, 1);
+  var nativeLightInk = window.__LXMINE_NATIVE_STAGE && typeof LxMineAppearance !== 'undefined' && LxMineAppearance.isLight();
   var readability = clampRange(Number(opts.readability) || 0.58, 0, 1);
   var contextIntro = opts.contextIntro == null ? 1 : clampRange(Number(opts.contextIntro) || 0, 0, 1);
   var shownProgress = clampRange(Number(opts.shownProgress) || 0, 0, 1);
@@ -12049,7 +12123,7 @@ function updateLyricRowLayers(data, opts) {
   var frameScale = isFinite(frameDelta) && frameDelta > 0 ? clampRange(frameDelta * 60, 0.25, 3) : 1;
   // Preserve the 60 Hz feel while keeping the same motion duration when a
   // low-spec machine briefly renders at 30/45 Hz.
-  var ease = 1 - Math.pow(1 - baseEase, frameScale);
+  var ease = LxMineLyrics.frameEase(baseEase, frameScale / 60);
   var pendingPayload = data.trackPersistent && data.trackPendingPayload ? data.trackPendingPayload : null;
   var pendingTargetLineIndex = pendingPayload && pendingPayload.trackIndex != null && isFinite(Number(pendingPayload.trackIndex))
     ? Number(pendingPayload.trackIndex)
@@ -12068,7 +12142,7 @@ function updateLyricRowLayers(data, opts) {
       ? Number(opts.targetVirtualIndex)
       : (isFinite(Number(data.trackTargetVirtualIndex)) ? Number(data.trackTargetVirtualIndex) : lyricPrimaryVirtualIndex(targetLineIndex)));
   var baseTrackEase = opts.trackEase == null ? clampRange(baseEase * 1.16, 0.08, 0.34) : clampRange(Number(opts.trackEase) || 0.18, 0.04, 0.60);
-  var trackEase = 1 - Math.pow(1 - baseTrackEase, frameScale);
+  var trackEase = LxMineLyrics.frameEase(baseTrackEase, frameScale / 60);
   var nowMs = (typeof performance !== 'undefined' && performance.now) ? performance.now() : Date.now();
   var trackTargetJustCommitted = !!(data.trackPersistent && isFinite(Number(data.trackTargetCommittedAt)) && nowMs - Number(data.trackTargetCommittedAt) <= 34);
   var initialTextRevealPending = !!(data.usesTrack && data.renderInitialTextReady !== true);
@@ -12098,16 +12172,8 @@ function updateLyricRowLayers(data, opts) {
     data.trackScrollOffset = targetIndex;
     data.trackScrollPrimed = true;
   } else {
-    var trackStep = (targetIndex - data.trackScrollOffset) * trackEase;
-    if (data.usesTrack && persistentPrimedTrack) {
-      // Bound the shared phase, not individual meshes: no rendered frame may
-      // skip across a complete primary lyric row, while normal adjacent-line
-      // easing keeps exactly the same timing as before.
-      var continuousTrackMaxRowsPerFrame = 0.68;
-      var continuousTrackMaxStep = continuousTrackSlotStep * continuousTrackMaxRowsPerFrame;
-      trackStep = clampRange(trackStep, -continuousTrackMaxStep, continuousTrackMaxStep);
-    }
-    data.trackScrollOffset += trackStep;
+    var continuousTrackMaxStep = data.usesTrack && persistentPrimedTrack ? continuousTrackSlotStep * 0.68 : Infinity;
+    data.trackScrollOffset = LxMineLyrics.followStep(data.trackScrollOffset, targetIndex, trackEase, continuousTrackMaxStep);
   }
   var scrollOffset = data.trackScrollOffset;
   var lineStepWorld = clampRange(Number(data.lineWorldStep) || 0.38, 0.20, 0.94);
@@ -12217,7 +12283,7 @@ function updateLyricRowLayers(data, opts) {
     var motionAnchor = isActive || currentTranslation;
     var rowIntro = motionAnchor ? 1 : contextIntro;
     var visibleRadius = Math.max(0.85, Number(data.trackVisibleRadius) || 3);
-    var visibleFade = lineWindowAllowed ? (motionAnchor ? 1 : clampRange((visibleRadius + 1.10 - visibilityAbs) / 1.10, 0, 1)) : 0;
+    var visibleFade = lineWindowAllowed ? (window.__LXMINE_NATIVE_STAGE || motionAnchor ? 1 : clampRange((visibleRadius + 1.10 - visibilityAbs) / 1.10, 0, 1)) : 0;
     visibleFade = visibleFade * visibleFade * (3 - 2 * visibleFade);
     var renderWindowActive = !!(lineWindowAllowed && (motionAnchor || visibleFade > 0.002));
     if (renderWindowActive && !row.renderWindowActive) {
@@ -12241,10 +12307,10 @@ function updateLyricRowLayers(data, opts) {
     }
     var rowRevealAt = Number(row.renderRevealAt) || nowMs;
     var lineLayerVisible = renderWindowActive && (initialTextRevealPending || nowMs >= rowRevealAt);
-    var readabilityLayerVisible = textureEffectsAllowed && lineLayerVisible && readability > 0.001 && nowMs >= rowRevealAt + 18;
+    var readabilityLayerVisible = !nativeLightInk && textureEffectsAllowed && lineLayerVisible && readability > 0.001 && nowMs >= rowRevealAt + 18;
     var existingGlowOpacity = row.glowMat ? getLyricTextureMaterialOpacity(row.glowMat) : 0;
     var glowLayerWanted = rowGlow > 0.001 || rowGlowBeat > 0.001 || existingGlowOpacity > 0.004;
-    var glowLayerVisible = textureEffectsAllowed && lineLayerVisible && glowLayerWanted && nowMs >= rowRevealAt + 40;
+    var glowLayerVisible = !nativeLightInk && textureEffectsAllowed && lineLayerVisible && glowLayerWanted && nowMs >= rowRevealAt + 40;
     var anchorRevealPriority = isActive ? 0 : (currentTranslation ? 1 : null);
     var contextRevealPriority = 20 + Math.min(8, visibilityAbs) * 6 + (row.isTranslation ? 1 : 0);
     if (row.mesh) {
@@ -12276,9 +12342,9 @@ function updateLyricRowLayers(data, opts) {
       var pendingPriority = pendingDistance * 4 + (row.isTranslation ? 1 : 0);
       if (row.mesh && !row.renderLineUploaded) {
         renderRevealCandidates.push({ row: row, mesh: row.mesh, flag: 'renderLineUploaded', priority: 4 + pendingPriority, transparentPrewarm: true });
-      } else if (row.readability && !row.renderReadabilityUploaded) {
+      } else if (!nativeLightInk && row.readability && !row.renderReadabilityUploaded) {
         renderRevealCandidates.push({ row: row, mesh: row.readability, flag: 'renderReadabilityUploaded', priority: 104 + pendingPriority, transparentPrewarm: true });
-      } else if (row.glow && !row.renderGlowUploaded) {
+      } else if (!nativeLightInk && row.glow && !row.renderGlowUploaded) {
         renderRevealCandidates.push({ row: row, mesh: row.glow, flag: 'renderGlowUploaded', priority: 204 + pendingPriority, transparentPrewarm: true });
       }
     }
@@ -12286,13 +12352,15 @@ function updateLyricRowLayers(data, opts) {
       var trackPrewarmOrder = Math.max(0, rowLineIndex == null ? i : Math.round(rowLineIndex)) * 2 + (row.isTranslation ? 1 : 0);
       if (row.mesh && !row.renderLineUploaded) {
         renderRevealCandidates.push({ row: row, mesh: row.mesh, flag: 'renderLineUploaded', priority: 300 + trackPrewarmOrder * 0.01, transparentPrewarm: true });
-      } else if (row.readability && !row.renderReadabilityUploaded) {
+      } else if (!nativeLightInk && row.readability && !row.renderReadabilityUploaded) {
         renderRevealCandidates.push({ row: row, mesh: row.readability, flag: 'renderReadabilityUploaded', priority: 400 + trackPrewarmOrder * 0.01, transparentPrewarm: true });
-      } else if (row.glow && !row.renderGlowUploaded) {
+      } else if (!nativeLightInk && row.glow && !row.renderGlowUploaded) {
         renderRevealCandidates.push({ row: row, mesh: row.glow, flag: 'renderGlowUploaded', priority: 500 + trackPrewarmOrder * 0.01, transparentPrewarm: true });
       }
     }
-    var target = opacity * (isActive ? 1 : contextAlpha) * rowIntro * visibleFade;
+    var readableContext = window.__LXMINE_NATIVE_STAGE && typeof LxMineAppearance !== 'undefined' && LxMineAppearance.isLight()
+      ? Math.max(contextAlpha, 0.88) : contextAlpha;
+    var target = opacity * (isActive ? 1 : readableContext) * rowIntro * visibleFade;
     var depthFade = motionAnchor ? 1 : clampRange(1 - visibilityAbs * 0.055, 0.54, 1) * visibleFade;
     var yTarget = -liveDelta * lineStepWorld + (motionAnchor ? 0 : rowDrift * clampRange(0.70 + abs * 0.10, 0.65, 1.20));
     if (row.isTranslation) {
@@ -12326,13 +12394,8 @@ function updateLyricRowLayers(data, opts) {
     if (row.mesh) {
       row.mesh.position.x += ((isActive ? jitterX : (currentTranslation ? jitterX * 0.82 : jitterX * 0.28)) - row.mesh.position.x) * (opts.glitchPulse ? 0.48 : 0.13);
       var rowYTarget = yTarget + (verticalFloatOn ? (isActive ? jitterY : (currentTranslation ? jitterY * 0.78 : jitterY * 0.24)) : 0);
-      var rowYStep = (rowYTarget - row.mesh.position.y) * ease;
-      if (data.usesTrack && persistentPrimedTrack) {
-        var continuousRowMaxRowsPerFrame = 0.66;
-        var continuousRowMaxStepWorld = continuousTrackSlotStep * lineStepWorld * continuousRowMaxRowsPerFrame;
-        rowYStep = clampRange(rowYStep, -continuousRowMaxStepWorld, continuousRowMaxStepWorld);
-      }
-      row.mesh.position.y += rowYStep;
+      var continuousRowMaxStepWorld = data.usesTrack && persistentPrimedTrack ? continuousTrackSlotStep * lineStepWorld * 0.66 : Infinity;
+      row.mesh.position.y = LxMineLyrics.followStep(row.mesh.position.y, rowYTarget, ease, continuousRowMaxStepWorld);
       row.mesh.position.z += (zTarget - row.mesh.position.z) * ease;
       row.mesh.scale.setScalar(row.mesh.scale.x + (scaleTarget - row.mesh.scale.x) * ease);
       row.mesh.renderOrder = isActive ? (renderBase + 0.40) : (row.isTranslation ? (renderBase + 0.05 + (currentTranslation ? 0.34 : translationFocus * 0.30)) : (renderBase - 0.40 - Math.min(5.5, abs) * 0.015));
@@ -12752,7 +12815,13 @@ function beginCooperativeLyricMeshBuild(input) {
 function stepCooperativeLyricMeshBuild(state, maxPhases, budgetMs) {
   if (!state || state.cancelled || state.finished) return true;
   if (state.initPhase === 0) {
-    var layoutDone = stepLyricMaskLayoutMetricsBuild(state.layoutState, 1);
+    var startedAt = performance.now();
+    var limit = Math.max(1, Number(maxPhases) || 1);
+    var layoutDone = false;
+    for (var measured = 0; measured < limit; measured++) {
+      layoutDone = stepLyricMaskLayoutMetricsBuild(state.layoutState, 1);
+      if (layoutDone || performance.now() - startedAt >= budgetMs) break;
+    }
     state.completedPhases = Number(state.layoutState && state.layoutState.completedPhases) || state.completedPhases;
     state.lastPhase = 'layout-' + (state.layoutState && state.layoutState.lastPhase || 'entry');
     if (!layoutDone) return false;
@@ -14230,6 +14299,11 @@ function ensureStageLyricPersistentTrackRows(mesh, targetIndex, options) {
   // build's continuous track, without paying its 200+ row startup cost.
   var desiredStart = Math.max(0, targetIndex + minOffset - (interactivePreview ? 4 : 6));
   var desiredEnd = Math.min(last, targetIndex + maxOffset + (interactivePreview ? 10 : 24));
+  if (window.__LXMINE_NATIVE_STAGE) {
+    var viewportWindow = lyricMeshTrackWindow(targetIndex, data.displayMode || (fx && fx.lyricDisplayMode));
+    desiredStart = viewportWindow.start;
+    desiredEnd = viewportWindow.end;
+  }
   var visibleStart = Math.max(0, targetIndex + minOffset);
   var visibleEnd = Math.min(last, targetIndex + maxOffset);
   var targetMissing = !stageLyricPersistentLineRowsResident(data, targetIndex, residentRowMap);
@@ -14268,7 +14342,7 @@ function ensureStageLyricPersistentTrackRows(mesh, targetIndex, options) {
     // track in the background until the whole song is resident.  This restores
     // the private build's one-piece scroll without paying for off-screen glow
     // and readability layers.
-    if (!interactivePreview && !data.trackPendingPayload) {
+    if (!window.__LXMINE_NATIVE_STAGE && !interactivePreview && !data.trackPendingPayload) {
       var activeRunwayJob = stageLyricResidentBuild.job;
       if (activeRunwayJob && activeRunwayJob.mesh === mesh) return true;
       var runwayRange = stageLyricPersistentNextTextRunwayRange(data, targetIndex, residentRowMap);
@@ -14330,6 +14404,11 @@ function trimStageLyricPersistentTrackRows(mesh, targetIndex, options) {
   var interactive = options.interactive === true;
   var keepStart = Math.max(0, targetIndex + minOffset - (interactive ? 3 : 6));
   var keepEnd = Math.min(lyricsLines.length - 1, targetIndex + maxOffset + (interactive ? 5 : 24));
+  if (window.__LXMINE_NATIVE_STAGE) {
+    var viewportWindow = lyricMeshTrackWindow(targetIndex, data.displayMode || (fx && fx.lyricDisplayMode));
+    keepStart = viewportWindow.start;
+    keepEnd = viewportWindow.end;
+  }
   var preserveTargetIndex = Number(options.preserveTargetIndex);
   var preserveStart = Infinity;
   var preserveEnd = -Infinity;
@@ -14339,6 +14418,7 @@ function trimStageLyricPersistentTrackRows(mesh, targetIndex, options) {
     preserveEnd = Math.min(lyricsLines.length - 1, preserveTargetIndex + maxOffset + 2);
   }
   var releasedEffects = 0;
+  var retainedRows = [];
   for (var i = 0; i < data.rowLayers.length; i++) {
     var row = data.rowLayers[i];
     var lineIndex = row && row.isTranslation
@@ -14349,7 +14429,13 @@ function trimStageLyricPersistentTrackRows(mesh, targetIndex, options) {
     var keepForCommittedWindow = roundedLineIndex != null && roundedLineIndex >= preserveStart && roundedLineIndex <= preserveEnd;
     var keepEffects = roundedLineIndex == null || keepForTarget || keepForCommittedWindow ||
       roundedLineIndex === targetIndex || roundedLineIndex === preserveTargetIndex;
-    if (keepEffects) continue;
+    if (keepEffects) { retainedRows.push(row); continue; }
+    if (window.__LXMINE_NATIVE_STAGE) {
+      disposeStageLyricResidentRow(row);
+      releasedEffects += 1;
+      continue;
+    }
+    retainedRows.push(row);
     // Text rows are the continuous whole-song runway.  Only their expensive
     // off-screen effect layers are evicted; deleting the text row itself would
     // reintroduce the load/merge break the user sees while seeking.
@@ -14368,6 +14454,7 @@ function trimStageLyricPersistentTrackRows(mesh, targetIndex, options) {
       releasedEffects += 1;
     }
   }
+  data.rowLayers = retainedRows;
   updateStageLyricPersistentResidentBounds(data);
   return releasedEffects > 0;
 }
@@ -14518,6 +14605,7 @@ function stageLyricProgressSeekVisualReady(seconds) {
 function chooseStageLyricPrewarmIndex() {
   if (!lyricsLines || !lyricsLines.length) return -1;
   if (
+    !window.lxmineNativeTime &&
     (Number(stageLyricTrackSwitchBootstrapUntil) || 0) > stageLyricNowMs() &&
     (!stageLyrics || stageLyrics.currentIdx < 0)
   ) {
@@ -14687,7 +14775,7 @@ function runStageLyricCooperativePrewarm(job) {
   var startedAt = stageLyricNowMs();
   var done = false;
   try {
-    done = stepCooperativeLyricMeshBuild(job.state, 1, 4.2);
+    done = stepCooperativeLyricMeshBuild(job.state, 32, 4.2);
   } catch (e) {
     cancelStageLyricPrewarmBuildOnly();
     return;
@@ -15281,14 +15369,8 @@ function updateStageLyrics3D(dt) {
     if (isCurrent && data.textMat && data.textMat.uniforms && data.textMat.uniforms.uProgress) {
       var targetProgress = clampRange(Number(mesh.userData.targetLyricProgress) || 0, 0, 1);
       shownProgress = clampRange(Number(data.textMat.uniforms.uProgress.value) || 0, 0, 1);
-      if (mesh.userData.nativeKaraokeProgress) {
-        shownProgress = targetProgress;
-      } else {
-        var progressDiff = targetProgress - shownProgress;
-        var progressEase = Math.abs(progressDiff) > 0.42 ? Math.max(0.52, lyricMotion.progressEase * 1.55) : lyricMotion.progressEase;
-        if (mesh.userData.age < 0.16) progressEase = Math.max(progressEase, 0.28);
-        shownProgress = clampRange(shownProgress + progressDiff * progressEase, 0, 1);
-      }
+      shownProgress = LxMineLyrics.progressStep(shownProgress, targetProgress,
+        mesh.userData.nativeKaraokeProgress, lyricMotion.progressEase, mesh.userData.age);
       data.textMat.uniforms.uProgress.value = shownProgress;
       mesh.userData.shownLyricProgress = shownProgress;
     }
@@ -15393,7 +15475,7 @@ function updateStageLyrics3D(dt) {
         deltaTime: dt,
         previewMotionLock: previewMotionLock,
         motionBlend: previewMotionBlend,
-        ease: contextIntro < 0.98 ? 0.19 : 0.135
+        ease: LxMineLyrics.scrollEase(mesh.userData.age)
       });
       if (data.textMat && data.textMat.uniforms.uSolar) {
         var solarTarget = stageLyrics.highBloom * shelfDetailLyricDim;
@@ -15578,20 +15660,8 @@ function lyricKaraokeWordRanges(line) {
   var key = lyricKaraokeMetricsKey(line);
   if (line._karaokeMetricKey === key && Array.isArray(line._karaokeWordRanges)) return line._karaokeWordRanges;
   var ctx = lyricKaraokeMeasureContext();
-  var text = String(line.text || '');
-  var fontSize = 128;
-  var fullWidth = Math.max(1, lyricMeasureTextAtSize(ctx, text, fontSize, lyricFontWeightValue()));
-  var ranges = line.words.map(function (w) {
-    var c0 = Math.max(0, Math.min(text.length, Math.floor(Number(w.c0) || 0)));
-    var c1 = Math.max(c0, Math.min(text.length, Math.ceil(Number(w.c1) || c0)));
-    var p0 = lyricMeasureTextAtSize(ctx, text.slice(0, c0), fontSize, lyricFontWeightValue()) / fullWidth;
-    var p1 = lyricMeasureTextAtSize(ctx, text.slice(0, c1), fontSize, lyricFontWeightValue()) / fullWidth;
-    if (!isFinite(p0)) p0 = c0 / Math.max(1, line.charCount || text.length);
-    if (!isFinite(p1)) p1 = c1 / Math.max(1, line.charCount || text.length);
-    return {
-      p0: clampRange(p0, 0, 1),
-      p1: clampRange(Math.max(p1, p0), 0, 1)
-    };
+  var ranges = LxMineLyrics.wordRanges(line, function (text) {
+    return lyricMeasureTextAtSize(ctx, text, 128, lyricFontWeightValue());
   });
   line._karaokeMetricKey = key;
   line._karaokeWordRanges = ranges;
@@ -15601,32 +15671,7 @@ function lyricLineHasNativeKaraoke(line) {
   return !!(line && Array.isArray(line.words) && line.words.length && Number(line.charCount) > 0);
 }
 function getLyricLineProgress(line, nextLine, now) {
-  if (!line) return 0;
-  if (lyricLineHasNativeKaraoke(line)) {
-    now = Math.max(0, Number(now) || 0);
-    var ranges = lyricKaraokeWordRanges(line);
-    var lastP = 0;
-    for (var i = 0; i < line.words.length; i++) {
-      var w = line.words[i];
-      var ws = w.t;
-      var we = w.t + Math.max(0.08, w.d || 0.24);
-      if (now < ws) return lastP;
-      var local = now >= we ? 1 : (now - ws) / Math.max(0.08, we - ws);
-      local = Math.max(0, Math.min(1, local));
-      var range = ranges && ranges[i] || null;
-      var p0 = range ? range.p0 : ((w.c0 || 0) / line.charCount);
-      var p1 = range ? range.p1 : ((w.c1 || 0) / line.charCount);
-      var p = p0 + (p1 - p0) * local;
-      lastP = Math.max(lastP, p);
-      if (now < we) return lastP;
-    }
-    return 1;
-  }
-  now += 0.020;
-  var nextT = nextLine && nextLine.t > line.t ? nextLine.t : Math.min((audio && audio.duration) || now + 4, line.t + (line.duration || 4.8));
-  var span = Math.max(0.75, nextT - line.t);
-  var prog = Math.max(0, Math.min(1, (now - line.t) / span));
-  return prog * prog * (3 - 2 * prog);
+  return LxMineLyrics.lineProgress(line, nextLine, now, audio && audio.duration, lyricKaraokeWordRanges(line));
 }
 
 function lyricLineDisplayTextAt(index) {
@@ -15804,6 +15849,13 @@ function lyricMeshTrackWindow(index, mode, options) {
   var hasTranslations = translationMode !== 'off';
   var total = last + 1;
   var lightweightTrack = !!options.lightweightTrack;
+  if (window.__LXMINE_NATIVE_STAGE && mode === 'cinema') {
+    var nativePageSize = Math.min(total, lineCount + 8);
+    var nativePageStep = 4;
+    var nativeStart = Math.floor((idx - Math.floor(nativePageSize / 2)) / nativePageStep) * nativePageStep;
+    nativeStart = Math.max(0, Math.min(last - nativePageSize + 1, nativeStart));
+    return { start: nativeStart, end: nativeStart + nativePageSize - 1, lightweight: lightweightTrack };
+  }
   if (lightweightTrack) {
     var denseMultiLine = mode !== 'single' || translationMode === 'multi' || translationMode === 'dual';
     var lightFullTrackLimit = hasTranslations ? (denseMultiLine ? 6 : 10) : (denseMultiLine ? 10 : 14);
@@ -15974,7 +16026,8 @@ function buildStageLyricDisplayPayload(index, options) {
     trackEntries: track.entries,
     trackStart: track.start,
     trackEnd: track.end,
-    trackLightweight: !!track.lightweight
+    trackLightweight: !!track.lightweight,
+    trackTextOnly: !!(window.__LXMINE_NATIVE_STAGE && options.lightweightTrack)
   };
 }
 function buildStageLyricPlaybackPayload(index) {
@@ -15995,22 +16048,7 @@ function buildStageLyricPlaybackPayload(index) {
 }
 
 function findStageLyricIndexAtTime(t) {
-  if (!lyricsLines || !lyricsLines.length) return -1;
-  var target = (Number(t) || 0) + 0.05;
-  var lo = 0;
-  var hi = lyricsLines.length - 1;
-  var ans = -1;
-  while (lo <= hi) {
-    var mid = (lo + hi) >> 1;
-    var lineTime = Number(lyricsLines[mid] && lyricsLines[mid].t) || 0;
-    if (lineTime <= target) {
-      ans = mid;
-      lo = mid + 1;
-    } else {
-      hi = mid - 1;
-    }
-  }
-  return ans;
+  return window.LxMineLyrics.indexAt(lyricsLines || [], (Number(t) || 0) * 1000, 't', 1000);
 }
 
 function retireCurrentStageLyricForIdle() {
@@ -16070,25 +16108,29 @@ function tickLyricsParticles() {
   }
   var previewingSeek = stageLyricProgressPreviewActive();
   var holdLyricsOnPause = !fx || fx.lyricPauseHold !== false;
-  var pausedWithTrack = !!(holdLyricsOnPause && audio && audio.src && audio.paused && !audio.ended && lyricsLines && lyricsLines.length);
+  var nativeTrack = typeof window.lxmineNativeTime === 'function';
+  var pausedWithTrack = !!(holdLyricsOnPause && !isAnalysisPlaybackActive() && lyricsLines && lyricsLines.length &&
+    (nativeTrack || (audio && audio.src && !audio.ended)));
   if (!audio || !lyricsLines.length || (audio && audio.ended)) {
-    retireCurrentStageLyricForIdle();
-    return;
-  }
-  if (!playing && !previewingSeek) {
-    if (pausedWithTrack) {
-      if (stageLyrics.current && stageLyrics.current.userData) {
-        stageLyrics.current.userData.state = 'in';
-        stageLyrics.current.userData.age = Math.max(Number(stageLyrics.current.userData.age) || 0, 0.18);
-      }
-      return;
-    }
     retireCurrentStageLyricForIdle();
     return;
   }
   var t = stageLyricPlaybackSeconds();
   var lyricT = typeof getAdjustedLyricPlaybackTime === 'function' ? getAdjustedLyricPlaybackTime(t) : t;
   var newIdx = findStageLyricIndexAtTime(lyricT);
+  if (!playing && !previewingSeek) {
+    if (pausedWithTrack && stageLyrics.current && stageLyrics.currentIdx === newIdx) {
+      if (stageLyrics.current.userData) {
+        stageLyrics.current.userData.state = 'in';
+        stageLyrics.current.userData.age = Math.max(Number(stageLyrics.current.userData.age) || 0, 0.18);
+      }
+      return;
+    }
+    if (!pausedWithTrack) {
+      retireCurrentStageLyricForIdle();
+      return;
+    }
+  }
   if (newIdx < 0) {
     var introText = currentLyricFallbackText();
     if (!introText) {
@@ -17907,9 +17949,12 @@ function applyCoverCanvas(cv, thumbSrc, opts) {
   }
 
   function onPresetChange(prev, next, ctx) {
-    if (prev === INDEX && next !== INDEX) clearLayer();
+    if (prev === INDEX && next !== INDEX) {
+      if (global.__LXMINE_NATIVE_STAGE) { state.opacity = 0; if (state.root) state.root.visible = false; }
+      else clearLayer();
+    }
     if (next === INDEX && ctx && ctx.scene) {
-      if (state.initialized) clearLayer();
+      if (state.initialized && !global.__LXMINE_NATIVE_STAGE) clearLayer();
       ensureLayer(ctx.scene, ctx.fx || {});
       applyLayout(ctx.fx || {});
     }
@@ -17920,6 +17965,12 @@ function applyCoverCanvas(cv, thumbSrc, opts) {
     isActive: isActive,
     update: update,
     clear: clearLayer,
+    prewarm: function (scene, fx, renderer, camera) {
+      ensureLayer(scene, fx);
+      var visible = state.root.visible;
+      state.root.visible = true;
+      try { renderer.compile(scene, camera); } finally { state.root.visible = visible; }
+    },
     onPresetChange: onPresetChange,
     pointerRipple: pointerRipple
   };
@@ -17987,6 +18038,10 @@ function applyCoverCanvas(cv, thumbSrc, opts) {
     lastPropertiesAt: 0,
     lastMediaKey: '',
     lastPropertiesKey: '',
+    cameraStartedAt: 0,
+    cameraAngleX: 150,
+    nativeTheta: null,
+    nativePhi: null,
     samples: zeroSamples.slice(),
     media: null,
     displayedTheme: null,
@@ -18417,7 +18472,7 @@ function applyCoverCanvas(cv, thumbSrc, opts) {
       cover = typeof global.coverUrlWithSize === 'function' ? global.coverUrlWithSize(song.cover, 512) : song.cover;
     }
     var pal = global.stageLyrics && (global.stageLyrics.coverPalette || global.stageLyrics.palette) || {};
-    var duration = global.audio && isFinite(global.audio.duration) ? Number(global.audio.duration) : Number(song && (song.duration || song.durationSec || 0)) || 0;
+    var duration = global.audio && isFinite(global.audio.duration) ? Number(global.audio.duration) : Number(song && (song.durationMs ? song.durationMs / 1000 : song.duration || song.durationSec || 0)) || 0;
     if (duration > 10000) duration /= 1000;
     return {
       title: String((song && (song.name || song.title)) || ''),
@@ -18425,8 +18480,8 @@ function applyCoverCanvas(cv, thumbSrc, opts) {
       thumbnail: cover || '',
       primaryColor: cssColorToHex(pal.primary || pal.secondary || pal.highlight, '#6bd9ff'),
       textColor: cssColorToHex(pal.highlight || pal.primary, '#f8fbff'),
-      isPlaying: !!(global.playing && global.audio && !global.audio.paused),
-      position: global.audio && isFinite(global.audio.currentTime) ? Number(global.audio.currentTime) : 0,
+      isPlaying: !!(global.playing && global.isAnalysisPlaybackActive()),
+      position: global.analysisPlaybackTime(),
       duration: duration
     };
   }
@@ -18491,6 +18546,9 @@ function applyCoverCanvas(cv, thumbSrc, opts) {
     iframe.setAttribute('inert', '');
     iframe.onload = function () {
       state.ready = true;
+      state.cameraStartedAt = nowMs();
+      state.nativeTheta = null;
+      state.nativePhi = null;
       pushProperties(true);
       pushMedia(true);
       pushAudio(true);
@@ -18525,6 +18583,19 @@ function applyCoverCanvas(cv, thumbSrc, opts) {
     fx = fx || {};
     var coverHexes = workshopPaletteHexesFromCover();
     var props = Object.assign({}, WORKSHOP_DEFAULT_PROPERTIES);
+    if (global.__LXMINE_NATIVE_STAGE && global.orbit) {
+      var theta = Number(global.orbit.userTheta) || 0;
+      var phi = (Number(global.orbit.userPhi) || 0) - (Number(global.orbit.baselinePhi) || 0);
+      if (theta !== state.nativeTheta || phi !== state.nativePhi) {
+        state.nativeTheta = theta;
+        state.nativePhi = phi;
+        // Match the workshop's continuous auto-rotation when applying a user orbit.
+        state.cameraAngleX = props.cameraAngleX + theta * 180 / Math.PI +
+          Math.max(0, nowMs() - state.cameraStartedAt) * props.autoRotateSpeed / 1000;
+      }
+      props.cameraAngleX = state.cameraAngleX;
+      props.cameraAngleY = clamp(props.cameraAngleY + phi * 180 / Math.PI, -85, 85);
+    }
     props.audioIntensity = clamp(fx.sonicWorkshopAudioIntensity == null ? props.audioIntensity : Number(fx.sonicWorkshopAudioIntensity), 0.3, 2.5);
     props.responseRange = clamp(fx.sonicWorkshopResponseRange == null ? props.responseRange : Number(fx.sonicWorkshopResponseRange), 0.3, 2);
     props.peakColorIntensity = clamp(fx.sonicWorkshopPeakIntensity == null ? props.peakColorIntensity : Number(fx.sonicWorkshopPeakIntensity), 0, 1.4);
@@ -18669,7 +18740,7 @@ function applyCoverCanvas(cv, thumbSrc, opts) {
         out[j] = clamp(Math.pow(clamp01(v), 1.35) * 0.30 + fallbackLift, 0, WORKSHOP_AUDIO_TARGET_MAX_SAMPLE) * inputGain;
       }
     }
-    if (!(global.playing && global.audio && !global.audio.paused)) {
+    if (!(global.playing && global.isAnalysisPlaybackActive())) {
       for (var k = 0; k < out.length; k++) out[k] = out[k] * WORKSHOP_AUDIO_PAUSED_GAIN;
     }
     state.samples = out;
@@ -18690,6 +18761,7 @@ function applyCoverCanvas(cv, thumbSrc, opts) {
     state.active = targetActive;
     bodyClass(targetActive || state.opacity > 0.02);
     if (targetActive) ensureLayer();
+    if (state.iframe && state.ready && typeof state.iframe.contentWindow.__mineradioSetPresentation === 'function') state.iframe.contentWindow.__mineradioSetPresentation(targetActive);
     var targetOpacity = targetActive ? 1 : 0;
     var rate = targetOpacity > state.opacity ? 7.5 : 5.0;
     state.opacity += (targetOpacity - state.opacity) * clamp(1 - Math.exp(-rate * Math.max(0.001, dt || 1 / 60)), 0, 1);
@@ -18699,7 +18771,7 @@ function applyCoverCanvas(cv, thumbSrc, opts) {
       pushMedia(false);
       pushAudio(false, ctx.audio);
     } else if (state.layer && state.opacity <= 0.01) {
-      removeLayer();
+      if (!global.__LXMINE_NATIVE_STAGE) removeLayer();
       bodyClass(false);
     }
   }
@@ -18740,6 +18812,26 @@ function applyCoverCanvas(cv, thumbSrc, opts) {
     isActive: isActive,
     update: update,
     clear: clear,
+    prewarm: function () {
+      ensureLayer();
+      if (state.ready) return Promise.resolve();
+      return new Promise(function (resolve) { state.iframe.addEventListener('load', resolve, { once: true }); });
+    },
+    isReady: function () { return state.ready; },
+    presentation: function (visible) {
+      var frame = state.iframe && state.iframe.contentWindow;
+      if (frame && typeof frame.__mineradioSetPresentation === 'function') frame.__mineradioSetPresentation(visible && isActive(global.fx));
+    },
+    tap: function (x, y) {
+      if (!isActive(global.fx) || !state.ready || !state.iframe) return false;
+      var frame = state.iframe.contentWindow;
+      var canvas = frame.document.querySelector('canvas');
+      if (!canvas) return false;
+      canvas.dispatchEvent(new frame.MouseEvent('click', { bubbles: true, cancelable: true,
+        clientX: x / Math.max(1, global.innerWidth) * frame.innerWidth,
+        clientY: y / Math.max(1, global.innerHeight) * frame.innerHeight, button: 0 }));
+      return true;
+    },
     pushProperties: function (force) { pushProperties(force === true); },
     onPresetChange: onPresetChange
   };
@@ -59754,13 +59846,25 @@ if (!window.__LXMINE_NATIVE_STAGE) {
   'use strict';
   var drag = null;
   var previewSeconds = null;
+  var browseTimer = 0;
+  var browseTrack = null;
   var ray = new THREE.Raycaster();
   var ndc = new THREE.Vector2();
   var commits = 0;
   var hitMasks = new WeakMap();
+  function currentTrack() {
+    var song = currentCoverSong();
+    return window.__LXMINE_NATIVE_STAGE ? song && song.id : song;
+  }
   function hitsVisibleInk(row, hit) {
     var canvas = row.lineMask && row.lineMask.texture && row.lineMask.texture.image;
     if (!canvas || !hit.uv || !canvas.getContext) return false;
+    if (window.__LXMINE_NATIVE_STAGE && row.lineMask.fontSize) {
+      var layout = row.lineMask;
+      var halfWidth = ((layout.activeTextWidth || layout.textWidth) / 2 + layout.fontSize * 0.2) / layout.width;
+      var centerY = (layout.lineY0 - layout.fontSize * 0.36) / layout.height;
+      return Math.abs(hit.uv.x - 0.5) <= halfWidth && Math.abs(1 - hit.uv.y - centerY) <= layout.fontSize * 0.68 / layout.height;
+    }
     var mask = hitMasks.get(canvas);
     if (!mask || mask.width !== canvas.width || mask.height !== canvas.height) {
       try { mask = canvas.getContext('2d', { willReadFrequently: true }).getImageData(0, 0, canvas.width, canvas.height); }
@@ -59788,6 +59892,37 @@ if (!window.__LXMINE_NATIVE_STAGE) {
     var rows = data && data.rowLayers;
     if (!rows) return -1;
     stageLyrics.group.updateMatrixWorld(true);
+    if (window.__LXMINE_NATIVE_STAGE) {
+      // Claim the readable lyric column, including spaces between words/rows.
+      // Gesture ownership is chosen on down and remains fixed throughout a drag.
+      var sceneEdge = Math.max(20, Math.min(64, innerWidth * .08));
+      if (x < sceneEdge || x > innerWidth - sceneEdge) return -1;
+      var nearest = null;
+      var step = scrollStep();
+      rows.forEach(function (row) {
+        if (!row.mesh || !row.mesh.visible || row.isTranslation || !lyricsLines[row.lineIndex]) return;
+        var opacity = row.mat && (row.mat.uniforms && row.mat.uniforms.uOpacity ? row.mat.uniforms.uOpacity.value : row.mat.opacity);
+        if (opacity < .05) return;
+        var layout = row.lineMask, geometry = row.mesh.geometry.parameters;
+        if (!layout || !geometry) return;
+        var halfWidth = geometry.width * Math.min(1, (layout.activeTextWidth || layout.textWidth) / layout.width) / 2;
+        var centerY = (.5 - (layout.lineY0 - layout.fontSize * .36) / layout.height) * geometry.height;
+        var halfHeight = geometry.height * layout.fontSize * .68 / layout.height;
+        var left = Infinity, right = -Infinity, top = Infinity, bottom = -Infinity;
+        [-1, 1].forEach(function (dx) { [-1, 1].forEach(function (dy) {
+          var point = row.mesh.localToWorld(new THREE.Vector3(dx * halfWidth, centerY + dy * halfHeight, 0)).project(camera);
+          var px = (point.x + 1) * innerWidth / 2, py = (1 - point.y) * innerHeight / 2;
+          left = Math.min(left, px); right = Math.max(right, px); top = Math.min(top, py); bottom = Math.max(bottom, py);
+        }); });
+        var centerX = (left + right) / 2, middleY = (top + bottom) / 2;
+        var halfColumn = Math.max((right - left) / 2 + 28, innerWidth * (innerWidth < 700 ? .31 : .22));
+        halfColumn = Math.min(innerWidth * .42, halfColumn);
+        var vertical = Math.max((bottom - top) / 2 + 12, step * .58);
+        var distance = Math.abs(y - middleY);
+        if (Math.abs(x - centerX) <= halfColumn && distance <= vertical && (!nearest || distance < nearest.distance)) nearest = { index: row.lineIndex, distance: distance };
+      });
+      return nearest ? nearest.index : -1;
+    }
     ndc.set(x / innerWidth * 2 - 1, 1 - y / innerHeight * 2);
     ray.setFromCamera(ndc, camera);
     var best = null;
@@ -59806,55 +59941,96 @@ if (!window.__LXMINE_NATIVE_STAGE) {
     drag.index = index;
     previewSeconds = Math.max(0, Number(lyricsLines[index].t) || 0);
     hud.textContent = formatProgramTime(previewSeconds) + '  ·  ' + lyricsLines[index].text;
-    hud.style.display = 'block';
+    hud.style.display = window.__LXMINE_NATIVE_STAGE ? 'none' : 'block';
     markRenderInteraction('lyric-drag', 600);
   }
-  window.lxmineLyricPreviewTime = function () { return previewSeconds; };
+  function resumeFollowing() {
+    clearTimeout(browseTimer);
+    browseTimer = setTimeout(function () {
+      if (window.lxmineMultiTouchActive || drag) { resumeFollowing(); return; }
+      previewSeconds = null; browseTrack = null;
+    }, 3500);
+  }
+  window.lxmineLyricPreviewTime = function () {
+    if (browseTrack && browseTrack !== currentTrack()) { previewSeconds = null; browseTrack = null; }
+    return previewSeconds;
+  };
+  window.lxmineLyricGestureActive = function () { return !!drag; };
   window.lxmineLyricHitTest = hitLine;
   window.lxmineLyricSeekDiagnostics = function () { return { dragging: !!drag, index: drag ? drag.index : -1, preview: previewSeconds, commits: commits }; };
   var canvas = renderer.domElement;
+  function consume(event) {
+    event.preventDefault();
+    if (!window.__LXMINE_NATIVE_STAGE) event.stopImmediatePropagation();
+  }
+  function scrollStep() {
+    var rows = stageLyrics.current && stageLyrics.current.userData.lyric && stageLyrics.current.userData.lyric.rowLayers;
+    if (!rows || !THREE.Vector3) return 54;
+    var first = rows.find(function (row) { return !row.isTranslation && row.mesh && row.mesh.visible; });
+    var next = first && rows.find(function (row) { return !row.isTranslation && row.mesh && row.mesh.visible && row.lineIndex === first.lineIndex + 1; });
+    if (!next) return 54;
+    var firstPoint = first.mesh.getWorldPosition(new THREE.Vector3()).project(camera);
+    var nextPoint = next.mesh.getWorldPosition(new THREE.Vector3()).project(camera);
+    return Math.max(24, Math.min(innerHeight / 4, Math.abs(firstPoint.y - nextPoint.y) * innerHeight / 2));
+  }
+  // 多指属于系统手势（如双指唤起/隐藏沉浸控件），歌词拖动只认单指。
+  function multiTouchActive() { return window.lxmineMultiTouchActive === true; }
+  function cancelDrag(event) {
+    var state = drag;
+    drag = null; hud.style.display = 'none';
+    if (state && canvas.hasPointerCapture(state.id)) canvas.releasePointerCapture(state.id);
+    if (window.__LXMINE_NATIVE_STAGE && previewSeconds != null) resumeFollowing();
+    else previewSeconds = null;
+    if (event) consume(event);
+  }
   ['mousedown', 'mousemove', 'mouseup'].forEach(function (type) {
     canvas.addEventListener(type, function (event) { if (drag) { event.preventDefault(); event.stopImmediatePropagation(); } }, true);
   });
   canvas.addEventListener('pointerdown', function (event) {
+    if (event.isPrimary === false || multiTouchActive()) { if (drag) cancelDrag(event); return; }
     if (event.button !== 0 || drag || isPointerOverUi(event)) return;
     var index = hitLine(event.clientX, event.clientY);
     if (index < 0) return;
-    event.preventDefault(); event.stopImmediatePropagation();
-    drag = { id: event.pointerId, startY: event.clientY, startX: event.clientX, startIndex: index, index: index, moved: false,
-      track: currentCoverSong(), media: audio, wasPlaying: playing && audio && !audio.paused };
+    consume(event); clearTimeout(browseTimer);
+    var origin = window.__LXMINE_NATIVE_STAGE ? Math.max(0, stageLyrics.currentIdx) : index;
+    drag = { id: event.pointerId, startY: event.clientY, startX: event.clientX, startIndex: origin, clickIndex: index, index: index, step: scrollStep(), moved: false,
+      track: currentTrack(), media: audio, wasPlaying: playing && audio && !audio.paused };
+    browseTrack = currentTrack();
     orbit.rotating = false; particlePointerSpin.active = false;
     canvas.setPointerCapture(event.pointerId);
   }, true);
   canvas.addEventListener('pointermove', function (event) {
     if (!drag || drag.id !== event.pointerId) return;
-    event.preventDefault(); event.stopImmediatePropagation();
+    if (event.isPrimary === false || multiTouchActive()) { cancelDrag(event); return; }
+    consume(event);
     if (Math.hypot(event.clientX - drag.startX, event.clientY - drag.startY) > 7) drag.moved = true;
-    if (drag.moved) show(drag.startIndex + Math.round((drag.startY - event.clientY) / 54));
+    if (drag.moved) show(drag.startIndex + Math.round((drag.startY - event.clientY) / drag.step));
   }, true);
   function finish(event, cancel) {
     if (!drag || drag.id !== event.pointerId) return;
-    event.preventDefault(); event.stopImmediatePropagation();
+    consume(event); event.lxmineLyricGesture = true; mouseDownAt.hadDrag = true;
     var state = drag;
-    if (!cancel && state.moved && state.track === currentCoverSong() && state.media === audio) {
-      var target = Math.max(0, Number(lyricsLines[state.index].t) || 0);
+    if (!cancel && state.track === currentTrack() && state.media === audio && (window.__LXMINE_NATIVE_STAGE || state.moved)) {
+      var target = Math.max(0, Number(lyricsLines[state.moved ? state.index : state.clickIndex].t) || 0);
       if (window.__LXMINE_NATIVE_STAGE) {
-        if (window.lxmineStage) window.lxmineStage.seek(target);
+        if (!state.moved && window.lxmineStage) { window.lxmineStage.seek(target); commits++; }
       } else if (audio && getPlaybackDurationSeconds()) {
         progressDragState.media = audio; progressDragState.mediaSrc = audio.currentSrc || audio.src || '';
         progressDragState.previewDuration = getPlaybackDurationSeconds();
         commitProgressSeek(target, state.wasPlaying);
         progressDragState.media = null; progressDragState.mediaSrc = '';
       }
-      commits++;
+      if (!window.__LXMINE_NATIVE_STAGE) commits++;
     }
-    drag = null; previewSeconds = null; hud.style.display = 'none';
+    drag = null; hud.style.display = 'none';
+    if (window.__LXMINE_NATIVE_STAGE && state.moved && !cancel) resumeFollowing();
+    else { previewSeconds = null; browseTrack = null; }
     if (canvas.hasPointerCapture(event.pointerId)) canvas.releasePointerCapture(event.pointerId);
   }
   canvas.addEventListener('pointerup', function (event) { finish(event, false); }, true);
   canvas.addEventListener('pointercancel', function (event) { finish(event, true); }, true);
   canvas.addEventListener('lostpointercapture', function (event) { finish(event, true); }, true);
-  window.addEventListener('blur', function () { drag = null; previewSeconds = null; hud.style.display = 'none'; });
+  window.addEventListener('blur', function () { clearTimeout(browseTimer); drag = null; previewSeconds = null; browseTrack = null; hud.style.display = 'none'; });
 })();
 
 ;
@@ -60030,7 +60206,7 @@ function currentRenderAdaptiveContext(now) {
   if (typeof isRenderInteractionActive === 'function' && isRenderInteractionActive(now)) {
     return { kind: 'interaction', tier: tier };
   }
-  var activePlayback = !!(playing && audio && !audio.paused);
+  var activePlayback = !!(playing && isAnalysisPlaybackActive());
   return { kind: activePlayback ? 'playback' : 'idle', tier: tier };
 }
 function resolveAdaptiveRenderCadence(now, mode) {
@@ -60042,6 +60218,7 @@ function resolveAdaptiveRenderCadence(now, mode) {
 }
 function getAdaptiveRenderFps(now) {
   if (isDeepBackgroundMode()) return 1;
+  if (window.__lxmineStagePresentation && !window.__lxmineStagePresentation.detail) return 15;
   var mode = (typeof normalizeForegroundFpsMode === 'function') ? normalizeForegroundFpsMode(fx && fx.foregroundFpsMode) : 'adaptive';
   var fixedFps = (typeof foregroundFixedFpsForMode === 'function') ? foregroundFixedFpsForMode(mode) : null;
   if (fixedFps !== null) return fixedFps;
@@ -60133,12 +60310,16 @@ var mainFrameGates = {
 window.__mineradioMainFrameGates = mainFrameGates;
 var mainLoopBackgroundTimer = 0;
 var mainLoopAnimationRequested = false;
+var mainLoopAnimationHandle = 0;
 function mainLoopDeepBackgroundSleeping() {
   return typeof isDeepBackgroundMode === 'function'
     && isDeepBackgroundMode()
     && !(typeof isLiveBackgroundKeepMode === 'function' && isLiveBackgroundKeepMode());
 }
 function mainLoopBackgroundDelayMs() {
+  if (window.__lxmineStagePresentation && window.__lxmineStagePresentation.visible && !window.__lxmineStagePresentation.detail) {
+    return Math.max(16, 1000 / 15 - 1000 / estimatedDisplayRefreshHz());
+  }
   if (!mainLoopDeepBackgroundSleeping()) return 0;
   if (fx && (fx.desktopLyrics || fx.wallpaperMode)) return 250;
   if (typeof isBackgroundReleaseMode === 'function' && isBackgroundReleaseMode()) return 1500;
@@ -60147,7 +60328,7 @@ function mainLoopBackgroundDelayMs() {
 function requestMainLoopAnimationFrame() {
   if (mainLoopAnimationRequested) return;
   mainLoopAnimationRequested = true;
-  requestAnimationFrame(animate);
+  mainLoopAnimationHandle = requestAnimationFrame(animate);
 }
 function scheduleNextMainLoopFrame() {
   var delay = mainLoopBackgroundDelayMs();
@@ -60166,6 +60347,9 @@ function wakeMainLoopFromBackground() {
     clearTimeout(mainLoopBackgroundTimer);
     mainLoopBackgroundTimer = 0;
   }
+  if (mainLoopAnimationHandle) cancelAnimationFrame(mainLoopAnimationHandle);
+  mainLoopAnimationHandle = 0;
+  mainLoopAnimationRequested = false;
   requestMainLoopAnimationFrame();
 }
 function tickDeepBackgroundFrame(now, dt) {
@@ -60189,7 +60373,7 @@ function visibleMotionFollowVsync(now) {
   if (mode !== 'vsync') return false;
   if (typeof isProgressDragPreviewActive === 'function' && isProgressDragPreviewActive()) return true;
   if (mainLoopInteractionActive(now)) return true;
-  return !!(playing && audio && !audio.paused);
+  return !!(playing && isAnalysisPlaybackActive());
 }
 function capMainLoopFpsToDisplay(fps) {
   var hz = (typeof estimatedDisplayRefreshHz === 'function') ? estimatedDisplayRefreshHz() : 60;
@@ -60203,7 +60387,7 @@ function capMainLoopFpsForBudget(fps, minFps) {
 function targetMainAudioFps(now) {
   if (isDeepBackgroundMode()) return 1;
   var scale = (typeof runtimeAudioAnalysisScale === 'function') ? runtimeAudioAnalysisScale() : 1;
-  if (playing && audio && !audio.paused) {
+  if (playing && isAnalysisPlaybackActive()) {
     var base = mainLoopInteractionActive(now) ? 72 : 54;
     return capMainLoopFpsToDisplay(Math.max(30, Math.round(base * scale)));
   }
@@ -60223,21 +60407,21 @@ function targetMainLyricsParticleFps(now) {
   if (!fx || fx.particleLyrics === false) return 12;
   if (visibleMotionFollowVsync(now)) return 0;
   if (mainLoopInteractionActive(now)) return capMainLoopFpsForBudget(120, 72);
-  return (playing && audio && !audio.paused) ? capMainLoopFpsForBudget(60, 48) : 24;
+  return (playing && isAnalysisPlaybackActive()) ? capMainLoopFpsForBudget(60, 48) : 24;
 }
 function targetMainStageLyricsFps(now) {
   if (isDeepBackgroundMode()) return 1;
   if (!fx || fx.particleLyrics === false) return 12;
   if (visibleMotionFollowVsync(now)) return 0;
   if (mainLoopInteractionActive(now)) return capMainLoopFpsForBudget(120, 72);
-  return (playing && audio && !audio.paused) ? capMainLoopFpsForBudget(60, 48) : 24;
+  return (playing && isAnalysisPlaybackActive()) ? capMainLoopFpsForBudget(60, 48) : 24;
 }
 function targetMainSkullParticleFps(now) {
   if (isDeepBackgroundMode()) return 1;
   if (!fx || fx.preset !== SKULL_PRESET_INDEX) return 10;
   if (visibleMotionFollowVsync(now)) return 0;
   if (mainLoopInteractionActive(now)) return capMainLoopFpsForBudget(120, 72);
-  return (playing && audio && !audio.paused) ? capMainLoopFpsForBudget(60, 45) : 24;
+  return (playing && isAnalysisPlaybackActive()) ? capMainLoopFpsForBudget(60, 45) : 24;
 }
 function targetMainHomeAudioFps(now) {
   if (isDeepBackgroundMode()) return 1;
@@ -60269,6 +60453,7 @@ function animate() {
   prevTime = now;
   sampleRenderPerf(now, dt);
   uniforms.uTime.value += dt;
+  if (typeof stageLyricViewportHeight !== 'undefined') stageLyricViewportHeight.value = renderer.domElement.height;
   if (isMainSceneCoveredBySplash()) {
     var splashWorkshopActive = window.MineradioSonicWorkshop && MineradioSonicWorkshop.isActive(fx);
     if (window.MineradioSonicWorkshop) {
@@ -60318,7 +60503,7 @@ function animate() {
     ? getSonicAudioMonitorSnapshot().frame
     : null;
   if (audioStepDt > 0) {
-  if (analyser && playing && audio && !audio.paused) {
+  if (analyser && playing && isAnalysisPlaybackActive()) {
     if (audioCtx && audioCtx.state === 'suspended') resumeAudioAnalysis();
     analyser.getByteFrequencyData(frequencyData);
     analyser.getByteTimeDomainData(timeDomainData);
@@ -60337,7 +60522,7 @@ function animate() {
       rmsCount++;
     }
     rms = Math.sqrt(rms / Math.max(1, rmsCount));
-    var analysisSampleRate = (audioCtx && audioCtx.sampleRate) || 44100;
+    var analysisSampleRate = getAnalysisSampleRate();
     var analysisFftSize = (analyser && analyser.fftSize) || len * 2;
     if (typeof beatBandRms === 'function') {
       var subKick = beatBandRms(frequencyData, analysisSampleRate, analysisFftSize, 38, 74);
@@ -60367,10 +60552,10 @@ function animate() {
     var realtimeBeat = processRealtimeBeatEngine(audioStepDt);
     if (realtimeBeat && realtimeBeat.hit) {
       var dj = djMode.active;
-      var djMapCoversCurrentTime = !dj || !currentDjBeatMap || !currentDjBeatMap.partialUntilSec || !audio || (audio.currentTime || 0) <= currentDjBeatMap.partialUntilSec - 1.25;
+      var djMapCoversCurrentTime = !dj || !currentDjBeatMap || !currentDjBeatMap.partialUntilSec || analysisPlaybackTime() <= currentDjBeatMap.partialUntilSec - 1.25;
       var djBeatMapReadyForCamera = dj && currentDjBeatMap && currentDjBeatMap.cameraBeats && currentDjBeatMap.cameraBeats.length >= 4 && djMapCoversCurrentTime;
       var beatMapReadyForCamera = dj ? djBeatMapReadyForCamera : (currentBeatMap && currentBeatMap.cameraBeats && currentBeatMap.cameraBeats.length >= 4);
-      var waitingForBeatMap = dj ? !djBeatMapReadyForCamera : (!beatMapReadyForCamera && (!!beatMapBusy || !!beatAnalysisTimer || ((audio && audio.currentTime) || 0) < 18));
+      var waitingForBeatMap = dj ? !djBeatMapReadyForCamera : (!beatMapReadyForCamera && (!!beatMapBusy || !!beatAnalysisTimer || analysisPlaybackTime() < 18));
       var liveKickFrame = dj
         ? (realtimeBeat.low > 0.42 && rb > 0.32 && bassOnset > 0.040 && energyOnset > 0.006 && (realtimeBeat.lowDominance || 0) > 0.72)
         : (realtimeBeat.low > 0.42 && rb > 0.34 && bassOnset > 0.048 && energyOnset > 0.008);
@@ -60430,7 +60615,7 @@ function animate() {
         beat: beatPulse,
         sampleRate: analysisSampleRate,
         fftSize: analysisFftSize,
-        currentTime: audio.currentTime || 0
+        currentTime: analysisPlaybackTime()
       });
       if (fx && fx.sonicAudioMonitorEnabled !== false) sonicAudioFrame = sonicMonitorFrame;
     }

@@ -1,0 +1,29 @@
+<!doctype html>
+<html>
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>LxMine LX Runtime</title>
+  </head>
+  <body>
+    <script>
+      // Android 桥：把 JavascriptInterface 对象包成与鸿蒙 __lxNative 同名同签名的门面，
+      // lx-shim.js / host.js 与鸿蒙端保持逐字相同。
+      window.__lxNative = {
+        onInited: function (json) { window.LxNativeBridge.onInited(String(json)); },
+        onResult: function (id, json) { window.LxNativeBridge.onResult(String(id), String(json)); },
+        httpRequest: function (id, json) { window.LxNativeBridge.httpRequest(String(id), String(json)); }
+      };
+    </script>
+    <script src="vendor/crypto-js.min.js"></script>
+    <script src="vendor/pako.min.js"></script>
+    <script src="lx-shim.js"></script>
+    <script src="lx-playlists.js"></script>
+    <script src="vendor/json5.min.js"></script>
+    <script src="lx-pagination.js"></script>
+    <script src="lx-catalogue.js"></script>
+    <script src="lx-discovery.js"></script>
+    <script src="lx-song-assets.js"></script>
+    <script src="host.js"></script>
+  </body>
+</html>

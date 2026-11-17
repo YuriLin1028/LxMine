@@ -1,5 +1,7 @@
+import { musicButtonPress } from '../components/MaterialControls';
 import { webview } from '@kit.ArkWeb';
-import { common } from '@kit.AbilityKit';
+import { PRODUCT_NAME } from 'BuildProfile';
+import { common, ConfigurationConstant } from '@kit.AbilityKit';
 import { backgroundTaskManager } from '@kit.BackgroundTasksKit';
 import { avSession, AVCastPickerStyle } from '@kit.AVSessionKit';
 import { ShareService } from '../services/ShareService';
@@ -10,7 +12,7 @@ import { uiMaterial, window, curves, LengthMetrics, display } from '@kit.ArkUI';
 import { hdsMaterial } from '@kit.UIDesignKit';
 import { GripService, GripSide } from '../services/GripService';
 import { MINE_RADIO_MODES, MineRadioMode } from '../model/MineRadioModes';
-import { MaterialSurface, MaterialIcon, musicMaterial, musicSheetMaterial, musicMenuMaterial } from '../components/MaterialControls';
+import { MaterialSurface, MaterialIcon, musicMaterial, musicSheetMaterial, musicMenuMaterial, MATERIAL_PRESS_SCALE } from '../components/MaterialControls';
 import { Song } from '../model/Song';
 import { loadPlaybackSnapshot, savePlaybackSnapshot, loadRecentSongs, saveRecentSongs } from '../services/Store';
 import { setLatestPlaybackState } from '../services/Continuation';
@@ -19,12 +21,14 @@ import { CatalogueResults } from '../components/CatalogueResults';
 import { CatalogueEntity, searchCatalogue, catalogueTracks, SEARCH_KINDS, SEARCH_KIND_IDS } from '../services/CatalogueApi';
 import { LxHost, LxSourceInfo, LxSongInfo, LxHash } from '../services/LxRuntime';
 import { PlayerService, SessionLyricLine } from '../services/PlayerService';
+import { decodePlaylistFile } from '../services/PlaylistFiles';
 import { LyricLine, parseLrc } from '../services/LyricParser';
 import { publicLyricBundle } from '../services/LyricService';
 import { initStore, loadAppData, saveAppData, loadDeviceId, saveUiDiagnostics, loadHomeCache, saveHomeCache, AppData } from '../services/Store';
 import { LanDiscovery, LanDevice } from '../services/LanDiscovery';
 import { LanSyncServer, SyncIncoming } from '../services/LanSyncServer';
 import { pushBundle, SyncBundle, SyncSourcePayload, uniqueSyncSources } from '../services/LanSyncClient';
+import { SourceImportBatch } from '../services/SourceImports';
 import { MusicPlaylist, createPlaylist, parsePlaylists, playlistWithSong, songKey } from '../services/MusicLibrary';
 import { FeedPlaylist, FeedSongsResult, HomeFeed, FeedSection, loadPlatformSection, loadFeedPlaylistSongs, loadMergedHome, loadMergedChartSongs, platformFeedSongs } from '../services/HomeFeed';
 import { DockLayer } from '../components/DockLayer';
@@ -51,14 +55,17 @@ import { SongOrderDialog } from '../components/SongOrderDialog';
 import { SongListTools } from '../components/SongListTools';
 import { orderSongList } from '../services/SongOrder';
 import { LocalMusic, DownloadTrack } from '../services/LocalMusic';
-import { SongRow } from '../components/SongRow';
+import { SongListView } from '../components/SongListView';
 import { AmbientBackdrop } from '../components/AmbientBackdrop';
-import { TEXT, MUTED, ACCENT, platformName } from '../components/Theme';
+import { INK, TEXT, MUTED, ACCENT, platformName } from '../components/Theme';
 
 // 应用装配与用户动作；可见界面全部原生。
 interface PlaybackSnapshot { explicit?: boolean; song: Song; queue: Song[]; positionMs: number; playing: boolean; }
 interface SongListInput { songs: Song[]; scroller: Scroller; }
 interface PlatformOption { id: LxSearchSource; label: string; }
+interface SongAssets { coverUrl: string; lyric: string; tlyric: string; romalrc: string; }
+interface SongPicture { url: string; }
+interface SongMatchInput extends Song { matchSources: string[]; }
 @Entry
 @Component
 struct Index {
@@ -99,7 +106,6 @@ struct Index {
   private twoFingerActive: boolean = false;
   private twoFingerStartY: number = -1;
   private twoFingerLastY: number = -1;
-  private lastControlsToggleAt: number = 0;
   private lastScrollOffset: number = -1;
   private scrollTravel: number = 0;
   private maxScrollSeen: number = 0;
@@ -109,7 +115,10 @@ struct Index {
   private dockReady: boolean = false;
   @State private viewportHeight: number = 800;
   @StorageLink('lxliaForeground') @Watch('foregroundChanged') private foreground: boolean = true;
+  @StorageLink('lxmineStageMemoryPressure') @Watch('releaseStageCache') private stageMemoryPressure: number = 0;
+  @StorageLink('lxmineSystemColorMode') @Watch('systemThemeChanged') private systemColorMode: number = -1;
   @StorageLink('lxmine_deep_link') @Watch('deepLinkChanged') private deepLink: string = '';
+  @StorageLink('lxmine_shared_playlist') @Watch('consumeSharedPlaylist') private sharedPlaylist: string = '';
   @State private keyword: string = '';
   @State private platform: LxSearchSource = 'all';
   @State private searchKind: string = 'music';
@@ -130,10 +139,19 @@ struct Index {
   @State private duration: number = 0;
   @State private lyrics: LyricLine[] = [];
   @State @Watch('playerVisibilityChanged') private showPlayer: boolean = false;
+  @State private stageMounted: boolean = false;
+  @State private dynamicStageMounted: boolean = false;
+  @State private plainStageMounted: boolean = false;
+  @State private dynamicStageReady: boolean = false;
+  @State private dynamicStageFailed: boolean = false;
+  @State private dynamicStyle: string = 'mine-0';
+  private stagePlaceholder: Song = { source: 'local', id: '', name: '', singer: '', albumName: '', albumId: '', durationMs: 0, qualitys: [], coverUrl: '' };
+  private previousStyle: string = 'mine-0';
   @State private playerReveal: number = 0;
-  @State private commentsOpen: boolean = false;
+  @State @Watch('applyAppearance') private commentsOpen: boolean = false;
   @State private downloadsOpen: boolean = false;
   @State private downloadItems: MusicDownload[] = [];
+  private adoptedDownloads: string = '';
   @State private playlists: MusicPlaylist[] = [];
   @State private openedPlaylist: MusicPlaylist | null = null;
   @State @Watch('feedSectionChanged') private feedSection: string = '';
@@ -179,7 +197,8 @@ struct Index {
   @State private sourceReady: boolean = false;
   @State private quality: string = '128k';
   @State private libraryMosaicSeed: number = 0;
-  @State private styleName: string = 'mine-0';
+  @State @Watch('visualStyleChanged') private styleName: string = 'mine-0';
+  @State @Watch('applyAppearance') private appearance: string = 'system';
   @State private mode: string = '列表循环';
   @State private lyricOffset: number = 0;
   @State private devices: LanDevice[] = [];
@@ -220,6 +239,7 @@ struct Index {
   private foldListener = (status: display.FoldStatus): void => {
     console.info(`[Fold] status=${status}`);
     this.configureWindow();
+    this.introTimers.push(setTimeout(() => this.prewarmStages(), 350));
   };
   private downloads: MusicDownloads = new MusicDownloads();
   private coverPalette: CoverPalette = new CoverPalette();
@@ -269,6 +289,7 @@ struct Index {
   // 整表替换 @State 会让滚动期整列表反复重建而严重掉帧，600ms 内的中间帧跳过。
   private searchProgressAt: number = 0;
   private playToken: number = 0;
+  private assetRetryTimer: number = -1;
   private page: number = 1;
   private submitted: string = '';
   private pollTimer: number = -1;
@@ -284,12 +305,14 @@ struct Index {
     try { display.on('foldStatusChange', this.foldListener); } catch (_) {}
     console.info(`[LxMineMaterial] supported=${uiMaterial.isImmersiveMaterialSupported()} level=${uiMaterial.getGlobalMaterialLevel()}`);
     this.player.initialize(getContext(this) as common.UIAbilityContext);
-    this.car.start((connected: boolean, detail: string) => {
-      this.carAvailable = this.car.available;
-      this.carConnected = connected;
-      this.carDetail = detail;
-      if (connected) this.notify('检测到 HiCar 连接，请在车机确认应用入口', 2500);
-    });
+    if (PRODUCT_NAME.toString() !== 'store') {
+      this.car.start((connected: boolean, detail: string) => {
+        this.carAvailable = this.car.available;
+        this.carConnected = connected;
+        this.carDetail = detail;
+        if (connected) this.notify('检测到 HiCar 连接，请在车机确认应用入口', 2500);
+      });
+    }
     this.shareService.start();
     this.player.onBeforePlay(async () => { await this.setLanKeepAlive(false); });
     this.localMusic.onChange = (songs: Song[]) => {
@@ -310,7 +333,9 @@ struct Index {
       this.downloadItems = items;
       const completed = items.filter((item: MusicDownload) => item.state === 'complete')
         .map((item: MusicDownload): DownloadTrack => { return { song: item.song, path: item.path }; });
-      if (completed.length) {
+      const signature = completed.map((item: DownloadTrack) => item.path).join('|');
+      if (completed.length && signature !== this.adoptedDownloads) {
+        this.adoptedDownloads = signature;
         this.localMusic.adoptDownloads(completed);
         this.localTracks = this.localMusic.songs();
       }
@@ -362,6 +387,7 @@ struct Index {
     clearTimeout(this.feedCloseTimer);
     clearTimeout(this.sourcesCloseTimer);
     clearTimeout(this.homeFeedApplyTimer);
+    clearTimeout(this.assetRetryTimer);
     this.pendingHomeFeed = null;
     for (const timer of this.introTimers) clearTimeout(timer);
     this.discovery?.stop(); this.syncServer.stop().catch(() => {});
@@ -398,6 +424,7 @@ struct Index {
     // cannot delay peer visibility.
     this.syncServer.setIdentity(this.deviceId, this.deviceName);
     this.discovery = new LanDiscovery(this.deviceId, this.deviceName);
+    this.discovery.pendingRequests = () => this.syncServer.pullRequests();
     this.discovery.onDevices((devices: LanDevice[]) => { setTimeout(() => { if (!this.disposed) this.devices = devices; }, 0); });
     try {
       const port = await this.syncServer.start();
@@ -412,9 +439,15 @@ struct Index {
       }
       // 胶囊高亮维护：页底（含回弹区间）不高亮，其余取最后一个滚过胶囊栏的板块，容差放宽。
       // 板块/歌单详情盖住首页时停止几何测量，避免每 300ms 的 getRectangleById 抢滚动帧。
-      if (this.tab === '发现' && !this.searchOpen && !this.showPlayer && !this.feedSection && !this.openedPlaylist && !this.applying && !this.disposed) {
+      if (this.foreground && this.tab === '发现' && !this.searchOpen && !this.showPlayer && !this.feedSection && !this.openedPlaylist && !this.applying && !this.disposed) {
         try {
           const offset = this.homeScroller.currentOffset().yOffset;
+          const topMorph = this.viewportHeight < 500 ? 1 : 0;
+          if (offset <= 4 && (this.discoveryCompact || this.searchMorph !== topMorph)) {
+            this.getUIContext().animateTo({ curve: curves.springMotion(0.42, 0.9) }, () => {
+              this.discoveryCompact = false; this.searchMorph = topMorph;
+            });
+          }
           if (offset > this.maxScrollSeen + 2) this.maxScrollSeen = offset;
           if (Date.now() > this.chipAnchorHoldUntil) {
             // 高亮始终跟随最后一个滚过胶囊栏的板块；页底保持"分类"高亮
@@ -479,9 +512,8 @@ struct Index {
     this.sources = uniqueSyncSources(JSON.parse(data.sourcesJson) as SyncSourcePayload[]);
     try { this.recentSongs = JSON.parse(await loadRecentSongs()) as Song[]; } catch (_) { this.recentSongs = []; }
     if (!this.sources.length && data.sourceScript) this.sources = [this.sourceFromScript(data.sourceScript)];
-    this.activeId = data.activeSourceId || this.sources[0]?.id || ''; this.storeReady = true; this.save(); this.restorePlaybackIfReady();
-    this.restoreSource(); if (!this.sources.length) this.loadInitialSource();
-    this.loadBundledSources().catch((error: Error) => console.warn('[Sources] ' + error.message));
+    this.activeId = data.activeSourceId || this.sources[0]?.id || ''; this.storeReady = true; this.save(); this.restorePlaybackIfReady(); this.consumeSharedPlaylist();
+    this.restoreSource();
     this.refreshHomeFeed().catch(() => {});
   }
   private async refreshHomeFeed(force: boolean = false): Promise<void> {
@@ -766,28 +798,10 @@ struct Index {
       try { this.playlistReturnHomeOffset = this.homeScroller.currentOffset().yOffset; } catch (_) {}
     }
   }
-  private async loadBundledSources(): Promise<void> {
-    const context = getContext(this) as common.UIAbilityContext;
-    const manifestBytes = await context.resourceManager.getRawFileContent('sources/manifest.json');
-    const files = JSON.parse(buffer.from(manifestBytes).toString()) as string[];
-    const additions: SyncSourcePayload[] = [];
-    for (const file of files) {
-      try {
-        const bytes = await context.resourceManager.getRawFileContent('sources/' + file);
-        const payload = this.sourceFromScript(buffer.from(bytes).toString());
-        if (!this.sources.some((source: SyncSourcePayload) => source.name === payload.name || source.script === payload.script) &&
-          !additions.some((source: SyncSourcePayload) => source.name === payload.name)) {
-          additions.push(payload);
-        }
-      } catch (_) {}
-    }
-    if (!additions.length) return;
-    this.sources = this.sources.concat(additions);
-    if (!this.activeId) this.activeId = this.sources[0]?.id ?? '';
-    this.save();
-    this.restoreSource();
-  }
   private restoreSettings(): void {
+    const appearance = this.settings['lxmine_appearance'];
+    this.appearance = typeof appearance === 'string' && ['dark', 'light', 'system'].includes(appearance) ? appearance : 'system';
+    this.applyAppearance();
     this.lyricPrefs = lyricPreferences(JSON.stringify(this.settings['lxmine_lyrics'] ?? {}));
     this.updateStageTranslations();
     this.resumeOnStartup = this.settings['lxmine_resume_on_startup'] === true;
@@ -819,6 +833,7 @@ struct Index {
     this.settings['lxmine_lyrics'] = this.lyricPrefs;
     this.settings['lxmine_resume_on_startup'] = this.resumeOnStartup;
     this.settings['lxmine_home_platform']=this.homePlatform;
+    this.settings['lxmine_appearance'] = this.appearance;
     this.settings['lxlia_grip_enabled'] = this.gripEnabled;
     this.settings['lxlia_startup_animation'] = this.startupAnimation;
     this.settings['lxlia_audio_quality'] = this.quality; this.settings['lxlia_native_style'] = this.styleName;
@@ -832,23 +847,25 @@ struct Index {
     const name = script.match(/@name\s+([^\r\n*]+)/)?.[1]?.trim() || '自定义音源';
     return { id: `harmony-source-${Date.now()}-${Math.random().toString(36).slice(2, 10)}`, name, script, description: '', author: '', version: '', homepage: '', allowShowUpdateAlert: false, importedAt: Date.now() };
   }
-  private loadInitialSource(): void {
-    (getContext(this) as common.UIAbilityContext).resourceManager.getRawFileContent('dev-source.js').then((data: Uint8Array) => {
-      if (this.sources.length || this.disposed) return;
-      this.sources = [this.sourceFromScript(buffer.from(data).toString())];
-      this.activeId = this.sources[0].id ?? ''; this.save(); this.restoreSource();
-    }).catch(() => {});
-  }
   private restoreSource(): void {
     const active = this.sources.find((source: SyncSourcePayload) => source.id === this.activeId);
-    if (this.hostReady && this.storeReady && active && !this.sourceReady) this.activate(active);
+    if (this.hostReady && this.storeReady && active && !this.sourceReady && !this.sourceActivation) this.activate(active);
   }
-  private async activate(source: SyncSourcePayload): Promise<void> {
+  private sourceActivation: Promise<void> | null = null;
+  private activationGeneration: number = 0;
+  private activate(source: SyncSourcePayload): Promise<void> {
+    const activation = this.activateSource(source, ++this.activationGeneration);
+    this.sourceActivation = activation;
+    activation.finally(() => { if (this.sourceActivation === activation) this.sourceActivation = null; });
+    return activation;
+  }
+  private async activateSource(source: SyncSourcePayload, generation: number): Promise<void> {
     this.sourceReady = false;
     try {
       await this.host.loadSource(source.script, { name: source.name, description: source.description, author: source.author, version: source.version, homepage: source.homepage });
+      if (generation !== this.activationGeneration || this.disposed) return;
       this.activeId = source.id ?? ''; this.sourceReady = true; this.save(); this.message = `已启用「${source.name}」`; this.restorePlaybackIfReady();
-    } catch (error) { this.error = `音源加载失败：${(error as Error).message}`; }
+    } catch (error) { if (generation === this.activationGeneration) this.error = `音源加载失败：${(error as Error).message}`; }
   }
   private async search(more: boolean = false): Promise<void> {
     try { this.getUIContext().getFocusController().clearFocus(); } catch (_) {}
@@ -908,41 +925,41 @@ struct Index {
     finally { this.loading = false; }
   }
   private async playSong(song: Song, queue: Song[], startMs: number = 0, autoPlay: boolean = true): Promise<void> {
+    clearTimeout(this.assetRetryTimer);
     this.pendingPlayback = null;
     const local = (song.source === 'local' ? this.localMusic.pathFor(song) : '') || this.downloads.offline(song);
-    if (!local && !this.sourceReady) { this.error = '先在设置中启用一个支持此平台的音源'; this.tab = '设置'; return; }
+    if (!local && !this.sourceReady && !this.sourceActivation) { this.error = '先在设置中启用一个支持此平台的音源'; this.tab = '设置'; return; }
     const token = ++this.playToken;
+    const intentId = this.player.beginSwitch(autoPlay);
     this.selected = song; this.shareService.setSong(song); this.coverColors = EMPTY_COVER_COLORS;
     this.coverPalette.colors(song.coverUrl).then((colors: CoverColors) => { if (token === this.playToken && !this.disposed) this.coverColors = colors; });
     this.queue = queue; this.positionMs = Math.max(0, startMs); this.livePositionMs = this.positionMs; this.duration = song.durationMs;
     this.lyrics = []; this.translatedLyrics = []; this.romajiLyrics = []; this.stageTranslations = []; this.resolving = true; this.error = '';
     this.player.setLyricData([], this.lyricOffset);
     this.playbackUrl = '';
-    await this.setLanKeepAlive(false);
-    const info = this.songInfo(song);
+    let info = this.songInfo(song);
     try {
-      await this.player.pause();
+      await this.player.pauseForSwitch();
+      if (token !== this.playToken || this.disposed) return;
+      await this.setLanKeepAlive(false);
+      if (token !== this.playToken || this.disposed) return;
+      if (!local) {
+        while (this.sourceActivation) await this.sourceActivation;
+        if (!this.sourceReady) throw new Error('音源尚未就绪，请重新启用音源');
+        info = await this.resolveSongInfo(song);
+      }
+      if (token !== this.playToken || this.disposed) return;
       if (local) {
-        await this.player.playFile(local, song, startMs, autoPlay);
+        await this.player.playFile(local, song, startMs, autoPlay, intentId);
         if (token === this.playToken) {
           this.playbackUrl = `file://${local}`;
-          if (song.source === 'local') {
-            const localLines = parseLrc(this.localMusic.lyricFor(song));
-            this.lyrics = localLines;
-            this.updateStageTranslations();
-            const sessionLines: SessionLyricLine[] = localLines.map((line: LyricLine) => {
-              return { timeMs: line.timeMs, text: line.text } as SessionLyricLine;
-            });
-            this.player.setLyricData(sessionLines, this.lyricOffset);
-          } else {
-            this.loadLyrics(info, song, token);
-          }
+          this.loadLyrics(info, song, token);
         }
         return;
       }
       const url = await this.host.requestMusicUrl(info);
       if (token !== this.playToken || this.disposed) return;
-      await this.player.playUrl(url, song, startMs, autoPlay);
+      await this.player.playUrl(url, song, startMs, autoPlay, intentId);
       if (token === this.playToken) this.playbackUrl = url;
       // 部分 LX 音源在 musicUrl 请求中缓存歌词，必须等它完成后读取。
       this.loadLyrics(info, song, token);
@@ -959,11 +976,13 @@ struct Index {
           if (!fallbackSource) continue;
           tried.push(fallbackSource.name);
           await this.activate(fallbackSource);
+          if (token !== this.playToken || this.disposed) return;
           if (!this.sourceReady) { lastFallbackError = '音源加载失败'; continue; }
+          info.type = this.host.quality(info.source, this.quality);
           try {
             const fallbackUrl = await this.host.requestMusicUrl(info);
             if (token !== this.playToken || this.disposed) return;
-            await this.player.playUrl(fallbackUrl, song, startMs, autoPlay);
+            await this.player.playUrl(fallbackUrl, song, startMs, autoPlay, intentId);
             this.playbackUrl = fallbackUrl;
             this.error = '';
             this.loadLyrics(info, song, token);
@@ -986,35 +1005,95 @@ struct Index {
     const sourceHashes = song.hashes ?? {};
     for (const quality of Object.keys(sourceHashes)) hashes[quality] = { hash: sourceHashes[quality] } as LxHash;
     const source = song.source ?? 'kw';
-    return { source, songmid: song.id, hash: song.hash, _types: hashes, name: song.name, singer: song.singer,
+    return { source, songmid: song.id, hash: song.hash, _types: hashes, strMediaMid: song.strMediaMid, songId: song.songId, name: song.name, singer: song.singer,
       albumName: song.albumName, albumId: song.albumId, interval: Math.round(song.durationMs / 1000), type: this.host.quality(source, this.quality) };
+  }
+  private async resolveSongInfo(song: Song): Promise<LxSongInfo> {
+    if (song.source !== 'qishui') return this.songInfo(song);
+    const input = JSON.parse(JSON.stringify(song)) as SongMatchInput;
+    input.matchSources = this.host.supportedSources('musicUrl');
+    const matched = JSON.parse(await this.host.catalogue('match-song', JSON.stringify(input))) as Song;
+    return this.songInfo(matched);
   }
   private async downloadSong(song: Song): Promise<void> {
     if (!this.sourceReady) { this.error = '先启用音源再下载'; this.notify(this.error); this.tab = '设置'; return; }
     try {
+      const info = await this.resolveSongInfo(song);
+      const extension = info.type.includes('flac') ? 'flac' : 'mp3';
+      const name = `${song.singer} - ${song.name}`.replace(/[\\/:*?"<>|\x00-\x1f]/g, '_').slice(0, 160);
+      const uris = await new picker.DocumentViewPicker(getContext(this) as common.UIAbilityContext).save({ newFileNames: [`${name}.${extension}`] });
+      if (!uris.length) return;
       this.notify(`正在获取「${song.name}」的下载地址…`, 2000);
-      const info = this.songInfo(song);
       const url = await this.host.requestMusicUrl(info);
-      await this.downloads.start(song, info.type, url);
+      await this.downloads.start(song, info.type, url, uris[0]);
       this.message = `开始下载「${song.name}」`;
       this.notify(this.message);
     } catch (error) { this.error = `下载失败：${(error as Error).message}`; this.notify(this.error, 3000); }
   }
-  private async loadLyrics(info: LxSongInfo, song: Song, token: number): Promise<void> {
-    let lines: LyricLine[] = [], translation: LyricLine[] = [], romaji: LyricLine[] = [];
+  private async exportDownload(item: MusicDownload): Promise<void> {
     try {
-      const bundle = await this.host.requestLyricBundle(info);
-      lines = parseLrc(bundle.lxlyric || bundle.lyric || '');
-      translation = parseLrc(bundle.tlyric || ''); romaji = parseLrc(bundle.romalrc || bundle.rlyric || '');
-    } catch (_) {}
-    if (lines.length <= 1 || (this.lyricPrefs.showTranslation && !translation.length) || (this.lyricPrefs.showRomaji && !romaji.length)) {
-      try { const full = await publicLyricBundle(song); if (full.lines.length > lines.length) lines = full.lines; if (!translation.length) translation = full.translation; if (!romaji.length) romaji = full.romaji; } catch (_) {}
-    }
-    if (token === this.playToken && !this.disposed) {
+      const extension = item.path.split('.').pop() ?? 'mp3';
+      const name = `${item.song.singer} - ${item.song.name}`.replace(/[\\/:*?"<>|\x00-\x1f]/g, '_').slice(0, 160);
+      const uris = await new picker.DocumentViewPicker(getContext(this) as common.UIAbilityContext).save({ newFileNames: [`${name}.${extension}`] });
+      if (!uris.length) return;
+      await this.downloads.exportFile(item.id, uris[0]);
+      this.notify('已保存到系统所选位置');
+    } catch (error) { this.notify(`保存失败：${(error as Error).message}`); }
+  }
+  private async loadLyrics(info: LxSongInfo, song: Song, token: number, retry: boolean = false): Promise<void> {
+    clearTimeout(this.assetRetryTimer);
+    let lines: LyricLine[] = retry ? this.lyrics : [], translation: LyricLine[] = retry ? this.translatedLyrics : [], romaji: LyricLine[] = retry ? this.romajiLyrics : [];
+    let cover = song.coverUrl;
+    const publish = (): void => {
+      if (token !== this.playToken || this.disposed) return;
+      if (cover && cover !== this.selected?.coverUrl) {
+        const updated = JSON.parse(JSON.stringify(song)) as Song;
+        updated.coverUrl = cover;
+        this.selected = updated;
+        this.queue = this.queue.map((item: Song) => songKey(item) === songKey(song) ? updated : item);
+        this.shareService.setSong(updated); this.player.setArtwork(updated);
+        this.coverPalette.colors(updated.coverUrl).then((colors: CoverColors) => { if (token === this.playToken && !this.disposed) this.coverColors = colors; });
+      }
       this.lyrics = lines; this.translatedLyrics = translation; this.romajiLyrics = romaji; this.updateStageTranslations();
       const sessionLines: SessionLyricLine[] = lines.map((line: LyricLine) => { return { timeMs: line.timeMs, text: line.text } as SessionLyricLine; });
       this.player.setLyricData(sessionLines, this.lyricOffset);
+    };
+    if (song.source === 'local') {
+      lines = parseLrc(this.localMusic.lyricFor(song));
+      publish();
+      return;
     }
+    const publicPending = this.host.catalogue('song-assets', JSON.stringify(song)).then((json: string) => {
+      const full = JSON.parse(json) as SongAssets;
+      const publicLines = parseLrc(full.lyric);
+      if (publicLines.length > lines.length) lines = publicLines;
+      if (!translation.length) translation = parseLrc(full.tlyric);
+      if (!romaji.length) romaji = parseLrc(full.romalrc);
+      cover = full.coverUrl || cover;
+      publish();
+    }).catch(() => {});
+    try {
+      const bundle = await this.host.requestLyricBundle(info);
+      const provided = parseLrc(bundle.lxlyric || bundle.lyric || '');
+      if (provided.length >= lines.length) lines = provided;
+      const providedTranslation = parseLrc(bundle.tlyric || '');
+      const providedRomaji = parseLrc(bundle.romalrc || bundle.rlyric || '');
+      if (providedTranslation.length) translation = providedTranslation;
+      if (providedRomaji.length) romaji = providedRomaji;
+      publish();
+    } catch (_) {}
+    await publicPending;
+    if (!cover && this.host.supports(info.source, 'pic')) {
+      try {
+        const picture = (await this.host.request('pic', info, 6000)).trim();
+        const url = picture.startsWith('{') ? (JSON.parse(picture) as SongPicture).url : picture;
+        if (/^https?:\/\//i.test(url)) cover = url.replace(/^http:/i, 'https:');
+        publish();
+      } catch (_) {}
+    }
+    if (!retry && token === this.playToken && !this.disposed && (!lines.length || !cover)) this.assetRetryTimer = setTimeout(() => {
+      if (token === this.playToken && !this.disposed && this.selected) this.loadLyrics(info, this.selected, token, true);
+    }, 16000);
   }
   private toggle(): void {
     if (this.resolving) return;
@@ -1069,6 +1148,8 @@ struct Index {
         const lists = parsePlaylists(await this.host.importPlaylist(this.draft.trim(), this.platform === 'all' ? 'wy' : this.platform));
         this.playlists = this.playlists.filter((list: MusicPlaylist) => !lists.some((incoming: MusicPlaylist) => incoming.id === list.id)).concat(lists);
         this.message = `已导入 ${lists.length} 个歌单，共 ${lists.reduce((sum: number, list: MusicPlaylist) => sum + (list.songs?.length ?? 0), 0)} 首`;
+        const warnings = lists.map((list: MusicPlaylist) => list.warning ?? '').filter((value: string) => value.length > 0).join('\n');
+        this.notify(this.message + (warnings ? '\n' + warnings : ''), warnings ? 8000 : 3000);
       } else if (this.sheet === '添加音源') {
         const source = this.sourceFromScript(this.draft);
         await this.host.loadSource(source.script, this.sourceInfo);
@@ -1077,21 +1158,67 @@ struct Index {
       await this.persist(); this.showSheet = false;
       if (createdName) this.notify(`已创建歌单「${createdName}」`);
     } catch (error) { this.error = (error as Error).message; }
-    finally { this.busy = false; }
+    finally { this.busy = false; this.consumeSharedPlaylist(); }
+  }
+  private consumeSharedPlaylist(): void {
+    if (!this.hostReady || !this.storeReady || this.busy || !this.sharedPlaylist) return;
+    const text = this.sharedPlaylist;
+    this.sharedPlaylist = '';
+    this.openSheet('导入歌单');
+    this.draft = text;
+    this.submitSheet();
   }
   private async importFile(source: boolean): Promise<void> {
+    if (source) { await this.importSourceFiles(); return; }
     let file: fileIo.File | null = null;
     try {
       const uris = await new picker.DocumentViewPicker(getContext(this) as common.UIAbilityContext).select({ maxSelectNumber: 1 });
       if (!uris.length) return;
       file = fileIo.openSync(uris[0], fileIo.OpenMode.READ_ONLY);
       const size = fileIo.statSync(file.fd).size;
-      if (size > 8 * 1024 * 1024) throw new Error('文件超过 8 MB');
+      if (size > (source ? 8 : 32) * 1024 * 1024) throw new Error(`文件超过 ${source ? 8 : 32} MB`);
       const bytes = new ArrayBuffer(size); fileIo.readSync(file.fd, bytes);
-      this.openSheet(source ? '添加音源' : '导入歌单'); this.draft = buffer.from(bytes).toString();
+      const text = source ? buffer.from(bytes).toString() : await decodePlaylistFile(bytes, (getContext(this) as common.UIAbilityContext).cacheDir);
+      this.openSheet(source ? '添加音源' : '导入歌单'); this.draft = text;
       await this.submitSheet();
     } catch (error) { this.error = `导入失败：${(error as Error).message}`; }
     finally { if (file) fileIo.closeSync(file.fd); }
+  }
+  private async importSourceFiles(): Promise<void> {
+    if (this.busy) return;
+    this.busy = true; this.error = '';
+    try {
+      const uris = await new picker.DocumentViewPicker(getContext(this) as common.UIAbilityContext).select({ maxSelectNumber: 500 });
+      if (!uris.length) return;
+      const batch = new SourceImportBatch(this.sources);
+      for (const uri of uris) {
+        let file: fileIo.File | null = null;
+        let name = uri.split('/').pop() || '音源文件';
+        try {
+          name = decodeURIComponent(name);
+          file = await fileIo.open(uri, fileIo.OpenMode.READ_ONLY);
+          const size = (await fileIo.stat(file.fd)).size;
+          if (size > 8 * 1024 * 1024) throw new Error('音源文件超过 8 MB');
+          const bytes = new ArrayBuffer(size);
+          const read = await fileIo.read(file.fd, bytes);
+          if (read !== size) throw new Error('文件未能完整读取');
+          batch.add(name, buffer.from(bytes).toString());
+        } catch (error) { batch.fail(name, (error as Error).message || '无法读取文件'); }
+        finally { if (file) await fileIo.close(file.fd).catch(() => {}); }
+      }
+      if (batch.imported.length) {
+        this.sources = this.sources.concat(batch.imported);
+        if (!this.sources.some((item: SyncSourcePayload) => item.id === this.activeId)) {
+          this.activeId = batch.imported[0].id ?? ''; this.sourceReady = false;
+        }
+        await this.persist();
+        this.restoreSource();
+      }
+      this.showSheet = false; this.message = batch.summary();
+      AlertDialog.show({ title: '音源导入结果', message: batch.report(),
+        confirm: { value: '完成', action: () => {} } });
+    } catch (error) { this.error = `导入失败：${(error as Error).message}`; }
+    finally { this.busy = false; this.consumeSharedPlaylist(); }
   }
   private removeSource(source: SyncSourcePayload): void {
     AlertDialog.show({ title: '移除音源', message: `移除「${source.name}」？`, primaryButton: { value: '取消', action: () => {} }, secondaryButton: { value: '移除', action: () => {
@@ -1107,7 +1234,12 @@ struct Index {
       await this.persist();
       const bundle: SyncBundle = { protocol: 'lxlia-lansync/1', version: 1, createdAt: Date.now(), device: { id: this.deviceId, name: this.deviceName, platform: 'harmony' },
         settings: this.settings, playlists: this.playlists, sources: this.sources, activeSourceId: this.activeId };
-      const accepted = await pushBundle(device, bundle);
+      let accepted: boolean;
+      if (device.receiveMode === 'pull') {
+        const confirmation = this.syncServer.offerPush(device.id, JSON.stringify(bundle));
+        this.discovery?.announceNow();
+        accepted = await confirmation;
+      } else accepted = await pushBundle(device, bundle);
       this.message = accepted ? `已同步到「${device.name}」` : '对方未接受同步';
     } catch (error) { this.message = `发送失败：${(error as Error).message}`; }
     finally { this.busy = false; }
@@ -1144,7 +1276,7 @@ struct Index {
       const area = win.getWindowAvoidArea(window.AvoidAreaType.TYPE_SYSTEM);
       this.statusInset = this.getUIContext().px2vp(area.topRect.height);
       this.bottomInset = Math.max(12, this.getUIContext().px2vp(area.bottomRect.height));
-      await win.setWindowSystemBarProperties({ statusBarColor: '#00000000', navigationBarColor: '#00000000', statusBarContentColor: '#FFFFFF', navigationBarContentColor: '#FFFFFF' });
+      this.updateSystemBars();
     } catch (_) {}
   }
   /** 只有播放详情页允许旋转；其余页面锁竖屏，车机保持横屏能力。 */
@@ -1163,21 +1295,23 @@ struct Index {
     this.lastScrollOffset = -1;
     this.suppressScrollUntil = Date.now() + 600;
   }
-  /** 详情页默认显示控件；沉浸由按钮或双指下滑进入，离开横屏/关闭详情页即退出。 */
+  /** 详情页默认显示控件，双指纵向滑动切换沉浸，关闭详情页时恢复控件。 */
   private syncStageControls(): void {
-    if (!(this.showPlayer && this.landscape) && !this.stageControlsVisible) {
+    if (!this.showPlayer && !this.stageControlsVisible) {
       this.stageControlsVisible = true;
     }
   }
   private toggleStageControls(show: boolean): void {
-    if (!this.showPlayer || !this.landscape) return;
-    if (Date.now() - this.lastControlsToggleAt < 250) return;
-    this.lastControlsToggleAt = Date.now();
+    if (!this.showPlayer) return;
+    if (this.stageControlsVisible === show) return;
     this.stageControlsVisible = show;
   }
-  /** 两指纵向滑动：上滑唤起控件，下滑隐藏。只在横屏详情页生效。 */
+  /** 双指上滑显示控件，下滑进入沉浸。 */
   private stageGestureTouch(event: TouchEvent): void {
-    if (!this.showPlayer) return;
+    if (!this.showPlayer || !this.foreground || this.commentsOpen || event.type === TouchType.Cancel) {
+      this.twoFingerActive = false; this.twoFingerStartY = -1; this.twoFingerLastY = -1;
+      return;
+    }
     if (event.type === TouchType.Down) {
       this.twoFingerActive = event.touches.length >= 2;
       this.twoFingerStartY = this.twoFingerActive ? event.touches[0].y : -1;
@@ -1192,7 +1326,7 @@ struct Index {
       if (this.twoFingerActive) this.twoFingerLastY = event.touches[0].y;
       return;
     }
-    if (event.type === TouchType.Up || event.type === TouchType.Cancel) {
+    if (event.type === TouchType.Up) {
       if (this.twoFingerActive && this.twoFingerStartY >= 0 && this.twoFingerLastY >= 0) {
         const delta = this.twoFingerLastY - this.twoFingerStartY;
         if (Math.abs(delta) > 36) this.toggleStageControls(delta < 0);
@@ -1201,6 +1335,7 @@ struct Index {
     }
   }
   private foregroundChanged(): void {
+    if (this.foreground) this.prewarmStages();
     if (!this.foreground) this.savePlayback(true);
     if (this.foreground !== this.lastForeground) {
       this.lastForeground = this.foreground;
@@ -1223,8 +1358,7 @@ struct Index {
       autoCancel: false, systemMaterial: musicMenuMaterial(), primaryButton: { value: '拒绝', action: () => { this.respond(false); } },
       secondaryButton: { value: '接收并覆盖', action: () => { this.respond(true); } } });
   }
-  @Builder private songList($$: SongListInput) {
-    List({ space: 2, scroller: $$.scroller }) {
+  @Builder private songListHeader($$: SongListInput) {
       if ($$.scroller === this.searchScroller && this.searchOpen) {
         ListItem() { Text(`${platformName(this.platform)} · ${$$.songs.length} 首`).fontSize(12).fontColor(MUTED).padding({ top: 12, bottom: 16 }) }
       }
@@ -1249,17 +1383,17 @@ struct Index {
             onManual: () => this.openManualOrderFor(this.openedEntity ? this.entitySongs : this.results) })
         }
       }
-      ForEach($$.songs, (song: Song, index: number) => {
-        ListItem() { SongRow({ song, index, wide: this.wide, active: this.selected !== null && songKey(song) === songKey(this.selected), liked: this.liked(song),
-          onPlay: () => { this.playSong(song, $$.songs); }, onLike: () => this.like(song), onMore: () => this.addToPlaylist(song), onDownload: () => this.downloadSong(song) }) }
-      }, (song: Song) => songKey(song))
-    }.width('100%').layoutWeight(1).scrollBar(BarState.Off).edgeEffect(EdgeEffect.Spring)
-      .contentStartOffset($$.scroller === this.queueScroller ? 0 : this.headerHeight())
-      .contentEndOffset($$.scroller === this.queueScroller ? 16 : this.searchOpen ? 150 : 180)
-      .onDidScroll((offset: number, state: ScrollState) => {
-        if (state === ScrollState.Idle || $$.scroller === this.queueScroller) return;
-        this.homeScroll($$.scroller.currentOffset().yOffset);
-      })
+  }
+  @Builder private songList($$: SongListInput) {
+    SongListView({ songs: $$.songs, scroller: $$.scroller, wide: this.wide,
+      selectedKey: this.selected ? songKey(this.selected) : '',
+      contentTop: $$.scroller === this.queueScroller ? 0 : this.headerHeight(),
+      contentBottom: $$.scroller === this.queueScroller ? 16 : this.searchOpen ? 150 : 180,
+      header: () => { this.songListHeader($$); }, likedSong: (song: Song) => this.liked(song),
+      onPlay: (song: Song, context: Song[]) => { this.playSong(song, context); },
+      onLike: (song: Song) => this.like(song), onMore: (song: Song) => this.addToPlaylist(song),
+      onDownload: (song: Song) => this.downloadSong(song),
+      onScroll: (offset: number) => { if ($$.scroller !== this.queueScroller) this.homeScroll(offset); } })
   }
   private compactHeader(): boolean { return this.discoveryCompact || this.viewportHeight < 500; }
   private secondaryDock(): boolean { return this.settingsPanel !== 'main' || !!((this.feedSection && !this.feedClosing) || this.openedPlaylist || this.downloadsOpen || (this.sourcesOpen && !this.sourcesClosing)); }
@@ -1583,7 +1717,7 @@ struct Index {
       .padding({ left: 16 - 4 * this.searchMorph, right: 16 - 4 * this.searchMorph })
       .borderRadius(24 - 2 * this.searchMorph).backgroundColor(Color.Transparent)
       .systemMaterial(musicMaterial()).clip(true)
-      .scale({ x: this.searchPressed ? 0.985 : 1, y: this.searchPressed ? 0.985 : 1 })
+      .scale({ x: this.searchPressed ? MATERIAL_PRESS_SCALE : 1, y: this.searchPressed ? MATERIAL_PRESS_SCALE : 1 })
       .animation({ curve: curves.springMotion(0.36, 0.9) })
       .onTouch((event: TouchEvent) => {
         if (event.type === TouchType.Down) this.searchPressed = true;
@@ -1652,7 +1786,7 @@ struct Index {
             Text('搜索历史').fontSize(14).fontColor(TEXT).fontWeight(FontWeight.Medium)
             Flex({ wrap: FlexWrap.Wrap, space: { main: LengthMetrics.vp(10), cross: LengthMetrics.vp(10) } }) {
               ForEach(this.searchHistory, (word: string) => {
-                Button(word, { type: ButtonType.Normal }).fontSize(13).fontColor(MUTED).height(36).padding({ left: 14, right: 14 })
+                Button(word, { type: ButtonType.Normal }).attributeModifier(musicButtonPress).fontSize(13).fontColor(MUTED).height(36).padding({ left: 14, right: 14 })
                   .backgroundColor('#0DFFFFFF').borderRadius(18).stateEffect(false).onClick(() => this.suggestSearch(word))
               }, (word: string) => word)
             }.width('100%')
@@ -1660,7 +1794,7 @@ struct Index {
           Text('推荐搜索').fontSize(14).fontColor(TEXT).fontWeight(FontWeight.Medium)
           Flex({ wrap: FlexWrap.Wrap, space: { main: LengthMetrics.vp(10), cross: LengthMetrics.vp(10) } }) {
             ForEach(this.searchSuggestions, (word: string) => {
-              Button(word, { type: ButtonType.Normal }).fontSize(13).fontColor(TEXT).height(36).padding({ left: 14, right: 14 })
+              Button(word, { type: ButtonType.Normal }).attributeModifier(musicButtonPress).fontSize(13).fontColor(TEXT).height(36).padding({ left: 14, right: 14 })
                 .backgroundColor('#10FFFFFF').borderRadius(18).stateEffect(false).onClick(() => this.suggestSearch(word))
             }, (word: string) => word)
           }.width('100%')
@@ -1699,7 +1833,7 @@ struct Index {
               Text(this.openedPlaylist.kind === 'lx' ? '从歌曲行内操作添加到此歌单' : '此歌单使用电脑上的本地音频文件。').fontSize(14).fontColor(MUTED)
               // 空歌单没有歌曲列表头（SongListTools），删除入口单独补在空态里。
               if (this.canDeleteOpenedPlaylist()) {
-                Button('删除歌单').fontSize(13).fontColor(MUTED).backgroundColor(Color.Transparent)
+                Button('删除歌单').attributeModifier(musicButtonPress).fontSize(13).fontColor(MUTED).backgroundColor(Color.Transparent)
                   .buttonStyle(ButtonStyleMode.TEXTUAL).onClick(() => this.deleteOpenedPlaylist())
               }
             }.width('100%').height('100%').justifyContent(FlexAlign.Center)
@@ -1734,6 +1868,7 @@ struct Index {
       primaryButton: { value: '取消', action: () => {} }, secondaryButton: { value: '删除', action: () => { this.playlists = this.playlists.filter((item: MusicPlaylist) => item.id !== list.id); this.closeOpenedPlaylist(); this.save(); } } });
   }
   private navigateTab(tab: string): void {
+    if (this.searchOpen) { this.searchToken++; this.loading = false; }
     this.settingsPanel = 'main'; this.tab = tab; this.openedPlaylist = null; this.openedFeedSourceId = ''; this.downloadsOpen = false; this.sourcesOpen = false; this.sourcesClosing = false; this.searchOpen = false; this.feedSection = ''; this.error = '';
     const scroller = tab === '设置' ? this.settingsScroller : tab === '资料库' ? this.libraryScroller : this.homeScroller;
     try { this.discoveryCompact = scroller.currentOffset().yOffset > 56; } catch (_) { this.discoveryCompact = false; }
@@ -1762,6 +1897,8 @@ struct Index {
     this.getUIContext().animateTo({ curve: curves.springMotion(0.46, 0.8) }, () => { this.searchOpen = true; this.discoveryCompact = false; this.searchMorph = 0; });
   }
   private closeSearch(): void {
+    this.searchToken++;
+    this.loading = false;
     this.getUIContext().animateTo({ curve: curves.springMotion(0.46, 0.8) }, () => {
       this.searchOpen = false;
       this.discoveryCompact = this.searchWasCompact;
@@ -1889,8 +2026,10 @@ struct Index {
     if (this.intro || !this.storeReady || !this.pendingPlayback || this.disposed) return;
     const saved = this.pendingPlayback;
     if (!this.resumeOnStartup && saved.explicit !== true) {
+      if (saved.song.source !== 'local' && !this.hostReady) return;
       this.pendingPlayback = null;
       this.playing = false;
+      this.loadLyrics(this.songInfo(saved.song), saved.song, this.playToken);
       return;
     }
     if (!this.sourceReady && !this.downloads.offline(saved.song)) return;
@@ -1950,6 +2089,10 @@ struct Index {
   }
   private finishIntro(): void { this.intro = false; this.restorePlaybackIfReady(); }
   private playerVisibilityChanged(): void {
+    this.stageControlsVisible = true;
+    this.twoFingerActive = false; this.twoFingerStartY = -1; this.twoFingerLastY = -1;
+    if (this.showPlayer) { this.stageMounted = true; this.mountPlaybackStage(); }
+    this.updateSystemBars();
     // 打开详情页时立刻放行下一帧进度状态，避免沿用首页 1s 节流造成进度延迟。
     if (this.showPlayer) { this.lastPositionUiAt = 0; this.positionMs = this.livePositionMs; }
     // 返回/关闭与方向切换同步执行，避免"先保持横屏再转竖屏"的延迟。
@@ -1957,6 +2100,51 @@ struct Index {
     this.syncStageControls();
     this.getUIContext().animateTo({ curve: curves.springMotion(0.62, 0.74) }, () => { this.playerReveal = this.showPlayer ? 1 : 0; });
   }
+  private visualStyleChanged(): void {
+    this.twoFingerActive = false; this.twoFingerStartY = -1; this.twoFingerLastY = -1;
+    this.dynamicStageFailed = false;
+    if (this.previousStyle === 'off' && this.styleName !== 'off') this.dynamicStageReady = false;
+    this.previousStyle = this.styleName;
+    if (this.styleName !== 'off') this.dynamicStyle = this.styleName;
+    if (this.showPlayer) this.mountPlaybackStage();
+  }
+  private mountPlaybackStage(): void {
+    this.stageMounted = true;
+    if (this.styleName === 'off') this.plainStageMounted = true;
+    else if (!this.dynamicStageFailed) this.dynamicStageMounted = true;
+  }
+  private prewarmStages(): void {
+    if (this.disposed || !this.foreground) return;
+    this.stageMounted = true; this.dynamicStageMounted = !this.dynamicStageFailed; this.plainStageMounted = true;
+  }
+  private releaseStageCache(): void {
+    if (this.showPlayer && this.foreground) return;
+    this.stageMounted = false; this.dynamicStageMounted = false; this.plainStageMounted = false; this.dynamicStageReady = false;
+  }
+  private stageLayerVisible(plain: boolean): boolean {
+    return this.foreground && this.showPlayer && !this.commentsOpen &&
+      (plain ? this.styleName === 'off' || !this.dynamicStageReady : this.styleName !== 'off' && !this.dynamicStageFailed);
+  }
+  private applyAppearance(): void {
+    const context = this.getUIContext().getHostContext() as common.UIAbilityContext;
+    const mode = this.appearance === 'dark' ? ConfigurationConstant.ColorMode.COLOR_MODE_DARK
+      : this.appearance === 'light' ? ConfigurationConstant.ColorMode.COLOR_MODE_LIGHT : ConfigurationConstant.ColorMode.COLOR_MODE_NOT_SET;
+    context.getApplicationContext().setColorMode(mode);
+    setTimeout(() => this.updateSystemBars(), 50);
+  }
+  private stageLight(): boolean {
+    if (this.appearance === 'light') return true;
+    if (this.appearance === 'dark') return false;
+    if (this.systemColorMode === ConfigurationConstant.ColorMode.COLOR_MODE_LIGHT) return true;
+    if (this.systemColorMode === ConfigurationConstant.ColorMode.COLOR_MODE_DARK) return false;
+    return (this.getUIContext().getHostContext()!.resourceManager.getColorSync($r('app.color.page_background').id) & 0xFF) > 127;
+  }
+  private updateSystemBars(): void {
+    const foreground = this.getUIContext().getHostContext()!.resourceManager.getColorSync($r('app.color.text_primary').id);
+    const color = `#${(foreground >>> 0).toString(16).padStart(8, '0')}`;
+    this.mainWindow?.setWindowSystemBarProperties({ statusBarColor: '#00000000', navigationBarColor: '#00000000', statusBarContentColor: color, navigationBarContentColor: color }).catch(() => {});
+  }
+  private systemThemeChanged(): void { setTimeout(() => this.updateSystemBars(), 50); }
   @LocalBuilder private sheetContent() {
     Column({ space: 18 }) {
       Row({ space: 12 }) {
@@ -1966,18 +2154,18 @@ struct Index {
         // 键盘上方（内容从底部裁掉），放到内容末尾的按钮会彻底消失、点不到。
         // 输入类弹层只保留「取消 + 主操作」两个语义不同的按钮，避免「创建/完成」重复。
         if (this.sheet !== '播放队列') {
-          Button('取消').buttonStyle(ButtonStyleMode.TEXTUAL).enabled(!this.busy).onClick(() => { this.showSheet = false; })
-          Button(this.busy ? '处理中…' : this.sheet === '新建歌单' ? '创建' : this.sheet === '导入歌单' ? '导入' : '添加')
+          Button('取消').attributeModifier(musicButtonPress).buttonStyle(ButtonStyleMode.TEXTUAL).enabled(!this.busy).onClick(() => { this.showSheet = false; })
+          Button(this.busy ? '处理中…' : this.sheet === '新建歌单' ? '创建' : this.sheet === '导入歌单' ? '导入' : '添加').attributeModifier(musicButtonPress)
             .buttonStyle(ButtonStyleMode.TEXTUAL).fontColor(ACCENT).enabled(!this.busy && !!this.draft.trim())
             .onClick(() => { this.submitSheet(); })
         } else {
-          Button('完成').buttonStyle(ButtonStyleMode.TEXTUAL).enabled(!this.busy).onClick(() => { this.showSheet = false; })
+          Button('完成').attributeModifier(musicButtonPress).buttonStyle(ButtonStyleMode.TEXTUAL).enabled(!this.busy).onClick(() => { this.showSheet = false; })
         }
       }.width('100%')
       if (this.sheet === '播放队列') { this.songList({ songs: this.queue, scroller: this.queueScroller }) }
       else {
         if (this.error) { Text(this.error).fontColor('#FFB4B4').fontSize(13).width('100%') }
-        Text(this.sheet === '导入歌单' ? '粘贴网易云、QQ、酷我的歌单链接，或 LX 歌单 JSON。' : this.sheet === '添加音源' ? '粘贴 LX 音源脚本或选择 .js 文件。' : '输入歌单名称').fontSize(14).fontColor(MUTED).width('100%')
+        Text(this.sheet === '导入歌单' ? '粘贴网易云、QQ、酷我、酷狗、汽水的分享内容，或选择 .lxmc / JSON 文件。汽水歌曲播放时匹配同名同歌手版本。' : this.sheet === '添加音源' ? '粘贴 LX 音源脚本，或一次选择多个 .js / .txt 文件。' : '输入歌单名称').fontSize(14).fontColor(MUTED).width('100%')
         if (this.sheet === '新建歌单') {
           TextInput({ text: this.draft, placeholder: '歌单名称' }).height(48).fontSize(15)
             .onChange((value: string) => { this.draft = value; })
@@ -1986,7 +2174,8 @@ struct Index {
           TextArea({ text: this.draft, placeholder: '在这里粘贴…' }).height(180)
             .fontSize(15).onChange((value: string) => { this.draft = value; })
         }
-        if (this.sheet === '导入歌单') { Button('选择歌单文件').buttonStyle(ButtonStyleMode.NORMAL).backgroundColor(Color.Transparent).systemMaterial(musicMaterial()).onClick(() => { this.importFile(false); }) }
+        if (this.sheet === '导入歌单') { Button('选择歌单文件').attributeModifier(musicButtonPress).buttonStyle(ButtonStyleMode.NORMAL).backgroundColor(Color.Transparent).systemMaterial(musicMaterial()).onClick(() => { this.importFile(false); }) }
+        if (this.sheet === '添加音源') { Button('批量导入音源').attributeModifier(musicButtonPress).buttonStyle(ButtonStyleMode.NORMAL).backgroundColor(Color.Transparent).systemMaterial(musicMaterial()).onClick(() => { this.importFile(true); }) }
       }
     }.width('100%').height(this.sheet === '播放队列' ? '100%' : 'auto').padding(24)
   }
@@ -2019,7 +2208,7 @@ struct Index {
       onOpenSources: () => { this.openSources(); },
       onOffset: (value: number) => { this.lyricOffset = value; this.player.setLyricOffset(value); this.save(); } })
     } else {
-      AlignedSettings({ panel: this.settingsPanel, sources: this.sources, activeId: this.activeId, quality: this.quality, mode: this.mode, styleName: this.styleName,
+      AlignedSettings({ panel: this.settingsPanel, sources: this.sources, activeId: this.activeId, quality: this.quality, mode: this.mode, styleName: this.styleName, appearance: this.appearance,
         startupAnimation: this.startupAnimation, resumeOnStartup: this.resumeOnStartup, gripEnabled: this.gripEnabled, carDetail: this.carDetail,
         completedDownloads: this.downloadItems.filter((item: MusicDownload) => item.state === 'complete').length, devices: this.devices, lanSsid: this.lanSsid, message: this.message,
         lyrics: this.lyricPrefs, lyricOffset: this.lyricOffset, previewPrimary: lyricPrimary(this.lyricPrefs, this.coverColors), previewSecondary: lyricSecondary(this.lyricPrefs, this.coverColors),
@@ -2028,6 +2217,7 @@ struct Index {
         onDownloads: () => { this.settingsPanel = 'main'; this.tab = '资料库'; this.downloadsOpen = true; this.openedPlaylist = null; },
         onSend: (device: LanDevice) => this.send(device), onQuality: (value: string) => { this.quality = value; this.save(); },
         onMode: (value: string) => { this.mode = value; this.save(); }, onStyle: (value: string) => { this.styleName = value; this.save(); },
+        onAppearance: (value: string) => { this.appearance = value; this.save(); },
         onResume: (value: boolean) => { this.resumeOnStartup = value; this.save(); }, onStartup: (value: boolean) => { this.startupAnimation = value; this.save(); },
         onGrip: (value: boolean) => { this.gripEnabled = value; this.foregroundChanged(); this.save(); },
         onColorMode: (value: string) => { this.lyricPrefs.colorMode = value; this.save(); }, onPrimary: (value: string) => { this.lyricPrefs.primary = value; this.save(); },
@@ -2037,26 +2227,43 @@ struct Index {
         onOffset: (value: number) => { this.lyricOffset = value; this.player.setLyricOffset(value); this.save(); } })
     }
   }
+  @LocalBuilder private playbackStage(plain: boolean) {
+      if (this.stageMounted && (plain ? this.plainStageMounted : this.dynamicStageMounted)) {
+        MineRadioStage({ song: this.selected ?? this.stagePlaceholder, audioUrl: this.playbackUrl, lines: this.lyrics, translationLines: this.stageTranslations, lyricColorMode: this.lyricPrefs.colorMode.endsWith('gradient') ? 'custom-gradient' : 'custom-solid', lyricPrimary: lyricPrimary(this.lyricPrefs, this.coverColors), lyricSecondary: lyricSecondary(this.lyricPrefs, this.coverColors), mode: plain ? 'off' : this.dynamicStyle, light: this.stageLight(), duration: this.duration, lyricOffset: this.lyricOffset,
+          playing: this.playing && this.foreground, positionMs: this.positionMs, topInset: this.statusInset + 72, bottomInset: this.bottomInset + 164,
+          visible: this.stageLayerVisible(plain), detail: this.showPlayer,
+          interactive: plain ? this.styleName === 'off' || this.dynamicStageFailed : this.styleName !== 'off' && !this.dynamicStageFailed,
+          onSeek: (time: number) => this.player.seek(time),
+          onVisualReady: () => { if (!plain && this.foreground && this.styleName !== 'off') this.dynamicStageReady = true; },
+          onImmersiveToggle: (show: boolean) => this.toggleStageControls(show),
+          onDegraded: () => {
+            this.dynamicStageReady = false; this.dynamicStageFailed = true; this.dynamicStageMounted = false; this.plainStageMounted = true;
+            this.notify('图形资源暂不可用，已临时使用纯文字歌词');
+          } })
+          .opacity(this.stageLayerVisible(plain) ? plain || this.dynamicStageReady ? 1 : 0.001 : 0)
+          .hitTestBehavior(this.stageLayerVisible(plain) ? HitTestMode.Default : HitTestMode.None)
+          .onTouch((event: TouchEvent) => {
+            const interactive = plain ? this.styleName === 'off' || this.dynamicStageFailed : this.styleName !== 'off' && !this.dynamicStageFailed;
+            if (interactive && this.stageLayerVisible(plain)) this.stageGestureTouch(event);
+          })
+      }
+  }
   build() {
     Stack({ alignContent: Alignment.Bottom }) {
-      AmbientBackdrop({ playing: this.playing, styleName: this.styleName, coverUrl: this.selected?.coverUrl ?? '', colorFirst: this.coverColors.first, colorLast: this.coverColors.last })
-      if (this.selected) {
-        MineRadioStage({ song: this.selected, audioUrl: this.playbackUrl, lines: this.lyrics, translationLines: this.stageTranslations, lyricColorMode: this.lyricPrefs.colorMode.endsWith('gradient') ? 'custom-gradient' : 'custom-solid', lyricPrimary: lyricPrimary(this.lyricPrefs, this.coverColors), lyricSecondary: lyricSecondary(this.lyricPrefs, this.coverColors), mode: this.styleName, duration: this.duration, lyricOffset: this.lyricOffset,
-          playing: this.playing && this.foreground, positionMs: this.positionMs, topInset: this.statusInset + 72, bottomInset: this.bottomInset + 164,
-          visible: this.foreground, onSeek: (time: number) => this.player.seek(time) })
-          .opacity(0.5 + this.playerReveal * 0.28)
-          .hitTestBehavior(this.showPlayer ? HitTestMode.Default : HitTestMode.BLOCK_DESCENDANTS)
-          .onTouch((event: TouchEvent) => this.stageGestureTouch(event))
+      if (this.showPlayer && !this.commentsOpen) {
+        AmbientBackdrop({ playing: this.playing, styleName: this.dynamicStageFailed ? 'off' : this.styleName, coverUrl: this.selected?.coverUrl ?? '', colorFirst: this.coverColors.first, colorLast: this.coverColors.last, light: this.stageLight() })
       }
+      this.playbackStage(false)
+      this.playbackStage(true)
       if (!this.showPlayer) {
-        Column().width('100%').height('100%').backgroundColor('#0A08090B').backgroundBlurStyle(BlurStyle.COMPONENT_THIN).hitTestBehavior(HitTestMode.Transparent)
+        Column().width('100%').height('100%').backgroundColor(INK).hitTestBehavior(HitTestMode.Transparent)
       }
       Navigation() {
         Stack({ alignContent: Alignment.Bottom }) {
           Column() {
             if (this.tab === '发现') { this.discover() }
             else if (this.tab === '资料库') {
-              if (this.downloadsOpen) { DownloadsView({ onScroll: (offset: number) => this.homeScroll(offset), items: this.downloadItems, contentTop: this.headerHeight(), onPlay: (song: Song) => this.playSong(song, this.downloadItems.filter((item: MusicDownload) => item.state === 'complete').map((item: MusicDownload) => item.song)), onCancel: (id: string) => { this.downloads.cancel(id).catch((error: Error) => { this.error = error.message; }); } }) }
+              if (this.downloadsOpen) { DownloadsView({ onScroll: (offset: number) => this.homeScroll(offset), items: this.downloadItems, contentTop: this.headerHeight(), onExport: (item: MusicDownload) => { this.exportDownload(item); }, onPlay: (song: Song) => this.playSong(song, this.downloadItems.filter((item: MusicDownload) => item.state === 'complete').map((item: MusicDownload) => item.song)), onCancel: (id: string) => { this.downloads.cancel(id).catch((error: Error) => { this.error = error.message; }); } }) }
               else { this.library() }
             }
             else { this.settingsView() }
@@ -2097,18 +2304,11 @@ struct Index {
           onComments: () => { this.commentsOpen = true; } })
           .opacity(this.stageControlsVisible ? this.playerReveal : 0)
           .scale({ x: 0.94 + 0.06 * this.playerReveal, y: 0.94 + 0.06 * this.playerReveal })
-          .translate({ y: (1 - this.playerReveal) * Math.min(180, this.viewportHeight * 0.22) + (this.stageControlsVisible ? 0 : -28) })
-          .hitTestBehavior(this.showPlayer && this.stageControlsVisible ? HitTestMode.Transparent : HitTestMode.BLOCK_DESCENDANTS)
+          .translate({ y: (1 - this.playerReveal) * Math.min(180, this.viewportHeight * 0.22) + (this.stageControlsVisible ? 0 : -12) })
+          .enabled(this.showPlayer && this.stageControlsVisible)
+          .hitTestBehavior(this.stageControlsVisible ? HitTestMode.None : HitTestMode.BLOCK_DESCENDANTS)
           .accessibilityLevel(this.showPlayer && this.stageControlsVisible ? 'auto' : 'no-hide-descendants')
-          .animation({ curve: curves.springMotion(0.46, 0.82) })
-      }
-      // 横屏详情页的两指手势捕获层：舞台是 Web，触摸不会冒泡到这里，必须单独盖一层。
-      if (this.showPlayer && this.landscape) {
-        Stack()
-          .width('100%').height('100%')
-          .backgroundColor('#01000000')
-          .hitTestBehavior(HitTestMode.Transparent)
-          .onTouch((event: TouchEvent) => this.stageGestureTouch(event))
+          .animation({ duration: 280, curve: curves.cubicBezierCurve(0.2, 0.8, 0.2, 1) })
       }
       if (!this.showPlayer) { this.feedOverlay() }
       DockLayer({ song: this.selected, tab: this.tab, gripSide: this.gripSide, playing: this.playing, busy: this.resolving,
@@ -2122,10 +2322,12 @@ struct Index {
         onLike: () => { if (this.selected) this.like(this.selected); }, onExpand: () => this.expandDock(),
         onSeek: (time: number) => this.player.seek(time) })
         .width('100%').margin({ bottom: this.bottomInset + 8 })
-        .opacity(this.stageControlsVisible ? 1 : 0)
-        .translate({ y: this.stageControlsVisible ? 0 : 90 })
-        .hitTestBehavior(this.stageControlsVisible ? HitTestMode.Default : HitTestMode.Transparent)
-        .animation({ curve: curves.springMotion(0.46, 0.82) })
+        .opacity(!this.showPlayer || this.stageControlsVisible ? 1 : 0)
+        .translate({ y: !this.showPlayer || this.stageControlsVisible ? 0 : 24 })
+        .hitTestBehavior(!this.showPlayer || this.stageControlsVisible ? HitTestMode.Default : HitTestMode.BLOCK_DESCENDANTS)
+        .enabled(!this.showPlayer || this.stageControlsVisible)
+        .accessibilityLevel(!this.showPlayer || this.stageControlsVisible ? 'auto' : 'no-hide-descendants')
+        .animation({ duration: 280, curve: curves.cubicBezierCurve(0.2, 0.8, 0.2, 1) })
       if (this.commentsOpen) {
         CommentsPanel({ song: this.selected, wide: this.wide, statusInset: this.statusInset, bottomInset: this.bottomInset, onClose: () => { this.commentsOpen = false; } })
           .transition(TransitionEffect.OPACITY.combine(TransitionEffect.translate({ y: 26 })).animation({ curve: curves.springMotion(0.46, 0.84) }))
@@ -2142,9 +2344,9 @@ struct Index {
       }
       Web({ src: $rawfile('lx-runtime/index.html'), controller: this.controller }).width(1).height(1).opacity(0).javaScriptAccess(true)
         .javaScriptProxy({ object: this.host, name: '__lxNative', methodList: ['onInited', 'onResult', 'httpRequest'], controller: this.controller })
-        .onPageEnd(() => { this.host.attach(this.controller); this.hostReady = true; this.restoreSource(); this.refreshHomeFeed().catch(()=>{}); })
+        .onPageEnd(() => { this.host.attach(this.controller); this.hostReady = true; this.restorePlaybackIfReady(); this.restoreSource(); this.consumeSharedPlaylist(); this.refreshHomeFeed().catch(()=>{}); })
       if (this.intro) { LaunchScene({ onFinish: () => this.finishIntro() }).hitTestBehavior(HitTestMode.Block) }
-    }.width('100%').height('100%').backgroundColor('#08090B').expandSafeArea([SafeAreaType.SYSTEM], [SafeAreaEdge.TOP, SafeAreaEdge.BOTTOM])
+    }.width('100%').height('100%').backgroundColor(INK).expandSafeArea([SafeAreaType.SYSTEM], [SafeAreaEdge.TOP, SafeAreaEdge.BOTTOM])
       .onAreaChange((oldArea: Area, area: Area) => {
         this.viewportWidth = Number(area.width); this.viewportHeight = Number(area.height); this.wide = this.viewportWidth >= 700;
         const nextLandscape = this.viewportWidth > this.viewportHeight;
@@ -2158,8 +2360,6 @@ struct Index {
         this.configureWindow();
       })
       .onTouch((event: TouchEvent) => this.stageGestureTouch(event))
-      .gesture(PanGesture({ fingers: 2, direction: PanDirection.Vertical, distance: 16 })
-        .onActionEnd((event: GestureEvent) => { if (Math.abs(event.offsetY) > 24) this.toggleStageControls(event.offsetY < 0); }))
       .bindSheet($$this.showSheet, this.sheetContent(), { height: this.sheet === '播放队列' ? SheetSize.LARGE : SheetSize.FIT_CONTENT,
         width: this.wide ? 580 : '100%', preferType: this.wide ? SheetType.CENTER : SheetType.BOTTOM,
         showClose: false, dragBar: true, systemMaterial: musicMenuMaterial() })

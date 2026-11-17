@@ -1,8 +1,8 @@
 # 局域网一键同步（LxMine LAN Sync）
 
-产品显示名已改为 LxMine。为兼容已有数据与设备，v1 协议标识和路径保留旧内部名称；接入新桌面基座仍在进行中。
+产品显示名已改为 LxMine。为兼容已有数据与设备，v1 协议标识和路径保留旧内部名称。
 
-目标：同一局域网内的 Windows 与鸿蒙设备互相发现，一键把**软件设置 + 歌单 + 音源**推送给对方；
+目标：同一局域网内的 Windows、HarmonyOS 与 Android 设备互相发现，一键把**软件设置 + 歌单 + 音源**推送给对方；
 对方确认接收后**整体覆盖**。不经过云端，不需要配对或信任关系。
 
 > 2026-10-18 真机验收：鸿蒙手机与平板连接同一个 Wi-Fi 名称后已能双向发现。
@@ -39,6 +39,17 @@
 - 接收端不会立即应用：请求挂起，等待本机用户在界面上点「接收并覆盖」或「拒绝」；
   120 秒未处理则超时。接受时先应用数据，再回复 `{"accepted":true}`；拒绝回复 `{"accepted":false}`。
 
+### Android 容器接收
+
+卓易通实机能广播发现设备，但无法从局域网访问其 Android 接收端口。Android 新版在 announce 中添加 `receiveMode: "pull"`，由接收端主动连接发送端。
+
+1. 发送端为一次传输生成独立 ID，保留这次发送时的 bundle 快照，并在原有 3 秒广播中添加 `pullRequests: [{id, receiverId}]`。广播仅含传输标识和目标设备 ID，不含音源正文。
+2. 目标 Android 通过 `GET /lxlia-sync/pull/<id>/<receiverId>` 获取 bundle，直接交给原接收服务的校验、确认弹窗和持久化流程。
+3. 用户操作后，Android 用 `POST /lxlia-sync/receipt/<id>` 发送 `{receiverId, accepted}`。取回数据本身不会被算作接受。
+4. 确认回执会结束发送端的等待并移除该快照，120 秒未确认则超时。接收端短期缓存已处理结果，重试回执不会重复弹窗或应用数据。
+
+此路径需要发送端和 Android 接收端都更新。没有 `receiveMode` 的旧设备继续走原 HTTP 推送。空闲时不增加 HTTP 轮询。
+
 ### 数据边界
 
 - 设置：只同步 `getPublicSettings()` 暴露过的键；AI 凭据、Discord AppId 等保留键不接收。
@@ -47,13 +58,9 @@
 
 ## 实现位置
 
-| 层 | 文件 |
-| --- | --- |
-| 传输（UDP + HTTP） | `apps/desktop/electron/lansync/transport.cjs` |
-| Electron 业务/身份/IPC | `apps/desktop/electron/lansync/index.cjs` |
-| 渲染层封装 | `apps/desktop/src/services/lanSync.ts` |
-| 弹窗 UI | `apps/desktop/src/components/modal/LanSyncModal.tsx` |
-| 入口 | 命令面板「局域网同步」 |
+- Windows 传输及业务入口在 `apps/desktop/desktop/lansync/transport.cjs`、`index.cjs`，设置和确认界面在 `apps/desktop/public/lxmine/app.js`。
+- Android 发现与接收服务在 `apps/android/app/src/main/java/com/lxlia/player/lx/Lan.kt`，主动接收在 `LanPullReceiver.kt`，确认和持久化在 `ui/ActionsApp.kt`。
+- HarmonyOS 发现、发送与接收在 `apps/harmony/entry/src/main/ets/services/LanDiscovery.ets`、`LanSyncClient.ets`、`LanSyncServer.ets`，确认和持久化在 `pages/Index.ets`。
 
 ## 鸿蒙端
 
@@ -61,13 +68,13 @@
 
 - 发现/发送：`apps/harmony/entry/src/main/ets/services/LanDiscovery.ets` + `LanSyncClient.ets`；
 - 接收：`LanSyncServer.ets`（`TCPSocketServer` + 最小 HTTP 解析），确认后应用音源并回复；
-- 音源暂时只保存在页面状态里，持久化与歌单应用待补。
+- 用户接受后先持久化设置、音源及歌单，再回执。播放进度为本机数据，不被同步覆盖。
 
-> 真机验证仍缺签名；代码已通过 `hvigor assembleHap` 编译。
+2026-11-17，HiCar 和 Store 已分别构建签名包，HiCar 安装于平板。Windows 向同一平板的卓易通 Android 发送时，已观察到原生确认框和成功回执。
 
 ## 验证
 
-单元测试：`node --test apps/desktop/test/lansync/transport.node-test.mjs`
+单元测试：`node --test apps/desktop/tests/lxmine-sync.test.js apps/desktop/tests/lxmine-sync-pull.test.cjs apps/harmony/test/native-services.node-test.mjs`。Android 对应 `LanSyncTest`。
 - UDP announce 被正确发现；
 - 推送后挂起、确认后应用并回复 accepted；
 - 拒绝时不应用。

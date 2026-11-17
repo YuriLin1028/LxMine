@@ -1062,9 +1062,12 @@
   }
 
   function onPresetChange(prev, next, ctx) {
-    if (prev === INDEX && next !== INDEX) clearLayer();
+    if (prev === INDEX && next !== INDEX) {
+      if (global.__LXMINE_NATIVE_STAGE) { state.opacity = 0; if (state.root) state.root.visible = false; }
+      else clearLayer();
+    }
     if (next === INDEX && ctx && ctx.scene) {
-      if (state.initialized) clearLayer();
+      if (state.initialized && !global.__LXMINE_NATIVE_STAGE) clearLayer();
       ensureLayer(ctx.scene, ctx.fx || {});
       applyLayout(ctx.fx || {});
     }
@@ -1075,6 +1078,12 @@
     isActive: isActive,
     update: update,
     clear: clearLayer,
+    prewarm: function (scene, fx, renderer, camera) {
+      ensureLayer(scene, fx);
+      var visible = state.root.visible;
+      state.root.visible = true;
+      try { renderer.compile(scene, camera); } finally { state.root.visible = visible; }
+    },
     onPresetChange: onPresetChange,
     pointerRipple: pointerRipple
   };

@@ -11,6 +11,7 @@ export interface MusicPlaylist {
   createdAt: number;
   updatedAt: number;
   isFavorite?: boolean;
+  warning?: string;
 }
 
 export function songKey(song: Song): string { return `${song.source ?? 'kw'}:${song.id}`; }
@@ -22,7 +23,7 @@ export function createPlaylist(name: string, favorite: boolean = false): MusicPl
 export function playlistWithSong(playlist: MusicPlaylist, song: Song, remove: boolean = false): MusicPlaylist {
   const songs = (playlist.songs ?? []).filter((item: Song) => songKey(item) !== songKey(song));
   if (!remove) songs.push(song);
-  return { id: playlist.id, name: playlist.name, kind: 'lx', songs, pcTracks: playlist.pcTracks, songIds: songs.map(songKey), createdAt: playlist.createdAt, updatedAt: Date.now(), isFavorite: playlist.isFavorite };
+  return { id: playlist.id, name: playlist.name, kind: 'lx', songs, pcTracks: playlist.pcTracks, songIds: songs.map(songKey), createdAt: playlist.createdAt, updatedAt: Date.now(), isFavorite: playlist.isFavorite, warning: playlist.warning };
 }
 
 /** 验证同步/持久化数据并保留 PC 的本地歌单，不丢失无法在移动端解析的文件引用。 */
@@ -34,7 +35,7 @@ export function parsePlaylists(json: string): MusicPlaylist[] {
     if (playlist.songs !== undefined) {
       if (!Array.isArray(playlist.songs)) throw new Error('歌曲列表格式错误');
       for (const song of playlist.songs) {
-        if (!song || typeof song.id !== 'string' || typeof song.name !== 'string' || !['kw', 'kg', 'wy', 'tx'].includes(song.source ?? 'kw')) throw new Error('歌曲身份错误');
+        if (!song || typeof song.id !== 'string' || typeof song.name !== 'string' || !['kw', 'kg', 'wy', 'tx', 'mg', 'qishui'].includes(song.source ?? 'kw')) throw new Error('歌曲身份错误');
       }
     }
   }

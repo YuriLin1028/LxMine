@@ -10,8 +10,10 @@ export interface AppData {
   playlistsJson: string;
 }
 let prefs: preferences.Preferences | null = null;
+let runtimePrefs: preferences.Preferences | null = null;
 export async function initStore(context: common.UIAbilityContext): Promise<void> {
   if (!prefs) prefs = await preferences.getPreferences(context, 'lxlia');
+  if (!runtimePrefs) runtimePrefs = await preferences.getPreferences(context, 'lxmine-runtime');
 }
 async function read(key: string, fallback: string): Promise<string> {
   const value = await prefs?.get(key, fallback);
@@ -44,18 +46,24 @@ export async function loadDeviceId(): Promise<string> {
   return id;
 }
 export async function saveUiDiagnostics(value: string): Promise<void> {
-  if (prefs) { await prefs.put('uiDiagnostics', value); await prefs.flush(); }
+  if (runtimePrefs) { await runtimePrefs.put('uiDiagnostics', value); await runtimePrefs.flush(); }
 }
-export async function saveStageDiagnostics(value: string): Promise<void> {
-  if (prefs) { await prefs.put('stageDiagnostics', value); await prefs.flush(); }
+export async function saveStageDiagnostics(value: string, key: string = 'stageDiagnostics'): Promise<void> {
+  if (runtimePrefs) { await runtimePrefs.put(key, value); await runtimePrefs.flush(); }
 }
 
 // Playback is device-local and is never overwritten by a LAN settings snapshot.
-export async function loadPlaybackSnapshot(): Promise<string> { return read('playbackSnapshot', ''); }
+export async function loadPlaybackSnapshot(): Promise<string> {
+  const current = await runtimePrefs?.get('playbackSnapshot', '');
+  if (typeof current === 'string' && current) return current;
+  const previous = await read('playbackSnapshot', '');
+  if (previous) await savePlaybackSnapshot(previous);
+  return previous;
+}
 export async function savePlaybackSnapshot(value: string): Promise<void> {
-  if (!prefs) return;
-  await prefs.put('playbackSnapshot', value);
-  await prefs.flush();
+  if (!runtimePrefs) return;
+  await runtimePrefs.put('playbackSnapshot', value);
+  await runtimePrefs.flush();
 }
 
 // 首页快照按平台缓存：冷启动先渲染，再由 refreshHomeFeed 静默替换。

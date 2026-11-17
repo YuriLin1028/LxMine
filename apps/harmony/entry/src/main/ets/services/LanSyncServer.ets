@@ -1,5 +1,6 @@
 import { socket } from '@kit.NetworkKit';
 import { buffer } from '@kit.ArkTS';
+import { PullSyncRequest } from './LanDiscovery';
 
 // 鸿蒙端局域网同步接收端：最小 HTTP 服务（TCPSocketServer）。
 // 只实现 docs/LANSYNC.md 需要的两个端点：GET /ping 与 POST /push。
@@ -30,6 +31,16 @@ interface PendingEntry {
   incoming: SyncIncoming;
   timer: number;
 }
+
+interface OutgoingTransfer {
+  receiverId: string;
+  bundleJson: string;
+  timer: number;
+  resolve: (accepted: boolean) => void;
+  reject: (error: Error) => void;
+}
+
+interface PullReceipt { receiverId?: string; accepted?: boolean; }
 
 interface BundleShape {
   protocol?: string;
@@ -77,6 +88,7 @@ export class LanSyncServer {
   private port: number = 0;
   private buffers: Map<number, Uint8Array> = new Map();
   private pending: Map<string, PendingEntry> = new Map();
+  private outgoing: Map<string, OutgoingTransfer> = new Map();
   private seq: number = 0;
   private handler: ((incoming: SyncIncoming) => void) | null = null;
   private queue: SyncIncoming[] = [];
@@ -92,6 +104,23 @@ export class LanSyncServer {
 
   currentPort(): number {
     return this.port;
+  }
+
+  pullRequests(): PullSyncRequest[] {
+    const requests: PullSyncRequest[] = [];
+    this.outgoing.forEach((entry: OutgoingTransfer, id: string) => { requests.push({ id, receiverId: entry.receiverId }); });
+    return requests;
+  }
+
+  offerPush(receiverId: string, bundleJson: string): Promise<boolean> {
+    const id = `${Date.now()}-${++this.seq}-${Math.random().toString(36).slice(2)}`;
+    return new Promise<boolean>((resolve, reject) => {
+      const timer = setTimeout(() => {
+        this.outgoing.delete(id);
+        reject(new Error('接收方确认超时'));
+      }, 120000);
+      this.outgoing.set(id, { receiverId, bundleJson, timer, resolve, reject });
+    });
   }
 
   async start(): Promise<number> {
@@ -119,6 +148,11 @@ export class LanSyncServer {
   }
 
   async stop(): Promise<void> {
+    for (const entry of this.outgoing.values()) {
+      clearTimeout(entry.timer);
+      entry.reject(new Error('同步服务已停止'));
+    }
+    this.outgoing.clear();
     for (const entry of this.pending.values()) {
       clearTimeout(entry.timer);
       try {
@@ -218,6 +252,29 @@ export class LanSyncServer {
   }
 
   private handleRequest(conn: socket.TCPSocketConnection, head: HttpRequestHead, body: string): void {
+    const parts = head.path.split('/');
+    if (head.method === 'GET' && parts.length === 5 && parts[1] === 'lxlia-sync' && parts[2] === 'pull') {
+      try {
+        const entry = this.outgoing.get(decodeURIComponent(parts[3]));
+        if (!entry || entry.receiverId !== decodeURIComponent(parts[4])) this.reply(conn, 404, '{"message":"request expired"}');
+        else this.reply(conn, 200, `{"bundle":${entry.bundleJson}}`);
+      } catch (_) { this.reply(conn, 400, '{"message":"invalid request"}'); }
+      return;
+    }
+    if (head.method === 'POST' && parts.length === 4 && parts[1] === 'lxlia-sync' && parts[2] === 'receipt') {
+      try {
+        const id = decodeURIComponent(parts[3]), receipt = JSON.parse(body) as PullReceipt;
+        const entry = this.outgoing.get(id);
+        if (!entry || receipt.receiverId !== entry.receiverId || typeof receipt.accepted !== 'boolean') {
+          this.reply(conn, 404, '{"confirmed":false}');
+        } else {
+          this.outgoing.delete(id); clearTimeout(entry.timer);
+          this.reply(conn, 200, '{"confirmed":true}');
+          entry.resolve(receipt.accepted === true);
+        }
+      } catch (_) { this.reply(conn, 400, '{"confirmed":false}'); }
+      return;
+    }
     if (head.method === 'GET' && head.path === '/lxlia-sync/ping') {
       this.reply(conn, 200, JSON.stringify({ protocol: PROTOCOL, id: this.deviceId, name: this.deviceName, platform: 'harmony', port: this.port }));
       return;

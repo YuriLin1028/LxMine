@@ -1,6 +1,11 @@
 // Generated from MineRadio's actual preset registry.
+export const MINE_STAGE_REVISION: string = '4349ad1b58d31e23';
 export interface MineRadioMode { id: string; label: string; }
 export const MINE_RADIO_MODES: MineRadioMode[] = [
+  {
+    "id": "off",
+    "label": "关闭动效"
+  },
   {
     "id": "mine-0",
     "label": "emily专辑封面"

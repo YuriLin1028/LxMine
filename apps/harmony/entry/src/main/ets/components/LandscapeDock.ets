@@ -1,5 +1,6 @@
+import { musicButtonPress } from './MaterialControls';
 import { Song } from '../model/Song';
-import { MaterialIcon, musicSurfaceMaterial } from './MaterialControls';
+import { MATERIAL_PRESS_SCALE, MaterialIcon, musicSurfaceMaterial } from './MaterialControls';
 import { TEXT, MUTED, ACCENT, formatTime } from './Theme';
 import { uiMaterial, curves } from '@kit.ArkUI';
 
@@ -8,7 +9,7 @@ import { uiMaterial, curves } from '@kit.ArkUI';
 @Component
 export struct LandscapeDock {
   @Prop @Watch('songChanged') song: Song | null = null;
-  @Prop playing: boolean = false;
+  @Prop @Watch('spinChanged') playing: boolean = false;
   @Prop busy: boolean = false;
   @Prop tab: string = '发现';
   @Prop availableWidth: number = 900;
@@ -21,7 +22,7 @@ export struct LandscapeDock {
   @Prop colorLast: string = '#B8B8B8';
   @Prop mode: string = '列表循环';
   @Prop liked: boolean = false;
-  @StorageLink('lxliaForeground') private foreground: boolean = true;
+  @StorageLink('lxliaForeground') @Watch('spinChanged') private foreground: boolean = true;
   onTab: (tab: string) => void = () => {};
   onPlayer: () => void = () => {};
   onToggle: () => void = () => {};
@@ -43,11 +44,17 @@ export struct LandscapeDock {
   private navStartX: number = 0;
   private navStartY: number = 0;
   aboutToAppear(): void {
-    this.spinTimer = setInterval(() => {
-      if (this.playing && this.foreground) this.getUIContext().animateTo({ duration: 100, curve: Curve.Linear }, () => { this.coverAngle += 1.5; });
+    this.spinChanged();
+  }
+  aboutToDisappear(): void { clearTimeout(this.spinTimer); }
+  private spinChanged(): void {
+    clearTimeout(this.spinTimer);
+    if (!this.playing || !this.foreground) return;
+    this.spinTimer = setTimeout(() => {
+      this.getUIContext().animateTo({ duration: 100, curve: Curve.Linear }, () => { this.coverAngle += 1.5; });
+      this.spinChanged();
     }, 100);
   }
-  aboutToDisappear(): void { clearInterval(this.spinTimer); }
   private songChanged(): void { this.scrubbing = false; this.seekSong = ''; this.seekValue = 0; }
   private seekChanged(value: number, mode: SliderChangeMode): void {
     const key = this.song ? `${this.song.source}:${this.song.id}` : '';
@@ -78,7 +85,7 @@ export struct LandscapeDock {
         SymbolGlyph(icon).fontSize(20).fontColor([this.tab === target ? ACCENT : TEXT])
         Text(label).fontSize(8).fontColor(this.tab === target ? ACCENT : MUTED)
       }
-    }.width(76).height(56).padding(0).backgroundColor(Color.Transparent).stateEffect(false).buttonStyle(ButtonStyleMode.TEXTUAL)
+    }.attributeModifier(musicButtonPress).width(76).height(56).padding(0).backgroundColor(Color.Transparent).stateEffect(false).buttonStyle(ButtonStyleMode.TEXTUAL)
       .systemMaterial(uiMaterial.Material.empty).hitTestBehavior(HitTestMode.None)
       .accessibilityText(label).id('landscape-nav-' + target)
   }
@@ -97,7 +104,7 @@ export struct LandscapeDock {
       this.navButton('设置', '设置', $r('sys.symbol.gearshape'))
     }.width('100%').height(56).margin({ top: 16 }).padding({ left: 6, right: 6 }).borderRadius(28)
       .backgroundColor(Color.Transparent).systemMaterial(musicSurfaceMaterial())
-      .scale({ x: this.navPressed ? 0.99 : 1, y: this.navPressed ? 0.99 : 1 })
+      .scale({ x: this.navPressed ? MATERIAL_PRESS_SCALE : 1, y: this.navPressed ? MATERIAL_PRESS_SCALE : 1 })
       .animation({ curve: curves.springMotion(0.36, 0.9) })
       .onTouch((event: TouchEvent) => {
         if (event.type === TouchType.Down) this.navPressed = true;
@@ -152,7 +159,7 @@ export struct LandscapeDock {
       MaterialIcon({ icon: $r('app.media.ic_queue'), label: '播放队列', diameter: 30, grouped: true, action: () => this.onQueue() })
     }.width('100%').height(this.barHeight()).margin({ top: 16 }).padding({ left: 6, right: 6 }).borderRadius(28)
       .backgroundColor(Color.Transparent).systemMaterial(musicSurfaceMaterial()).clip(false)
-      .scale({ x: this.playbackPressed ? 0.99 : 1, y: this.playbackPressed ? 0.99 : 1 })
+      .scale({ x: this.playbackPressed ? MATERIAL_PRESS_SCALE : 1, y: this.playbackPressed ? MATERIAL_PRESS_SCALE : 1 })
       .animation({ curve: curves.springMotion(0.36, 0.9) })
       .onTouch((event: TouchEvent) => {
         if (event.type === TouchType.Down) this.playbackPressed = true;

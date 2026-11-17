@@ -18,6 +18,11 @@ function lyricCustomLineCountValue() {
 }
 function lyricDisplayLineCountForMode(mode) {
   mode = normalizeLyricDisplayMode(mode);
+  if (window.__LXMINE_NATIVE_STAGE && mode === 'cinema') {
+    var rowHeight = Math.max(32, Math.min(innerWidth, innerHeight) * 0.10);
+    var count = Math.min(31, Math.max(11, Math.ceil(innerHeight / rowHeight) + 4));
+    return count % 2 ? count : count + 1;
+  }
   if (mode === 'single') return 1;
   if (mode === 'dual') return 2;
   if (mode === 'triple') return 3;

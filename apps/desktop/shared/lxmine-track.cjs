@@ -1,7 +1,7 @@
 'use strict';
 
 // LxMine's interchange between LX source metadata and MineRadio tracks.
-const PROVIDERS = { kw: 'kuwo', kg: 'kugou', tx: 'qq', wy: 'netease', mg: 'migu' };
+const PROVIDERS = { kw: 'kuwo', kg: 'kugou', tx: 'qq', wy: 'netease', mg: 'migu', qishui: 'qishui' };
 const SOURCES = Object.fromEntries(Object.entries(PROVIDERS).map(([source, provider]) => [provider, source]));
 
 function sourceOf(song = {}) {

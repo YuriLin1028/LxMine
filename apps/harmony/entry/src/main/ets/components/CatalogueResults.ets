@@ -1,9 +1,11 @@
+import { musicButtonPress } from './MaterialControls';
 import { CatalogueEntity } from '../services/CatalogueApi';
+import { ArrayDataSource } from '../services/ArrayDataSource';
 import { TEXT, MUTED } from './Theme';
 import { MaterialIcon } from './MaterialControls';
 @Component
 export struct CatalogueResults {
-  @Prop items: CatalogueEntity[] = [];
+  @Prop @Watch('itemsChanged') items: CatalogueEntity[] = [];
   @Prop contentTop: number = 190;
   @Prop hasMore: boolean = false;
   @Prop loading: boolean = false;
@@ -12,9 +14,13 @@ export struct CatalogueResults {
   onDownload: (item: CatalogueEntity) => void = () => {};
   onMore: () => void = () => {};
   onScroll: (offset: number) => void = () => {};
+  private source: ArrayDataSource<CatalogueEntity> = new ArrayDataSource<CatalogueEntity>([],
+    (item: CatalogueEntity) => `${item.source}:${item.kind}:${item.id}`);
+  aboutToAppear(): void { this.itemsChanged(); }
+  private itemsChanged(): void { this.source.reset(this.items); }
   build() {
     List({ space: 8, scroller: this.scroller }) {
-      ForEach(this.items, (item: CatalogueEntity) => {
+      LazyForEach(this.source, (item: CatalogueEntity) => {
         ListItem() {
           Row({ space: 14 }) {
             Stack() {
@@ -30,7 +36,7 @@ export struct CatalogueResults {
           }.width('100%').padding({ top: 12, bottom: 12 }).onClick(() => this.onOpen(item))
         }
       }, (item: CatalogueEntity) => `${item.source}:${item.kind}:${item.id}`)
-      if (this.hasMore) { ListItem() { Button(this.loading ? '加载中…' : '加载更多').buttonStyle(ButtonStyleMode.TEXTUAL).fontColor(TEXT).backgroundColor(Color.Transparent).enabled(!this.loading).onClick(() => this.onMore()) } }
+      if (this.hasMore) { ListItem() { Button(this.loading ? '加载中…' : '加载更多').attributeModifier(musicButtonPress).buttonStyle(ButtonStyleMode.TEXTUAL).fontColor(TEXT).backgroundColor(Color.Transparent).enabled(!this.loading).onClick(() => this.onMore()) } }
     }.width('100%').height('100%').contentStartOffset(this.contentTop).contentEndOffset(180).scrollBar(BarState.Off).edgeEffect(EdgeEffect.Spring)
       .onDidScroll((offset: number, state: ScrollState) => { if (state !== ScrollState.Idle) this.onScroll(this.scroller.currentOffset().yOffset); })
   }

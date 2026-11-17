@@ -4,6 +4,18 @@
 //  Global State
 // ============================================================
 var audio = null, audioCtx = null, source = null, audioSourceMedia = null, analyser = null, beatAnalyser = null, gainNode = null, analysisSinkNode = null, audioReady = false;
+function isAnalysisPlaybackActive() {
+  var native = window.lxmineNativeAnalysis;
+  return native && native.enabled ? native.active : !!(audio && !audio.paused);
+}
+function analysisPlaybackTime() {
+  if (window.lxmineNativeAnalysis && window.lxmineNativeAnalysis.enabled && window.lxmineNativeTime) return window.lxmineNativeTime();
+  return audio && isFinite(audio.currentTime) ? audio.currentTime : 0;
+}
+function getAnalysisSampleRate() {
+  var native = window.lxmineNativeAnalysis;
+  return native && native.enabled ? native.sampleRate : (audioCtx && audioCtx.sampleRate) || 44100;
+}
 var uiSfxCtx = null, lastShelfSelectSfxAt = 0;
 var FFT_SIZE = 2048;
 var frequencyData = new Uint8Array(FFT_SIZE / 2);

@@ -265,7 +265,13 @@ function beginCooperativeLyricMeshBuild(input) {
 function stepCooperativeLyricMeshBuild(state, maxPhases, budgetMs) {
   if (!state || state.cancelled || state.finished) return true;
   if (state.initPhase === 0) {
-    var layoutDone = stepLyricMaskLayoutMetricsBuild(state.layoutState, 1);
+    var startedAt = performance.now();
+    var limit = Math.max(1, Number(maxPhases) || 1);
+    var layoutDone = false;
+    for (var measured = 0; measured < limit; measured++) {
+      layoutDone = stepLyricMaskLayoutMetricsBuild(state.layoutState, 1);
+      if (layoutDone || performance.now() - startedAt >= budgetMs) break;
+    }
     state.completedPhases = Number(state.layoutState && state.layoutState.completedPhases) || state.completedPhases;
     state.lastPhase = 'layout-' + (state.layoutState && state.layoutState.lastPhase || 'entry');
     if (!layoutDone) return false;

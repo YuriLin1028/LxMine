@@ -74,6 +74,7 @@ function createLanSyncTransport(options) {
 
   const devices = new Map();
   const pending = new Map();
+  const outgoingPull = new Map();
   let udp = null;
   let server = null;
   let announceTimer = null;
@@ -100,6 +101,7 @@ function createLanSyncTransport(options) {
       name: deviceName,
       platform,
       port,
+      pullRequests: Array.from(outgoingPull, ([id, entry]) => ({ id, receiverId: entry.receiverId })),
       ts: Date.now(),
     }));
     try {
@@ -125,12 +127,14 @@ function createLanSyncTransport(options) {
       platform: String(message.platform || 'unknown'),
       address: rinfo.address,
       port: Number(message.port),
+      receiveMode: message.receiveMode === 'pull' ? 'pull' : 'direct',
       lastSeen: Date.now(),
     };
     if (firstSeen) announce(rinfo.address);
     const previous = devices.get(next.id);
     devices.set(next.id, next);
-    if (!previous || previous.name !== next.name || previous.address !== next.address) emitDevices();
+    if (!previous || previous.name !== next.name || previous.address !== next.address ||
+        previous.port !== next.port || previous.receiveMode !== next.receiveMode) emitDevices();
   };
 
   const pruneDevices = () => {
@@ -215,6 +219,31 @@ function createLanSyncTransport(options) {
         void handlePush(req, res);
         return;
       }
+      const parts = url.split('?')[0].split('/');
+      if (req.method === 'GET' && parts.length === 5 && parts[1] === 'lxlia-sync' && parts[2] === 'pull') {
+        let entry;
+        try {
+          entry = outgoingPull.get(decodeURIComponent(parts[3]));
+          if (entry?.receiverId !== decodeURIComponent(parts[4])) entry = null;
+        } catch { /* An invalid path cannot select a transfer. */ }
+        if (!entry) jsonResponse(res, 404, { message: 'request expired' });
+        else jsonResponse(res, 200, { bundle: JSON.parse(entry.payload) });
+        return;
+      }
+      if (req.method === 'POST' && parts.length === 4 && parts[1] === 'lxlia-sync' && parts[2] === 'receipt') {
+        void readBody(req).then(raw => {
+          const id = decodeURIComponent(parts[3]), receipt = JSON.parse(raw), entry = outgoingPull.get(id);
+          if (!entry || receipt.receiverId !== entry.receiverId || typeof receipt.accepted !== 'boolean') {
+            jsonResponse(res, 404, { confirmed: false });
+            return;
+          }
+          outgoingPull.delete(id);
+          clearTimeout(entry.timer);
+          jsonResponse(res, 200, { confirmed: true });
+          entry.resolve({ accepted: receipt.accepted, message: receipt.message || '' });
+        }).catch(() => jsonResponse(res, 400, { confirmed: false }));
+        return;
+      }
       if (req.method === 'GET' && url.startsWith('/lxlia-sync/pull')) {
         if (!pullBundle) {
           jsonResponse(res, 204, {});
@@ -273,6 +302,11 @@ function createLanSyncTransport(options) {
       return { port };
     },
     stop() {
+      for (const entry of outgoingPull.values()) {
+        clearTimeout(entry.timer);
+        entry.reject(new Error('server stopped'));
+      }
+      outgoingPull.clear();
       if (udp) {
         try {
           udp.send(Buffer.from(JSON.stringify({ protocol: PROTOCOL, type: 'bye', id: deviceId })), discoveryPort, '255.255.255.255');
@@ -330,6 +364,17 @@ function createLanSyncTransport(options) {
       const device = devices.get(deviceId);
       if (!device) throw new Error('device not found');
       const payload = JSON.stringify(bundle);
+      if (device.receiveMode === 'pull') {
+        return new Promise((resolve, reject) => {
+          const id = crypto.randomUUID();
+          const timer = setTimeout(() => {
+            outgoingPull.delete(id);
+            reject(new Error('sync confirmation timeout'));
+          }, PENDING_TTL_MS);
+          outgoingPull.set(id, { receiverId: device.id, payload, timer, resolve, reject });
+          announce();
+        });
+      }
       return new Promise((resolve, reject) => {
         const request = http.request({
           host: device.address,

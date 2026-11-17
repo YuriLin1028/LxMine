@@ -1,7 +1,8 @@
+import { musicButtonPress } from './MaterialControls';
 import { Song } from '../model/Song';
 import { SongComment, SongComments, fetchSongComments } from '../services/MusicComments';
 import { PageHeader } from './PageHeader';
-import { TEXT, MUTED, ACCENT } from './Theme';
+import { INK, TEXT, MUTED, ACCENT } from './Theme';
 
 function relativeTime(ms: number): string {
   if (!Number.isFinite(ms) || ms <= 0) return '';
@@ -82,7 +83,7 @@ export struct CommentsPanel {
         Text('正在读取评论…').fontSize(13).fontColor(MUTED)
       } else if (this.error) {
         Text(this.error).fontSize(13).fontColor('#FFB4B4').textAlign(TextAlign.Center).maxLines(3)
-        Button('重试').fontSize(13).fontColor(TEXT).height(36).padding({ left: 20, right: 20 }).backgroundColor('#16FFFFFF').borderRadius(18).onClick(() => this.load())
+        Button('重试').attributeModifier(musicButtonPress).fontSize(13).fontColor(TEXT).height(36).padding({ left: 20, right: 20 }).backgroundColor('#16FFFFFF').borderRadius(18).onClick(() => this.load())
       } else {
         Image($r('app.media.ic_comment_official')).width(30).height(30).fillColor(MUTED)
         Text('还没有评论').fontSize(13).fontColor(MUTED)
@@ -91,7 +92,7 @@ export struct CommentsPanel {
   }
   build() {
     Stack({ alignContent: Alignment.TopStart }) {
-      Column().width('100%').height('100%').backgroundColor('#0A08090B').backgroundBlurStyle(BlurStyle.COMPONENT_THIN)
+      Column().width('100%').height('100%').backgroundColor(INK)
       Column() {
         PageHeader({ title: this.song?.name ?? '歌曲评论',
           subtitle: this.song ? `${this.song.singer}${this.data ? ' · ' + this.data.platform : ''}` : '网络平台评论',

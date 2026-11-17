@@ -7,29 +7,9 @@ import { SongRow } from './SongRow';
 import { SongListTools } from './SongListTools';
 import { SongOrderDialog } from './SongOrderDialog';
 import { orderSongList } from '../services/SongOrder';
+import { ArrayDataSource as RowSource } from '../services/ArrayDataSource';
 
 // 横向卡片行按可视范围构建；首页一次有 10+ 行、每行最多 36 项，全量构建会明显掉帧。
-class RowSource<T> implements IDataSource {
-  private items: T[] = [];
-  private listeners: DataChangeListener[] = [];
-  constructor(items: T[]) { this.items = items; }
-  totalCount(): number { return this.items.length; }
-  getData(index: number): T { return this.items[index]; }
-  registerDataChangeListener(listener: DataChangeListener): void {
-    if (this.listeners.indexOf(listener) < 0) this.listeners.push(listener);
-  }
-  unregisterDataChangeListener(listener: DataChangeListener): void {
-    const index = this.listeners.indexOf(listener);
-    if (index >= 0) this.listeners.splice(index, 1);
-  }
-  reset(items: T[]): void {
-    const before = this.items;
-    const same = before.length === items.length && (items.length === 0 || before[0] === items[0]);
-    this.items = items;
-    if (!same) for (const listener of this.listeners) listener.onDataReloaded();
-  }
-}
-
 interface CoverBadgeSpec { fallback: number; countText: string; name: string; }
 
 
@@ -173,8 +153,8 @@ export struct MineHome {
           .linearGradient({ angle: 180, colors: [['#22000000', 0.3], ['#CC05070A', 1]] })
         Row({ space: 8 }) {
           Column({ space: 4 }) {
-            Text(item.name).fontSize(18).fontWeight(FontWeight.Bold).fontColor(TEXT).maxLines(1).textOverflow({ overflow: TextOverflow.Ellipsis }).width('100%')
-            Text(this.bannerNote(item)).fontSize(11).fontColor(MUTED).maxLines(1)
+            Text(item.name).fontSize(18).fontWeight(FontWeight.Bold).fontColor('#F4F4F4').maxLines(1).textOverflow({ overflow: TextOverflow.Ellipsis }).width('100%')
+            Text(this.bannerNote(item)).fontSize(11).fontColor('#B3FFFFFF').maxLines(1)
           }.alignItems(HorizontalAlign.Start).layoutWeight(1)
           Row() {
             if (this.playing && (this.activeFeedId === item.id || this.activePlaylistId === 'feed-' + item.id)) {

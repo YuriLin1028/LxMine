@@ -14,7 +14,10 @@ export interface LanDevice {
   port: number;
   lastSeen: number;
   ssid?: string;
+  receiveMode?: string;
 }
+
+export interface PullSyncRequest { id: string; receiverId: string; }
 
 interface AnnounceMessage {
   protocol?: string;
@@ -24,6 +27,7 @@ interface AnnounceMessage {
   platform?: string;
   port?: number;
   ssid?: string;
+  receiveMode?: string;
 }
 
 const PROTOCOL = 'lxlia-lansync/1';
@@ -45,6 +49,7 @@ export class LanDiscovery {
   private listener: ((devices: LanDevice[]) => void) | null = null;
   private broadcasts: string[] = ['255.255.255.255'];
   private lastNetworkRefresh: number = 0;
+  pendingRequests: () => PullSyncRequest[] = () => [];
 
   constructor(deviceId: string, deviceName: string) {
     this.deviceId = deviceId;
@@ -150,6 +155,7 @@ export class LanDiscovery {
       name: this.deviceName,
       platform: 'harmony',
       port: this.port,
+      pullRequests: this.pendingRequests(),
       ssid: this.ssid,
       ts: Date.now(),
     });
@@ -179,6 +185,7 @@ export class LanDiscovery {
       port: parsed.port ?? 0,
       lastSeen: Date.now(),
       ssid: parsed.ssid ?? '',
+      receiveMode: parsed.receiveMode === 'pull' ? 'pull' : 'direct',
     };
     this.devices.set(device.id, device);
     if (firstSeen) {
@@ -201,6 +208,8 @@ export class LanDiscovery {
     }
     if (changed) this.emit();
   }
+
+  announceNow(): void { this.announce(); }
 
   private emit(): void {
     if (!this.listener) return;

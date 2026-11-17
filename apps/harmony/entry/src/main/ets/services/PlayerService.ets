@@ -5,6 +5,8 @@ import { backgroundTaskManager } from '@kit.BackgroundTasksKit';
 import { BusinessError } from '@kit.BasicServicesKit';
 import { Song } from '../model/Song';
 import { fileIo } from '@kit.CoreFileKit';
+import { image } from '@kit.ImageKit';
+import { http } from '@kit.NetworkKit';
 
 export interface SessionLyricLine { timeMs: number; text: string; }
 
@@ -25,7 +27,23 @@ export class PlayerService {
   private beforePlayCallback: (() => Promise<void>) | null = null;
   private initialPosition: number = 0;
   private autoPlay: boolean = true;
+  private intentId: number = 0;
+  private switching: boolean = false;
+  private localArtwork: Map<string, Promise<image.PixelMap>> = new Map();
+  beginSwitch(autoPlay: boolean): number {
+    this.autoPlay = autoPlay;
+    this.switching = true;
+    this.requestId++;
+    return ++this.intentId;
+  }
+  async pauseForSwitch(): Promise<void> {
+    if (this.player?.state === 'playing') await this.player.pause();
+  }
   private chain: Promise<void> = Promise.resolve();
+  private requestId: number = 0;
+  private metadataId: number = 0;
+  private metadataChain: Promise<void> = Promise.resolve();
+  private defaultArtwork: Promise<image.PixelMap> | null = null;
   private localFile: fileIo.File | null = null;
   private lyricLines: SessionLyricLine[] = [];
   private lyricText: string = '';
@@ -45,6 +63,11 @@ export class PlayerService {
     this.lyricIndex = -1;
     this.updateMetadata();
     this.updateSingleLyric(true);
+  }
+  setArtwork(song: Song): void {
+    if (!this.current || this.current.id !== song.id || this.current.source !== song.source) return;
+    this.current = song;
+    this.updateMetadata();
   }
   setLyricOffset(offset: number): void {
     this.lyricOffset = offset;
@@ -68,7 +91,7 @@ export class PlayerService {
           player.seek(this.position, media.SeekMode.SEEK_CLOSEST); this.timeCallback?.(this.position);
         }
         this.initialPosition = 0;
-        if (this.autoPlay) player.play().catch((e: BusinessError) => this.report(e));
+        if (this.autoPlay && !this.switching) player.play().catch((e: BusinessError) => this.report(e));
         this.updateMetadata();
       }
       if (state === 'playing') {
@@ -105,30 +128,46 @@ export class PlayerService {
     return player;
   }
   /** 串行切歌，避免连续点击时多个 reset/url 操作交错。 */
-  async playUrl(url: string, song: Song, startMs: number = 0, autoPlay: boolean = true): Promise<void> {
+  async playUrl(url: string, song: Song, startMs: number = 0, autoPlay: boolean = true, intentId?: number): Promise<void> {
     if (!/^https?:\/\//i.test(url)) throw new Error('音源返回的播放地址无效');
+    if (intentId !== undefined && intentId !== this.intentId) return;
+    const requestId = ++this.requestId;
+    if (intentId === undefined) this.autoPlay = autoPlay;
     const operation = this.chain.catch(() => {}).then(async () => {
+      if (requestId !== this.requestId) return;
       const player = await this.ensurePlayer();
+      if (requestId !== this.requestId) return;
       await player.reset();
+      if (requestId !== this.requestId) return;
       if (this.localFile) { fileIo.closeSync(this.localFile); this.localFile = null; }
-      this.current = song; this.initialPosition = Math.max(0, startMs); this.autoPlay = autoPlay; this.position = this.initialPosition;
+      this.current = song; this.initialPosition = Math.max(0, startMs); this.position = this.initialPosition;
       this.timeCallback?.(this.position);
       this.updateMetadata();
       this.updateSession();
       this.updateSingleLyric(true);
+      this.switching = false;
       player.url = url;
     });
     this.chain = operation;
     await operation;
   }
-  async playFile(path: string, song: Song, startMs: number = 0, autoPlay: boolean = true): Promise<void> {
+  async playFile(path: string, song: Song, startMs: number = 0, autoPlay: boolean = true, intentId?: number): Promise<void> {
     if (!this.context || !path.startsWith(`${this.context.filesDir}/`)) throw new Error('本地文件路径无效');
+    if (intentId !== undefined && intentId !== this.intentId) return;
+    const requestId = ++this.requestId;
+    if (intentId === undefined) this.autoPlay = autoPlay;
     const operation = this.chain.catch(() => {}).then(async () => {
-      const player = await this.ensurePlayer(); await player.reset();
+      if (requestId !== this.requestId) return;
+      const player = await this.ensurePlayer();
+      if (requestId !== this.requestId) return;
+      await player.reset();
+      if (requestId !== this.requestId) return;
       if (this.localFile) fileIo.closeSync(this.localFile);
       this.localFile = fileIo.openSync(path, fileIo.OpenMode.READ_ONLY);
-      this.current = song; this.position = 0; this.timeCallback?.(0);
+      this.current = song; this.initialPosition = Math.max(0, startMs); this.position = this.initialPosition;
+      this.timeCallback?.(this.position);
       this.updateMetadata(); this.updateSession(); this.updateSingleLyric(true);
+      this.switching = false;
       player.fdSrc = { fd: this.localFile.fd, offset: 0, length: fileIo.statSync(path).size };
     });
     this.chain = operation; await operation;
@@ -143,6 +182,7 @@ export class PlayerService {
   }
   async resume(): Promise<boolean> {
     this.autoPlay = true;
+    if (this.switching) return false;
     this.session?.activate().catch(() => {});
     if (this.player && ['paused', 'prepared', 'completed'].includes(this.player.state)) {
       await this.beforePlayCallback?.();
@@ -194,22 +234,80 @@ export class PlayerService {
   }
   private updateMetadata(): void {
     if (!this.session || !this.current) return;
+    const metadataId = ++this.metadataId;
+    const session = this.session;
     const base: avSession.AVMetadata = { assetId: `${this.current.source}:${this.current.id}`, title: this.current.name,
-      artist: this.current.singer, album: this.current.albumName, duration: this.durationMs() };
-    const cover = this.current.coverUrl;
-    if (/^https?:\/\//i.test(cover)) base.mediaImage = cover;
-    this.session.setAVMetadata(base).then(() => console.info(`[Session] metadata ${this.current?.name ?? ''}`))
-      .catch((e: BusinessError) => console.error(`[Session] metadata ${e.code} ${e.message}`));
-    if (!this.lyricText) return;
-    const full: avSession.AVMetadata = { assetId: base.assetId, title: this.current.name,
       artist: this.current.singer, album: this.current.albumName, duration: this.durationMs(),
       lyric: this.lyricText, singleLyricText: this.currentLyricText() };
-    if (base.mediaImage) full.mediaImage = base.mediaImage;
-    this.session.setAVMetadata(full).catch((e: BusinessError) => console.error(`[Session] lyric ${e.code} ${e.message}`));
+    const cover = (this.current.coverUrl || '').trim();
+    this.metadataChain = this.metadataChain.catch(() => {}).then(async () => {
+      if (metadataId !== this.metadataId || this.session !== session) return;
+      base.mediaImage = await this.artwork(cover);
+      if (metadataId !== this.metadataId || this.session !== session) return;
+      await session.setAVMetadata(base);
+    }).catch((error: BusinessError) => console.error(`[Session] metadata ${error.code} ${error.message}`));
+  }
+  private async artwork(cover: string): Promise<string | image.PixelMap> {
+    if (!/^https?:\/\//i.test(cover) && !cover.startsWith('file://')) return this.getDefaultArtwork();
+    let cached = this.localArtwork.get(cover);
+    if (!cached) {
+      cached = /^https?:\/\//i.test(cover) ? this.readRemoteArtwork(cover) : this.readLocalArtwork(cover);
+      this.localArtwork.set(cover, cached);
+      if (this.localArtwork.size > 4) {
+        const oldest = Array.from(this.localArtwork.keys())[0];
+        const previous = this.localArtwork.get(oldest);
+        this.localArtwork.delete(oldest);
+        this.metadataChain.then(() => previous).then((map: image.PixelMap | undefined) => map?.release()).catch(() => {});
+      }
+    }
+    try { return await cached; }
+    catch (_) { this.localArtwork.delete(cover); return this.getDefaultArtwork(); }
+  }
+  private async readRemoteArtwork(cover: string): Promise<image.PixelMap> {
+    const client = http.createHttp();
+    let source: image.ImageSource | null = null;
+    try {
+      const result = await client.request(cover, { method: http.RequestMethod.GET, expectDataType: http.HttpDataType.ARRAY_BUFFER,
+        header: { 'User-Agent': 'Mozilla/5.0', 'Referer': cover.includes('qq.com') || cover.includes('gtimg.cn') ? 'https://y.qq.com/' : cover.includes('163.com') || cover.includes('126.net') ? 'https://music.163.com/' : '' }, connectTimeout: 6000, readTimeout: 6000 });
+      const bytes = result.result as ArrayBuffer;
+      if (result.responseCode !== 200 || bytes.byteLength > 6 * 1024 * 1024) throw new Error('封面不可用');
+      source = image.createImageSource(bytes);
+      return await source.createPixelMap({ desiredSize: { width: 256, height: 256 } });
+    } finally { if (source) await source.release(); client.destroy(); }
+  }
+  private async readLocalArtwork(cover: string): Promise<image.PixelMap> {
+    const path = decodeURIComponent(cover.slice(7));
+    if (!this.context || !path.startsWith(`${this.context.filesDir}/`) || path.split('/').includes('..')) throw new Error('封面路径不可访问');
+    const file = fileIo.openSync(path, fileIo.OpenMode.READ_ONLY);
+    let source: image.ImageSource | null = null;
+    try {
+      source = image.createImageSource(file.fd);
+      return await source.createPixelMap({ desiredSize: { width: 256, height: 256 } });
+    } finally {
+      if (source) await source.release();
+      fileIo.closeSync(file);
+    }
+  }
+  private getDefaultArtwork(): Promise<image.PixelMap> {
+    if (!this.defaultArtwork) {
+      this.defaultArtwork = this.createDefaultArtwork().catch((error: Error) => {
+        this.defaultArtwork = null;
+        throw error;
+      });
+    }
+    return this.defaultArtwork;
+  }
+  private async createDefaultArtwork(): Promise<image.PixelMap> {
+    if (!this.context) throw new Error('媒体封面资源尚未就绪');
+    const bytes = await this.context.resourceManager.getMediaContent($r('app.media.app_icon').id);
+    const source = image.createImageSource(bytes.buffer.slice(bytes.byteOffset, bytes.byteOffset + bytes.byteLength));
+    try { return await source.createPixelMap(); }
+    finally { await source.release(); }
   }
   private sessionState(): avSession.PlaybackState {
     if (this.state === 'playing') return avSession.PlaybackState.PLAYBACK_STATE_PLAY;
     if (this.state === 'paused') return avSession.PlaybackState.PLAYBACK_STATE_PAUSE;
+    if (this.state === 'prepared' && !this.autoPlay) return avSession.PlaybackState.PLAYBACK_STATE_PAUSE;
     if (this.state === 'completed') return avSession.PlaybackState.PLAYBACK_STATE_COMPLETED;
     if (this.state === 'error' || this.state === 'released' || !this.current) return avSession.PlaybackState.PLAYBACK_STATE_STOP;
     return avSession.PlaybackState.PLAYBACK_STATE_PREPARE;
@@ -239,10 +337,15 @@ export class PlayerService {
     } catch (error) { this.background = false; this.errorCallback?.(`后台播放：${(error as BusinessError).message}`); }
   }
   async release(): Promise<void> {
+    this.requestId++; this.metadataId++; this.intentId++; this.current = null;
     await this.chain.catch(() => {});
+    await this.metadataChain.catch(() => {});
     await this.player?.release(); this.player = null;
     if (this.localFile) { fileIo.closeSync(this.localFile); this.localFile = null; }
     await this.session?.destroy(); this.session = null;
+    for (const artwork of this.localArtwork.values()) await artwork.then((map: image.PixelMap) => map.release()).catch(() => {});
+    this.localArtwork.clear();
+    if (this.defaultArtwork) { await this.defaultArtwork.then((map: image.PixelMap) => map.release()).catch(() => {}); this.defaultArtwork = null; }
     await this.stopBackground();
   }
 }

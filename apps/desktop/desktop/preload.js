@@ -14,6 +14,7 @@ contextBridge.exposeInMainWorld('lxMusic', {
   downloads: () => ipcRenderer.invoke('lxmine-downloads'),
   download: (song, quality) => ipcRenderer.invoke('lxmine-download', song, quality),
   cancelDownload: id => ipcRenderer.invoke('lxmine-cancel-download', id),
+  revealDownload: id => ipcRenderer.invoke('lxmine-reveal-download', id),
   onDownloadsChanged: callback => { const listener = (event, jobs) => callback(jobs); ipcRenderer.on('lxmine-downloads-changed', listener); return () => ipcRenderer.removeListener('lxmine-downloads-changed', listener); },
   sources: () => ipcRenderer.invoke('lxmine-sources'),
   importSource: script => ipcRenderer.invoke('lxmine-import-source', script),
@@ -24,7 +25,9 @@ contextBridge.exposeInMainWorld('lxMusic', {
   entityTracks: payload => ipcRenderer.invoke('lxmine-entity-tracks', payload),
   resolve: (song, quality) => ipcRenderer.invoke('lxmine-resolve', song, quality),
   lyric: (song, quality) => ipcRenderer.invoke('lxmine-lyric', song, quality),
+  songAssets: song => ipcRenderer.invoke('lxmine-song-assets', song),
   importPlaylist: (input, source) => ipcRenderer.invoke('lxmine-import-playlist', input, source),
+  importPlaylistFile: () => ipcRenderer.invoke('lxmine-import-playlist-file'),
 });
 
 contextBridge.exposeInMainWorld('desktopWindow', {

@@ -18,3 +18,10 @@ try {
   & (Join-Path $studio 'tools\hvigor\bin\hvigorw.bat') assembleHap --mode module -p product=default --no-daemon
   if ($LASTEXITCODE -ne 0) { throw 'HarmonyOS HAP 构建失败' }
 } finally { Pop-Location }
+$output = Join-Path $projectRoot 'apps\harmony\entry\build\default\outputs\default'
+foreach ($fileName in @('entry-default-signed.hap', 'entry-default-unsigned.hap')) {
+  $hapPath = Join-Path $output $fileName
+  if (Test-Path -LiteralPath $hapPath) {
+    & (Join-Path $PSScriptRoot 'check-harmony-sources.ps1') -Path $hapPath
+  }
+}

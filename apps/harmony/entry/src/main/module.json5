@@ -24,7 +24,11 @@
         "backgroundModes": ["audioPlayback", "dataTransfer"],
         "skills": [
           { "entities": ["entity.system.home"], "actions": ["action.system.home"] },
-          { "actions": ["ohos.want.action.viewData"], "entities": ["entity.system.browsable"], "uris": [{ "scheme": "lxmine", "host": "play" }] }
+          { "actions": ["ohos.want.action.viewData"], "entities": ["entity.system.browsable"], "uris": [{ "scheme": "lxmine", "host": "play" }] },
+          { "actions": ["ohos.want.action.sendData"], "uris": [
+            { "scheme": "file", "utd": "general.text", "maxFileSupported": 1 },
+            { "scheme": "file", "utd": "general.hyperlink", "maxFileSupported": 1 }
+          ] }
         ]
       }
     ],
