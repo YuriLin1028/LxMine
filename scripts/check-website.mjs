@@ -51,7 +51,7 @@ for (const match of html.matchAll(/(?:src|href|poster)="\.\/([^"?#]+)(?:[?#][^"]
 }
 assert.ok(html.includes('https://github.com/YuriLin1028/LxMine'));
 assert.ok(html.includes('© 2026 咩霸与贡献者 · GPL-3.0-only'));
-assert.ok(html.includes('id="product-demo" src="./assets/stage-demo.mp4"'));
-assert.ok(html.includes('./assets/android-lyrics.webp'));
+assert.ok(html.includes('id="product-demo" src="./assets/windows-stage-1.1.0.mp4"'));
+assert.ok(html.includes('./assets/android-lyrics-1.1.0.webp'));
 assert.ok(!html.includes('phone-player.jpeg'));
 console.log(`Website checks passed. ${release.assets.length} release assets, four platform/variant routes, two mirrors, release validation and local assets.`);
