@@ -172,8 +172,8 @@ const enlargedVideo = element('stage-recording');
 const motionButton = element('motion-toggle');
 const motionPreference = matchMedia('(prefers-reduced-motion: reduce)');
 const recordings = {
-  stage: { src: './assets/stage-demo.mp4', poster: './assets/stage-poster.webp', label: '粒子舞台', description: 'Windows 播放录屏，展示粒子舞台与逐字歌词' },
-  lyrics: { src: './assets/lyrics-demo.mp4', poster: './assets/lyrics-poster.webp', label: '逐字歌词', description: 'Windows 播放录屏，展示歌词随播放逐字亮起' },
+  stage: { src: './assets/windows-stage-1.1.0.mp4', poster: './assets/windows-stage-1.1.0.webp', label: '粒子舞台', description: 'Windows 1.1.0 播放录屏，展示粒子舞台与逐字歌词' },
+  lyrics: { src: './assets/windows-lyrics-1.1.0.mp4', poster: './assets/windows-lyrics-1.1.0.webp', label: '逐字歌词', description: 'Windows 1.1.0 播放录屏，展示歌词随播放逐字亮起' },
 };
 let userPaused = motionPreference.matches;
 let recordingVisible = !('IntersectionObserver' in window);
