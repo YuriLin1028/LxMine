@@ -31,7 +31,8 @@ PC 使用同一张关闭材质的背景位图、相同 DPR 和 UI 树测出的�
 - 主体结构相似度 SSIM ≥ 0.92。
 - 背景对齐差 < 0.5/255，真机重复差 < 1/255，边界偏差 < 0.25 物理像素。
 - 关闭折射的负对照必须失败。
-- 稳态动效 P95 帧间隔 < 33.5ms，最大帧间隔 < 50ms，长任务 0；分层形变的文字像素差 < 1/255。
+- 稳态动效 P95 帧间隔 < 33.5ms，最大帧间隔 < 50ms，长任务 0。
+- 按压与拖拽时，图标和文字随玻璃共同变换，几何误差 < 0.15 CSS px。光学探针与底栏松手回位后的文字像素差 < 1/255。
 
 SSIM 区域不含最外 1 CSS px 的抗锯齿轮廓；这部分单独输出 `outlineMAE`，同时纳入全内部像素门槛。没有从完整差异图中删除它。SSIM 不是“复刻完成百分比”，门禁通过也不表示逐个像素完全相等。
 
@@ -59,7 +60,7 @@ SSIM 区域不含最外 1 CSS px 的抗锯齿轮廓；这部分单独输出 `out
 
 `popup-motion.cjs` 真点击实际生产弹窗，再暂停其时间轴采固定相位 PNG；用另一段未参与拟合的原生录屏注册标题位置和缩放。低于 .82 的模板匹配置信度仅保留报告，不作精度断言；其余帧限制缩放差 .025、横向 5 CSS px、纵向 3 CSS px。横向阈值包含两次真机录屏在加速段相差一个视频帧的重复性误差；不宣称逐帧完全相同。另检查材质不随相位变化、展开中途关闭不跳变、旧 .92 起始缩放被拒绝。实时帧预算仍由独立 `motion.cjs app` 的长菜单连续开合场景测量，固定相位截图不能替代性能测试。
 
-生产材质只采样实时 Chromium backdrop，不使用测试截图作为纹理。轮廓法线、边缘位移衰减和独立外缘混合来自真机像素标定；正文和点击区域与形变皮肤分开。滤镜和位移图按尺寸/圆角缓存，拖动时不重新生成图像。
+生产材质只采样实时 Chromium backdrop，不使用测试截图作为纹理。轮廓法线、边缘位移衰减和独立外缘混合来自真机像素标定。光学表面与正文各自绘制，普通玻璃控件通过整体变换同步按压和拖拽，底栏由共享弹簧同步外层和内容。滤镜和位移图按尺寸/圆角缓存，拖动时不重新生成图像。
 
 官方接口依据：本机 SDK `@ohos.arkui.uiMaterial.d.ts`、[华为沉浸光感指南](https://developer.huawei.com/consumer/cn/doc/HarmonyOS-Guides/arkts-immersive-light-sense-enable)、[W3C 位移滤镜定义](https://www.w3.org/TR/filter-effects-1/#feDisplacementMapElement)。也查阅了 [OpenHarmony 图形效果的公开实现](https://github.com/openharmony/graphic_graphics_effect/blob/master/src/effect/shader/ge_frosted_glass_effect.cpp)，用作分层采样的研究线索；未复制该着色器或声称它就是手机闭源 EXQUISITE 引擎。
 
