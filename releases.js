@@ -31,6 +31,7 @@ export const platforms = Object.freeze({
 export function validateAssetUrl(value) {
   try {
     const url = new URL(value);
+    decodeURIComponent(url.pathname);
     return url.origin === 'https://github.com'
       && url.pathname.startsWith('/YuriLin1028/LxMine/releases/download/')
       && url.pathname.split('/').length === 7
@@ -50,11 +51,11 @@ export function normalizeRelease(data) {
   const releaseUrl = new URL(data.html_url);
   if (releaseUrl.origin !== 'https://github.com'
       || releaseUrl.pathname !== `/YuriLin1028/LxMine/releases/tag/${data.tag_name}`
-      || releaseUrl.search || releaseUrl.hash) {
+      || releaseUrl.username || releaseUrl.password || releaseUrl.search || releaseUrl.hash) {
     throw new Error('Invalid release page');
   }
   const assets = data.assets.filter((asset) => {
-    if (typeof asset.name !== 'string' || !validateAssetUrl(asset.browser_download_url)) return false;
+    if (typeof asset?.name !== 'string' || !validateAssetUrl(asset.browser_download_url)) return false;
     const url = new URL(asset.browser_download_url);
     return decodeURIComponent(url.pathname.split('/').at(-1)) === asset.name
       && decodeURIComponent(url.pathname.split('/').at(-2)) === data.tag_name
@@ -69,13 +70,16 @@ export function normalizeRelease(data) {
 }
 
 export function selectAsset(release, platform, variant = 'setup') {
-  const patterns = {
-    windows: variant === 'portable' ? /^LxMine-.*-Portable\.exe$/i : /^LxMine-.*-Setup\.exe$/i,
-    android: /^LxMine-.*-Android\.apk$/i,
-    harmony: /^LxMine-.*-HiCar-unsigned\.hap$/i,
+  const suffixes = {
+    windows: variant === 'portable' ? 'Portable.exe' : 'Setup.exe',
+    android: 'Android.apk',
+    harmony: 'HiCar-unsigned.hap',
   };
-  const pattern = patterns[platform];
-  return pattern ? release.assets.find((asset) => pattern.test(asset.name)) ?? null : null;
+  const suffix = suffixes[platform];
+  if (!suffix || !release.tag) return null;
+  const version = release.tag.replace(/^v/, '');
+  const filename = `LxMine-${version}-${suffix}`.toLowerCase();
+  return release.assets.find((asset) => asset.name.toLowerCase() === filename) ?? null;
 }
 
 export function makeDownloadUrl(asset, source) {
