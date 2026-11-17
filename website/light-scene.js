@@ -1,6 +1,6 @@
 // Original canvas preview for the website. No music is played by this demonstration.
 export function createLightScene(canvas) {
-  const context = canvas.getContext('2d', { alpha: false });
+  const context = canvas.getContext('2d', { alpha: true });
   if (!context) return null;
 
   const stage = canvas.parentElement;
@@ -27,16 +27,15 @@ export function createLightScene(canvas) {
   }));
 
   function paint() {
-    context.fillStyle = '#090b10';
-    context.fillRect(0, 0, width, height);
+    context.clearRect(0, 0, width, height);
 
     // The lighting is part of the particle scene and follows the same pointer.
     const lightX = width * (.59 + pointer.x * .08);
     const lightY = height * (.55 + pointer.y * .06);
     const light = context.createRadialGradient(lightX, lightY, 0, lightX, lightY, width * .69);
-    light.addColorStop(0, scene === 'flow' ? '#355d6528' : '#475b8d25');
-    light.addColorStop(.52, '#25365715');
-    light.addColorStop(1, '#090b1000');
+    light.addColorStop(0, scene === 'flow' ? '#9f947025' : '#77776f16');
+    light.addColorStop(.52, '#5d584018');
+    light.addColorStop(1, '#07070700');
     context.fillStyle = light;
     context.fillRect(0, 0, width, height);
 
@@ -44,7 +43,7 @@ export function createLightScene(canvas) {
       const twinkle = .16 + (Math.sin(phase * .4 + star.x * 45) + 1) * .16;
       const x = star.x * width + pointer.x * star.depth * 13;
       const y = star.y * height + pointer.y * star.depth * 9;
-      context.fillStyle = `rgba(207,224,255,${twinkle})`;
+      context.fillStyle = `rgba(228,226,217,${twinkle})`;
       context.beginPath();
       context.arc(x, y, star.size, 0, Math.PI * 2);
       context.fill();
@@ -73,8 +72,8 @@ export function createLightScene(canvas) {
         const radius = .45 + depth * .95;
         const warm = Math.sin(u * 2.4 + depth * 2.2 + phase * .1) > .45;
         context.fillStyle = warm && scene === 'flow'
-          ? `rgba(245,199,174,${alpha * .85})`
-          : `rgba(166,211,236,${alpha})`;
+          ? `rgba(240,217,169,${alpha * .85})`
+          : `rgba(210,212,208,${alpha})`;
         context.beginPath();
         context.arc(x, y, radius, 0, Math.PI * 2);
         context.fill();

@@ -42,7 +42,11 @@ const unsupportedArchitecture = { ...release, assets: [{ ...selectAsset(release,
 assert.equal(selectAsset(unsupportedArchitecture, 'windows'), null);
 
 const html = await readFile(resolve(root, 'website/index.html'), 'utf8');
-for (const match of html.matchAll(/(?:src|href)="\.\/([^"?#]+)"/g)) {
+const websiteMark = await readFile(resolve(root, 'website/assets/lm-mark.svg'), 'utf8');
+const officialMark = await readFile(resolve(root, 'apps/desktop/build/lm-mark.svg'), 'utf8');
+assert.equal(websiteMark.trim(), officialMark.trim(), 'The website must use the official LxMine LM mark');
+assert.deepEqual(await readFile(resolve(root, 'website/assets/icon.png')), await readFile(resolve(root, 'apps/desktop/build/icon.png')));
+for (const match of html.matchAll(/(?:src|href)="\.\/([^"?#]+)(?:[?#][^"]*)?"/g)) {
   await readFile(resolve(root, 'website', match[1]));
 }
 assert.ok(html.includes('https://github.com/YuriLin1028/LxMine'));

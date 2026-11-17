@@ -36,6 +36,11 @@ if ($remote -notmatch '^https://github\.com/YuriLin1028/LxMine(?:\.git)?$') {
 $authorName = Invoke-Checked git @('-C', $repositoryRoot, 'config', 'user.name')
 $authorEmail = Invoke-Checked git @('-C', $repositoryRoot, 'config', 'user.email')
 $release = (Invoke-Checked gh @('api', "repos/$repository/releases/latest")) | ConvertFrom-Json
+$currentPagesText = & gh api "repos/$repository/pages" 2>$null
+$configuredDomain = ''
+if ($LASTEXITCODE -eq 0) {
+    $configuredDomain = [string](($currentPagesText | ConvertFrom-Json).cname)
+}
 $snapshot = [ordered]@{
     tag_name = $release.tag_name
     html_url = $release.html_url
@@ -69,6 +74,16 @@ try {
 
     Get-ChildItem -LiteralPath $websitePath -Force | Copy-Item -Destination $publishPath -Recurse -Force
     $snapshot | ConvertTo-Json -Depth 6 | Set-Content -LiteralPath (Join-Path $publishPath 'release.json') -Encoding utf8NoBOM
+    if ($configuredDomain) {
+        # Keep an attached domain and canonical URLs consistent on subsequent releases.
+        Set-Content -LiteralPath (Join-Path $publishPath 'CNAME') -Value $configuredDomain -Encoding utf8NoBOM
+        $customOrigin = "https://$configuredDomain/"
+        foreach ($relativePath in @('index.html', 'robots.txt', 'sitemap.xml')) {
+            $filePath = Join-Path $publishPath $relativePath
+            $content = Get-Content -LiteralPath $filePath -Raw
+            $content.Replace('https://yurilin1028.github.io/LxMine/', $customOrigin) | Set-Content -LiteralPath $filePath -Encoding utf8NoBOM -NoNewline
+        }
+    }
     Invoke-Checked git @('-C', $publishPath, 'add', '--all') | Out-Null
     & git -C $publishPath diff --cached --quiet
     if ($LASTEXITCODE -eq 1) {
