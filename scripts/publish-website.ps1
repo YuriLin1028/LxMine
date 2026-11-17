@@ -8,7 +8,11 @@ $repositoryRoot = Split-Path -Parent $PSScriptRoot
 $websitePath = Join-Path $repositoryRoot 'website'
 $repository = 'YuriLin1028/LxMine'
 $temporaryRoot = [IO.Path]::GetFullPath([IO.Path]::GetTempPath())
-$publishPath = Join-Path $temporaryRoot ('lxmine-website-' + [Guid]::NewGuid().ToString('N'))
+$publishPath = [IO.Path]::GetFullPath((Join-Path $temporaryRoot ('lxmine-website-' + [Guid]::NewGuid().ToString('N'))))
+$temporaryPrefix = $temporaryRoot.TrimEnd([IO.Path]::DirectorySeparatorChar) + [IO.Path]::DirectorySeparatorChar
+if (-not $publishPath.StartsWith($temporaryPrefix, [StringComparison]::OrdinalIgnoreCase)) {
+    throw 'The publish checkout must be inside the temporary directory.'
+}
 
 function Invoke-Checked {
     param([string] $Program, [Parameter(ValueFromRemainingArguments = $true)] [string[]] $Arguments)
@@ -110,7 +114,6 @@ try {
 } finally {
     # Check the absolute target before recursively deleting the owned temporary directory.
     $resolvedPublishPath = [IO.Path]::GetFullPath($publishPath)
-    $temporaryPrefix = $temporaryRoot.TrimEnd([IO.Path]::DirectorySeparatorChar) + [IO.Path]::DirectorySeparatorChar
     if ($resolvedPublishPath.StartsWith($temporaryPrefix, [StringComparison]::OrdinalIgnoreCase) -and
         ([IO.Path]::GetFileName($resolvedPublishPath)).StartsWith('lxmine-website-') -and
         (Test-Path -LiteralPath $resolvedPublishPath)) {
