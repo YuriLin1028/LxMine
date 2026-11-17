@@ -2,6 +2,8 @@
 
 跨端音乐播放器，面向 **Windows**、**Android** 与 **HarmonyOS 手机 / 平板 / 车机**。
 
+**官网：[yurilin1028.github.io/LxMine](https://yurilin1028.github.io/LxMine/)** · 沉浸光感预览、多端介绍与 GitHub 下载加速入口。
+
 LxMine 以 [Mineradio](#上游与致谢) 2.2.0 的沉浸视觉与桌面体验为基座，接入
 [LX Music](#上游与致谢) 的自定义音源协议与音乐资料库能力，统一 PC 与鸿蒙端的首页、
 歌单、搜索、本地音乐与播放详情体验，并提供 Android 原生客户端。

@@ -1,0 +1,39 @@
+{
+  "tag_name": "v1.1.0",
+  "html_url": "https://github.com/YuriLin1028/LxMine/releases/tag/v1.1.0",
+  "published_at": "2026-11-17T12:46:09Z",
+  "draft": false,
+  "prerelease": false,
+  "assets": [
+    {
+      "name": "LxMine-1.1.0-Android.apk",
+      "size": 23976558,
+      "browser_download_url": "https://github.com/YuriLin1028/LxMine/releases/download/v1.1.0/LxMine-1.1.0-Android.apk",
+      "digest": "sha256:bfb5915b415ba3761743541d28cc555330633da5e53956187bfc54689dc02b13"
+    },
+    {
+      "name": "LxMine-1.1.0-HiCar-unsigned.hap",
+      "size": 14068982,
+      "browser_download_url": "https://github.com/YuriLin1028/LxMine/releases/download/v1.1.0/LxMine-1.1.0-HiCar-unsigned.hap",
+      "digest": "sha256:b3559b6eaff9ba58d82be922f8511faff4f8d4f8aafd08bd7d97330695078d37"
+    },
+    {
+      "name": "LxMine-1.1.0-Portable.exe",
+      "size": 117549246,
+      "browser_download_url": "https://github.com/YuriLin1028/LxMine/releases/download/v1.1.0/LxMine-1.1.0-Portable.exe",
+      "digest": "sha256:70d40834061242d401ccfc9892592b7979ad4fef1715c670b97f7c2179310afa"
+    },
+    {
+      "name": "LxMine-1.1.0-Setup.exe",
+      "size": 117788630,
+      "browser_download_url": "https://github.com/YuriLin1028/LxMine/releases/download/v1.1.0/LxMine-1.1.0-Setup.exe",
+      "digest": "sha256:fb2b31321b190e89bcf1409265e523fc19447297d7f4468fb705c74de849d8ec"
+    },
+    {
+      "name": "SHA256SUMS.txt",
+      "size": 374,
+      "browser_download_url": "https://github.com/YuriLin1028/LxMine/releases/download/v1.1.0/SHA256SUMS.txt",
+      "digest": "sha256:5cca7061f31775ba51dbb46bd64d7bd8ecf98258edb653640b8ddaf911ec96c6"
+    }
+  ]
+}
