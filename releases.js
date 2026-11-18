@@ -22,7 +22,7 @@ export const platforms = Object.freeze({
   harmony: {
     name: 'LxMine for HarmonyOS',
     requirements: '手机 / 平板 / 车机 · HiCar HAP',
-    note: '此 HAP 为未签名车机兼容包，需要先自行签名。手机用户也可选择下方应用市场邀请测试。',
+    note: '此 HAP 为未签名车机兼容包，需先自行签名安装；手机与平板用户推荐直接使用上方华为应用市场邀请测试。',
     action: '下载未签名 HAP',
   },
 });
