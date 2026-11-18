@@ -86,7 +86,7 @@ Android 13 及以上提供液态玻璃与水球导航交互，Android 12 及以�
 
 ### HarmonyOS（应用市场邀请测试）
 
-[**加入 LxMine 邀请测试（沿用原链接）**](https://appgallery.huawei.com/link/invite-test-wap?taskId=761342eecbf60206af1fb147f03e9276&invitationCode=1Klp9jEJXOp)
+[**加入 LxMine 1.1.0 邀请测试**](https://appgallery.huawei.com/link/invite-test-wap?taskId=7181c9f3cfda4854dc2f0d8fec00ab40&invitationCode=1Klp9jEJXOp)
 
 使用鸿蒙系统自带浏览器打开完整链接，点击「开始测试」，首次参与时点击「同意」加入
 测试群组，然后点击「安装」。1.1.0 沿用同一测试群组，已有用户可从应用市场「应用尝鲜」
@@ -97,7 +97,7 @@ Android 13 及以上提供液态玻璃与水球导航交互，Android 12 及以�
 再点击网页里的「开始测试」。
 
 ```text
-https://appgallery.huawei.com/link/invite-test-wap?taskId=761342eecbf60206af1fb147f03e9276&invitationCode=1Klp9jEJXOp
+https://appgallery.huawei.com/link/invite-test-wap?taskId=7181c9f3cfda4854dc2f0d8fec00ab40&invitationCode=1Klp9jEJXOp
 ```
 
 当前测试包最低兼容 API 26.0.0，支持手机、平板和 PC/2in1，包名为 `com.lxmine.player`。
