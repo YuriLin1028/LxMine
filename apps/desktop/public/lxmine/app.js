@@ -3569,7 +3569,7 @@
     const about = h('div', 'settings-card');
     const aboutRow = h('div', 'setting-row');
     const aboutCopy = h('div', 'copy'); aboutCopy.appendChild(h('strong', '', 'LxMine')); aboutCopy.appendChild(h('small', '', 'LX 音源 · MineRadio 视觉 · 平板同源界面'));
-    aboutRow.append(aboutCopy, h('span', 'value', '1.1.0'));
+    aboutRow.append(aboutCopy, h('span', 'value', '1.2.0'));
     about.appendChild(aboutRow);
     const updateRow = h('div', 'setting-row');
     const updateCopy = h('div', 'copy');

@@ -225,6 +225,11 @@ function activateFocusZone(type) {
   }
 }
 function setFocusZone(type, immediate) {
+  if (type === 'queue') {
+    var ppCheck = document.getElementById('playlist-panel');
+    var ppHidden = !ppCheck || ppCheck.offsetWidth <= 0 || ppCheck.offsetHeight <= 0 || window.getComputedStyle(ppCheck).display === 'none';
+    if (ppHidden) type = null;
+  }
   if (type && !shouldUseShelfDynamicCamera(type)) {
     if (/^shelf-/.test(String(orbit.focus.type || ''))) orbit.focus.active = false;
     type = null;

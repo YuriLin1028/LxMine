@@ -389,16 +389,17 @@ window.addEventListener('mousemove', function (e) {
     updateShelfHoverCueFromPointer(e);
     updateShelfCardHoverSelection(e);
     updateControlsAutoHideFromPointer(ex, ey);
-    var ppOnImm = isPlaylistPanelActiveState(pp);
+    var ppVisibleImm = !!(pp && pp.offsetWidth > 0 && pp.offsetHeight > 0 && window.getComputedStyle(pp).display !== 'none');
+    var ppOnImm = ppVisibleImm && isPlaylistPanelActiveState(pp);
     var ppRectImm = pp.getBoundingClientRect();
-    var inQueueTriggerImm = isPlaylistEdgeTrigger(ex, ey, H, e.target);
-    var inQueuePanelImm = isPlaylistPanelPanelHit(pp, ppRectImm, ex, ey);
-    var inQueueBridgeImm = isPlaylistPanelBridgeHit(pp, ppRectImm, ex, ey, H);
-    if (inQueueTriggerImm || inQueuePanelImm || inQueueBridgeImm) setPeek(pp, true, 'pl');
-    else if (shouldClosePlaylistPanelFromPointer(ppOnImm, ex, ppRectImm, ey, H)) setPeek(pp, false, 'pl');
+    var inQueueTriggerImm = ppVisibleImm && isPlaylistEdgeTrigger(ex, ey, H, e.target);
+    var inQueuePanelImm = ppVisibleImm && isPlaylistPanelPanelHit(pp, ppRectImm, ex, ey);
+    var inQueueBridgeImm = ppVisibleImm && isPlaylistPanelBridgeHit(pp, ppRectImm, ex, ey, H);
+    if (ppVisibleImm && (inQueueTriggerImm || inQueuePanelImm || inQueueBridgeImm)) setPeek(pp, true, 'pl');
+    else if (ppVisibleImm && shouldClosePlaylistPanelFromPointer(ppOnImm, ex, ppRectImm, ey, H)) setPeek(pp, false, 'pl');
     var shelfCanFocusImm = !!(shelfManager && shelfManager.canInteract && shelfManager.canInteract());
     var newFocusImm = null;
-    var queueFocusImm = isPlaylistPanelFocusActive(inQueueTriggerImm, inQueuePanelImm || inQueueBridgeImm, pp, ex, ppRectImm, ey, H);
+    var queueFocusImm = ppVisibleImm && isPlaylistPanelFocusActive(inQueueTriggerImm, inQueuePanelImm || inQueueBridgeImm, pp, ex, ppRectImm, ey, H);
     var shelfHoverFocusImm = !!(shelfCanFocusImm && isSideShelfFocusHit(e));
     if (queueFocusImm) newFocusImm = 'queue';
     else if (shelfManager && shelfManager.hasOpenContent && shelfManager.hasOpenContent()) newFocusImm = 'shelf-detail';
@@ -431,13 +432,14 @@ window.addEventListener('mousemove', function (e) {
   if (inFxFab || inFxPanel || inFxBridge) setPeek(fp, true, 'fx');
   else if (fpOn) setPeek(fp, false, 'fx');
   // 歌单/队列 DOM 面板只在左侧明确停留时出现，避免和右侧 3D 架抢焦点
-  var ppOn = isPlaylistPanelActiveState(pp);
+  var ppVisible = !!(pp && pp.offsetWidth > 0 && pp.offsetHeight > 0 && window.getComputedStyle(pp).display !== 'none');
+  var ppOn = ppVisible && isPlaylistPanelActiveState(pp);
   var ppRect = pp.getBoundingClientRect();
-  var inQueueTrigger = isPlaylistEdgeTrigger(ex, ey, H, e.target);
-  var inQueuePanel = isPlaylistPanelPanelHit(pp, ppRect, ex, ey);
-  var inQueueBridge = isPlaylistPanelBridgeHit(pp, ppRect, ex, ey, H);
-  if (inQueueTrigger || inQueuePanel || inQueueBridge) setPeek(pp, true, 'pl');
-  else if (shouldClosePlaylistPanelFromPointer(ppOn, ex, ppRect, ey, H)) setPeek(pp, false, 'pl');
+  var inQueueTrigger = ppVisible && isPlaylistEdgeTrigger(ex, ey, H, e.target);
+  var inQueuePanel = ppVisible && isPlaylistPanelPanelHit(pp, ppRect, ex, ey);
+  var inQueueBridge = ppVisible && isPlaylistPanelBridgeHit(pp, ppRect, ex, ey, H);
+  if (ppVisible && (inQueueTrigger || inQueuePanel || inQueueBridge)) setPeek(pp, true, 'pl');
+  else if (ppVisible && shouldClosePlaylistPanelFromPointer(ppOn, ex, ppRect, ey, H)) setPeek(pp, false, 'pl');
 
   // v8: 镜头跟拍触发判断
   //   - 队列面板 peek 时 → queue focus
@@ -450,7 +452,7 @@ window.addEventListener('mousemove', function (e) {
   }
 
   var newFocus = null;
-  var queueFocusActive = isPlaylistPanelFocusActive(inQueueTrigger, inQueuePanel || inQueueBridge, pp, ex, ppRect, ey, H);
+  var queueFocusActive = ppVisible && isPlaylistPanelFocusActive(inQueueTrigger, inQueuePanel || inQueueBridge, pp, ex, ppRect, ey, H);
   var shelfHoverFocus = !!(shelfCanFocus && isSideShelfFocusHit(e));
   if (queueFocusActive) {
     newFocus = 'queue';

@@ -4200,6 +4200,11 @@ function activateFocusZone(type) {
   }
 }
 function setFocusZone(type, immediate) {
+  if (type === 'queue') {
+    var ppCheck = document.getElementById('playlist-panel');
+    var ppHidden = !ppCheck || ppCheck.offsetWidth <= 0 || ppCheck.offsetHeight <= 0 || window.getComputedStyle(ppCheck).display === 'none';
+    if (ppHidden) type = null;
+  }
   if (type && !shouldUseShelfDynamicCamera(type)) {
     if (/^shelf-/.test(String(orbit.focus.type || ''))) orbit.focus.active = false;
     type = null;
@@ -57098,16 +57103,17 @@ window.addEventListener('mousemove', function (e) {
     updateShelfHoverCueFromPointer(e);
     updateShelfCardHoverSelection(e);
     updateControlsAutoHideFromPointer(ex, ey);
-    var ppOnImm = isPlaylistPanelActiveState(pp);
+    var ppVisibleImm = !!(pp && pp.offsetWidth > 0 && pp.offsetHeight > 0 && window.getComputedStyle(pp).display !== 'none');
+    var ppOnImm = ppVisibleImm && isPlaylistPanelActiveState(pp);
     var ppRectImm = pp.getBoundingClientRect();
-    var inQueueTriggerImm = isPlaylistEdgeTrigger(ex, ey, H, e.target);
-    var inQueuePanelImm = isPlaylistPanelPanelHit(pp, ppRectImm, ex, ey);
-    var inQueueBridgeImm = isPlaylistPanelBridgeHit(pp, ppRectImm, ex, ey, H);
-    if (inQueueTriggerImm || inQueuePanelImm || inQueueBridgeImm) setPeek(pp, true, 'pl');
-    else if (shouldClosePlaylistPanelFromPointer(ppOnImm, ex, ppRectImm, ey, H)) setPeek(pp, false, 'pl');
+    var inQueueTriggerImm = ppVisibleImm && isPlaylistEdgeTrigger(ex, ey, H, e.target);
+    var inQueuePanelImm = ppVisibleImm && isPlaylistPanelPanelHit(pp, ppRectImm, ex, ey);
+    var inQueueBridgeImm = ppVisibleImm && isPlaylistPanelBridgeHit(pp, ppRectImm, ex, ey, H);
+    if (ppVisibleImm && (inQueueTriggerImm || inQueuePanelImm || inQueueBridgeImm)) setPeek(pp, true, 'pl');
+    else if (ppVisibleImm && shouldClosePlaylistPanelFromPointer(ppOnImm, ex, ppRectImm, ey, H)) setPeek(pp, false, 'pl');
     var shelfCanFocusImm = !!(shelfManager && shelfManager.canInteract && shelfManager.canInteract());
     var newFocusImm = null;
-    var queueFocusImm = isPlaylistPanelFocusActive(inQueueTriggerImm, inQueuePanelImm || inQueueBridgeImm, pp, ex, ppRectImm, ey, H);
+    var queueFocusImm = ppVisibleImm && isPlaylistPanelFocusActive(inQueueTriggerImm, inQueuePanelImm || inQueueBridgeImm, pp, ex, ppRectImm, ey, H);
     var shelfHoverFocusImm = !!(shelfCanFocusImm && isSideShelfFocusHit(e));
     if (queueFocusImm) newFocusImm = 'queue';
     else if (shelfManager && shelfManager.hasOpenContent && shelfManager.hasOpenContent()) newFocusImm = 'shelf-detail';
@@ -57140,13 +57146,14 @@ window.addEventListener('mousemove', function (e) {
   if (inFxFab || inFxPanel || inFxBridge) setPeek(fp, true, 'fx');
   else if (fpOn) setPeek(fp, false, 'fx');
   // 歌单/队列 DOM 面板只在左侧明确停留时出现，避免和右侧 3D 架抢焦点
-  var ppOn = isPlaylistPanelActiveState(pp);
+  var ppVisible = !!(pp && pp.offsetWidth > 0 && pp.offsetHeight > 0 && window.getComputedStyle(pp).display !== 'none');
+  var ppOn = ppVisible && isPlaylistPanelActiveState(pp);
   var ppRect = pp.getBoundingClientRect();
-  var inQueueTrigger = isPlaylistEdgeTrigger(ex, ey, H, e.target);
-  var inQueuePanel = isPlaylistPanelPanelHit(pp, ppRect, ex, ey);
-  var inQueueBridge = isPlaylistPanelBridgeHit(pp, ppRect, ex, ey, H);
-  if (inQueueTrigger || inQueuePanel || inQueueBridge) setPeek(pp, true, 'pl');
-  else if (shouldClosePlaylistPanelFromPointer(ppOn, ex, ppRect, ey, H)) setPeek(pp, false, 'pl');
+  var inQueueTrigger = ppVisible && isPlaylistEdgeTrigger(ex, ey, H, e.target);
+  var inQueuePanel = ppVisible && isPlaylistPanelPanelHit(pp, ppRect, ex, ey);
+  var inQueueBridge = ppVisible && isPlaylistPanelBridgeHit(pp, ppRect, ex, ey, H);
+  if (ppVisible && (inQueueTrigger || inQueuePanel || inQueueBridge)) setPeek(pp, true, 'pl');
+  else if (ppVisible && shouldClosePlaylistPanelFromPointer(ppOn, ex, ppRect, ey, H)) setPeek(pp, false, 'pl');
 
   // v8: 镜头跟拍触发判断
   //   - 队列面板 peek 时 → queue focus
@@ -57159,7 +57166,7 @@ window.addEventListener('mousemove', function (e) {
   }
 
   var newFocus = null;
-  var queueFocusActive = isPlaylistPanelFocusActive(inQueueTrigger, inQueuePanel || inQueueBridge, pp, ex, ppRect, ey, H);
+  var queueFocusActive = ppVisible && isPlaylistPanelFocusActive(inQueueTrigger, inQueuePanel || inQueueBridge, pp, ex, ppRect, ey, H);
   var shelfHoverFocus = !!(shelfCanFocus && isSideShelfFocusHit(e));
   if (queueFocusActive) {
     newFocus = 'queue';
@@ -60273,16 +60280,20 @@ function shouldSkipFixedRenderCadenceFrame(state, now, fps, displayHz, key) {
 function isMainSceneCoveredBySplash() {
   return document.body.classList.contains('splash-active') && !document.body.classList.contains('splash-revealing');
 }
+function isLxMineDetailStageVisible() {
+  return !!(window.__lxmineStagePresentation && window.__lxmineStagePresentation.visible && window.__lxmineStagePresentation.detail);
+}
 function currentRenderAdaptiveContext(now) {
   var tier = (typeof getRenderLoadTier === 'function') ? getRenderLoadTier() : 0;
   if (typeof isRenderInteractionActive === 'function' && isRenderInteractionActive(now)) {
     return { kind: 'interaction', tier: tier };
   }
-  var activePlayback = !!(playing && isAnalysisPlaybackActive());
+  var activePlayback = !!(playing || isLxMineDetailStageVisible());
   return { kind: activePlayback ? 'playback' : 'idle', tier: tier };
 }
 function resolveAdaptiveRenderCadence(now, mode) {
   if (isDeepBackgroundMode()) return null;
+  if (isLxMineDetailStageVisible()) return null;
   mode = mode || ((typeof normalizeForegroundFpsMode === 'function') ? normalizeForegroundFpsMode(fx && fx.foregroundFpsMode) : 'adaptive');
   if (mode !== 'adaptive' || RENDER_VISIBLE_VSYNC || typeof selectAdaptiveRenderCadence !== 'function') return null;
   var context = currentRenderAdaptiveContext(now);
@@ -60291,6 +60302,7 @@ function resolveAdaptiveRenderCadence(now, mode) {
 function getAdaptiveRenderFps(now) {
   if (isDeepBackgroundMode()) return 1;
   if (window.__lxmineStagePresentation && !window.__lxmineStagePresentation.detail) return 15;
+  if (isLxMineDetailStageVisible()) return 0;
   var mode = (typeof normalizeForegroundFpsMode === 'function') ? normalizeForegroundFpsMode(fx && fx.foregroundFpsMode) : 'adaptive';
   var fixedFps = (typeof foregroundFixedFpsForMode === 'function') ? foregroundFixedFpsForMode(mode) : null;
   if (fixedFps !== null) return fixedFps;
@@ -60373,9 +60385,9 @@ function sampleRenderPerf(now, dt) {
 var mainFrameGates = {
   audio: createFrameGate('main.audio', 60),
   shelf: createFrameGate('main.shelf', 30),
-  lyricsParticles: createFrameGate('main.lyricsParticles', 45),
-  stageLyrics: createFrameGate('main.stageLyrics', 45),
-  skullParticles: createFrameGate('main.skullParticles', 45),
+  lyricsParticles: createFrameGate('main.lyricsParticles', 120),
+  stageLyrics: createFrameGate('main.stageLyrics', 120),
+  skullParticles: createFrameGate('main.skullParticles', 120),
   homeAudio: createFrameGate('main.homeAudio', 15),
   desktopOverlay: createFrameGate('main.desktopOverlay', 12)
 };
@@ -60439,13 +60451,14 @@ function mainLoopInteractionActive(now) {
 }
 function visibleMotionFollowVsync(now) {
   if (isDeepBackgroundMode()) return false;
+  if (window.__lxmineStagePresentation && !window.__lxmineStagePresentation.detail) return false;
   var mode = (typeof normalizeForegroundFpsMode === 'function')
     ? normalizeForegroundFpsMode(fx && fx.foregroundFpsMode)
     : 'vsync';
-  if (mode !== 'vsync') return false;
+  if (mode !== 'vsync' && !isLxMineDetailStageVisible()) return false;
   if (typeof isProgressDragPreviewActive === 'function' && isProgressDragPreviewActive()) return true;
   if (mainLoopInteractionActive(now)) return true;
-  return !!(playing && isAnalysisPlaybackActive());
+  return !!(playing || isLxMineDetailStageVisible());
 }
 function capMainLoopFpsToDisplay(fps) {
   var hz = (typeof estimatedDisplayRefreshHz === 'function') ? estimatedDisplayRefreshHz() : 60;
@@ -60478,22 +60491,22 @@ function targetMainLyricsParticleFps(now) {
   if (isDeepBackgroundMode()) return 1;
   if (!fx || fx.particleLyrics === false) return 12;
   if (visibleMotionFollowVsync(now)) return 0;
-  if (mainLoopInteractionActive(now)) return capMainLoopFpsForBudget(120, 72);
-  return (playing && isAnalysisPlaybackActive()) ? capMainLoopFpsForBudget(60, 48) : 24;
+  if (mainLoopInteractionActive(now)) return 0;
+  return (playing || isLxMineDetailStageVisible()) ? 0 : 24;
 }
 function targetMainStageLyricsFps(now) {
   if (isDeepBackgroundMode()) return 1;
   if (!fx || fx.particleLyrics === false) return 12;
   if (visibleMotionFollowVsync(now)) return 0;
-  if (mainLoopInteractionActive(now)) return capMainLoopFpsForBudget(120, 72);
-  return (playing && isAnalysisPlaybackActive()) ? capMainLoopFpsForBudget(60, 48) : 24;
+  if (mainLoopInteractionActive(now)) return 0;
+  return (playing || isLxMineDetailStageVisible()) ? 0 : 24;
 }
 function targetMainSkullParticleFps(now) {
   if (isDeepBackgroundMode()) return 1;
   if (!fx || fx.preset !== SKULL_PRESET_INDEX) return 10;
   if (visibleMotionFollowVsync(now)) return 0;
-  if (mainLoopInteractionActive(now)) return capMainLoopFpsForBudget(120, 72);
-  return (playing && isAnalysisPlaybackActive()) ? capMainLoopFpsForBudget(60, 45) : 24;
+  if (mainLoopInteractionActive(now)) return 0;
+  return (playing || isLxMineDetailStageVisible()) ? 0 : 24;
 }
 function targetMainHomeAudioFps(now) {
   if (isDeepBackgroundMode()) return 1;
@@ -60749,6 +60762,21 @@ function animate() {
   }
   }
   if (perfProbe && perfProbe.markSince) perfProbe.markSince('audio.analysis', audioPerfStart);
+  // 音频流受 CORS 限制或原生播放器尚未推送频谱时，播放态提供平滑律动兜底，防止个别动效舞台静止不动
+  if (playing && smoothEnergy < 0.045 && smoothBass < 0.045 && smoothMid < 0.045) {
+    var ft = uniforms.uTime.value || 0;
+    var beatPhase = (ft * 1.94) % 1;
+    var synBeat = Math.pow(Math.max(0, 1 - beatPhase * 2.8), 2.2) * 0.42;
+    var synBass = 0.22 + 0.16 * Math.sin(ft * 3.1) + synBeat * 0.48;
+    var synMid = 0.19 + 0.13 * Math.sin(ft * 2.3 + 1.1) + 0.07 * Math.cos(ft * 5.2);
+    var synTreb = 0.15 + 0.10 * Math.sin(ft * 4.7 + 2.4);
+    var synEnergy = 0.28 + 0.14 * Math.sin(ft * 1.7) + synBeat * 0.35;
+    smoothBass = Math.max(smoothBass, synBass);
+    smoothMid = Math.max(smoothMid, synMid);
+    smoothTreb = Math.max(smoothTreb, synTreb);
+    smoothEnergy = Math.max(smoothEnergy, synEnergy);
+    beatPulse = Math.max(beatPulse, synBeat);
+  }
   audioEnergy = Math.max(smoothEnergy, beatPulse * 0.30);
   bass = Math.min(0.90, smoothBass * 1.05 + beatPulse * 0.18) * fx.intensity;
   mid = Math.min(0.72, smoothMid * 1.12) * fx.intensity;
@@ -60874,7 +60902,9 @@ function animate() {
       dpr: renderer.getPixelRatio ? renderer.getPixelRatio() : (window.devicePixelRatio || 1),
       visualRotation: particles && particles.rotation ? particles.rotation : null,
       visualRotationActive: !!(orbit && orbit.rotating),
-      audio: sonicAudioFrame || { bass: bass, mid: mid, treble: treble, beat: beatPulse, energy: audioEnergy }
+      audio: (sonicAudioFrame && ((sonicAudioFrame.energy || 0) > 0.04 || (sonicAudioFrame.bass || 0) > 0.04))
+        ? sonicAudioFrame
+        : { bass: bass, mid: mid, treble: treble, beat: beatPulse, energy: audioEnergy }
     });
   }
   if (perfProbe && perfProbe.markSince) perfProbe.markSince('visual.sonic-topography', sonicPerfStart);

@@ -306,7 +306,7 @@ private fun SettingsMainPanel(vm: AppViewModel) {
         )
     }
     Text(
-        "LxMine · 1.1.0\n融合 LX Music 与 MineRadio",
+        "LxMine · 1.2.0\n融合 LX Music 与 MineRadio",
         fontSize = 12.sp,
         color = MUTED,
         lineHeight = 22.sp,
