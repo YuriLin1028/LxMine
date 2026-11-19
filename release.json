@@ -9,13 +9,13 @@
       "name": "LxMine-1.2.0-Android.apk",
       "size": 24034853,
       "browser_download_url": "https://github.com/YuriLin1028/LxMine/releases/download/v1.2.0/LxMine-1.2.0-Android.apk",
-      "digest": "sha256:f9e47b3fcf40124c98625e9325608688d8a21bd6f6ea65264e9038f3251c10fa"
+      "digest": "sha256:aaefea1a9d0600cc64c1bdf06cb08d08e3cc12afeaffdd344df35c427f2af14e"
     },
     {
       "name": "LxMine-1.2.0-HiCar-unsigned.hap",
-      "size": 15109538,
+      "size": 15112581,
       "browser_download_url": "https://github.com/YuriLin1028/LxMine/releases/download/v1.2.0/LxMine-1.2.0-HiCar-unsigned.hap",
-      "digest": "sha256:50b7bf9ed03868333c380199a70f33d770b5bed1a36a650af7b8499db8b33246"
+      "digest": "sha256:f905a33c1c075cab8ada0f2949b4c13f00064284e07b5dcd3ad9f627fc7b25f5"
     },
     {
       "name": "LxMine-1.2.0-Portable.exe",
@@ -33,7 +33,7 @@
       "name": "SHA256SUMS.txt",
       "size": 370,
       "browser_download_url": "https://github.com/YuriLin1028/LxMine/releases/download/v1.2.0/SHA256SUMS.txt",
-      "digest": "sha256:eba3f41564675a0afc3c539537df2036de3ff82c39ee1cac70044dd9355dbea8"
+      "digest": "sha256:d4b58af20ca5da2797c9b7e9ffe64882164a197950f3e11fa4327d5324cf37c5"
     }
   ]
 }
