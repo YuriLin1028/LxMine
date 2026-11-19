@@ -502,7 +502,7 @@
       thumbnail: cover || '',
       primaryColor: cssColorToHex(pal.primary || pal.secondary || pal.highlight, '#6bd9ff'),
       textColor: cssColorToHex(pal.highlight || pal.primary, '#f8fbff'),
-      isPlaying: !!(global.playing && global.isAnalysisPlaybackActive()),
+      isPlaying: !!global.playing,
       position: global.analysisPlaybackTime(),
       duration: duration
     };
@@ -602,7 +602,7 @@
   }
 
   function defaultWorkshopDistance() {
-    if (global.__LXMINE_NATIVE_STAGE && global.innerHeight > global.innerWidth) return 114;
+    if (global.__LXMINE_NATIVE_STAGE && global.innerHeight > global.innerWidth) return 96;
     return WORKSHOP_DEFAULT_PROPERTIES.cameraDistance;
   }
 
@@ -610,30 +610,32 @@
     fx = fx || {};
     var coverHexes = workshopPaletteHexesFromCover();
     var props = Object.assign({}, WORKSHOP_DEFAULT_PROPERTIES);
-    if (global.__LXMINE_NATIVE_STAGE) {
-      props.gridSize = 96;
-      var defaultDist = (global.innerHeight > global.innerWidth) ? 114 : WORKSHOP_DEFAULT_PROPERTIES.cameraDistance;
-      if (!state.cameraDistance || state.cameraDistance === WORKSHOP_DEFAULT_PROPERTIES.cameraDistance) {
-        state.cameraDistance = defaultDist;
-      }
-    } else {
-      props.gridSize = 144;
-      props.cameraDistance = clamp(state.cameraDistance || WORKSHOP_DEFAULT_PROPERTIES.cameraDistance, 52, 155);
+    // Keep original gridSize (320) so tile physical scale never zooms in!
+    props.gridSize = WORKSHOP_DEFAULT_PROPERTIES.gridSize;
+    var defaultDist = defaultWorkshopDistance();
+    if (!state.cameraDistance) {
+      state.cameraDistance = defaultDist;
     }
-    if (global.__LXMINE_NATIVE_STAGE && global.orbit) {
-      var theta = Number.isFinite(global.orbit.userTheta) ? Number(global.orbit.userTheta) : 0;
-      var hasPhi = Number.isFinite(global.orbit.userPhi) && Number.isFinite(global.orbit.baselinePhi);
+    if (global.__LXMINE_NATIVE_STAGE) {
+      var theta = (global.orbit && Number.isFinite(global.orbit.userTheta)) ? Number(global.orbit.userTheta) : 0;
+      var hasPhi = !!(global.orbit && Number.isFinite(global.orbit.userPhi) && Number.isFinite(global.orbit.baselinePhi));
       var phi = hasPhi ? (Number(global.orbit.userPhi) - Number(global.orbit.baselinePhi)) : 0;
-      if (theta !== state.nativeTheta || phi !== state.nativePhi) {
+      if (state.nativeTheta === null) {
         state.nativeTheta = theta;
         state.nativePhi = phi;
-        // Match the workshop's continuous auto-rotation when applying a user orbit.
+        state.cameraAngleX = WORKSHOP_DEFAULT_PROPERTIES.cameraAngleX;
+      } else if (theta !== state.nativeTheta || phi !== state.nativePhi) {
+        state.nativeTheta = theta;
+        state.nativePhi = phi;
         state.cameraAngleX = WORKSHOP_DEFAULT_PROPERTIES.cameraAngleX + theta * 180 / Math.PI +
           Math.max(0, nowMs() - state.cameraStartedAt) * props.autoRotateSpeed / 1000;
       }
       props.cameraAngleX = state.cameraAngleX;
-      props.cameraAngleY = clamp(28 + phi * 180 / Math.PI, 12, 68);
-      props.cameraDistance = clamp(state.cameraDistance, 52, 155);
+      props.cameraAngleY = clamp(WORKSHOP_DEFAULT_PROPERTIES.cameraAngleY + phi * 180 / Math.PI, 16, 56);
+      props.cameraDistance = clamp(state.cameraDistance, 62, 145);
+    } else {
+      props.cameraDistance = clamp(state.cameraDistance || WORKSHOP_DEFAULT_PROPERTIES.cameraDistance, 58, 145);
+      props.cameraAngleY = WORKSHOP_DEFAULT_PROPERTIES.cameraAngleY;
     }
     props.audioIntensity = clamp(fx.sonicWorkshopAudioIntensity == null ? props.audioIntensity : Number(fx.sonicWorkshopAudioIntensity), 0.3, 2.5);
     props.responseRange = clamp(fx.sonicWorkshopResponseRange == null ? props.responseRange : Number(fx.sonicWorkshopResponseRange), 0.3, 2);

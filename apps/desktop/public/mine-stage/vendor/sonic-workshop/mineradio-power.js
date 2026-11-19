@@ -26,7 +26,7 @@
   let warmHandle = 0;
   let frames = 0;
   let lastFrameAt = 0;
-  const minFrameGapMs = isMobileNative ? 22 : 0;
+  const minFrameGapMs = isMobileNative ? 15 : 0;
 
   function schedule(id, item) {
     item.handle = nativeRequest(time => {

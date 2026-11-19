@@ -39,6 +39,10 @@ export struct AlignedSettings {
   @Prop previewText: string = '音乐在这里，与你相遇';
   @Prop contentTop: number = 82;
   @Prop updateChecking: boolean = false;
+  @Prop isHarmonyPc: boolean = false;
+  @Prop desktopLyrics: boolean = false;
+  @Prop desktopLyricsLocked: boolean = false;
+  @Prop wallpaperMode: boolean = false;
   @State private primaryDraft: string = '';
   @State private secondaryDraft: string = '';
   @State private offsetDraft: string = '0';
@@ -69,6 +73,9 @@ export struct AlignedSettings {
   onScale: (value: number) => void = () => {};
   onOffset: (value: number) => void = () => {};
   onCheckUpdate: () => void = () => {};
+  onDesktopLyrics: (value: boolean) => void = () => {};
+  onDesktopLyricsLocked: (value: boolean) => void = () => {};
+  onWallpaperMode: (value: boolean) => void = () => {};
   aboutToAppear(): void { this.primaryDraft = this.lyrics.primary; this.secondaryDraft = this.lyrics.secondary; this.offsetDraft = `${this.lyricOffset}`; }
   @Builder private title(value: string) { Text(value).fontSize(14).fontWeight(FontWeight.Medium).fontColor(MUTED).width('100%').padding({ top: 24, bottom: 10, left: 4 }) }
   @Builder private copy($$: SettingsCopy) {
@@ -103,6 +110,14 @@ export struct AlignedSettings {
     Column() {
       this.link({ title: '歌词设置', detail: '详情页字号、颜色、翻译／音译与时间偏移', action: () => this.onPanel('lyrics') })
     }.width('100%').backgroundColor($r('app.color.card_surface')).borderRadius(20)
+    if (this.isHarmonyPc) {
+      this.title('桌面体验（鸿蒙 PC）')
+      Column({ space: 1 }) {
+        this.toggle({ title: '桌面歌词', detail: '在桌面悬浮置顶显示实时歌词与翻译，拖动可调整位置', value: this.desktopLyrics, action: this.onDesktopLyrics })
+        this.toggle({ title: '锁定桌面歌词（鼠标穿透）', detail: '开启后桌面歌词不拦截点击，可在设置页随时解锁', value: this.desktopLyricsLocked, action: this.onDesktopLyricsLocked })
+        this.toggle({ title: '沉浸壁纸模式', detail: '全屏无边框沉浸展示 MineRadio 3D 动效与歌词舞台', value: this.wallpaperMode, action: this.onWallpaperMode })
+      }.width('100%').backgroundColor($r('app.color.card_surface')).borderRadius(20)
+    }
     this.title('系统与互联')
     Column({ space: 1 }) {
       this.select({ title: '外观', detail: '全局配色，播放页背景随之调整', labels: ['深色', '浅色', '跟随系统'], values: ['dark', 'light', 'system'], current: this.appearance, action: this.onAppearance })

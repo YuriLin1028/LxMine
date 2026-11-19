@@ -34,6 +34,7 @@ import { FeedPlaylist, FeedSongsResult, HomeFeed, FeedSection, loadPlatformSecti
 import { PlatformSwitchDialog } from '../components/PlatformSwitchDialog';
 import { UpdateDialog } from '../components/UpdateDialog';
 import { AppUpdateInfo, UpdateProgress, checkHarmonyUpdate, downloadHapToCache, cancelHarmonyUpdateDownload, saveCachedHapToUserLocation, openAppGalleryInviteTest } from '../services/AppUpdater';
+import { HarmonyPcWindowService, isHarmonyPc } from '../services/HarmonyPcWindowService';
 import { DockLayer } from '../components/DockLayer';
 import { SearchPlaybackBar } from '../components/SearchPlaybackBar';
 import { MineHome } from '../components/MineHome';
@@ -259,6 +260,12 @@ struct Index {
   @State private updateDownloading: boolean = false;
   @State private updateProgress: UpdateProgress = { mirror: '', received: 0, total: 0, percent: 0 };
   @State private updateDownloadedPath: string = '';
+  @State private desktopLyrics: boolean = false;
+  @State private desktopLyricsLocked: boolean = false;
+  @State private wallpaperMode: boolean = false;
+  @StorageProp('lxmine_pc_lyric_cmd') @Watch('onPcLyricCmd') private pcLyricCmd: string = '';
+  private pcWindow: HarmonyPcWindowService = new HarmonyPcWindowService();
+  private lastPcLyricPushAt: number = 0;
   private queueScroller: Scroller = new Scroller();
   private host: LxHost = new LxHost();
   private player: PlayerService = new PlayerService();
@@ -393,6 +400,51 @@ struct Index {
     this.updateDownloading = false;
     this.updateDialogOpen = false;
   }
+
+  private onPcLyricCmd(): void {
+    const cmd = this.pcLyricCmd;
+    if (!cmd) return;
+    if (cmd.startsWith('close:')) {
+      this.desktopLyrics = false;
+      this.pcWindow.setDesktopLyrics(false, this.desktopLyricsLocked).catch(() => {});
+    } else if (cmd.startsWith('lock:')) {
+      const locked = cmd.startsWith('lock:1:');
+      this.desktopLyricsLocked = locked;
+      this.pcWindow.setDesktopLyricsLocked(locked).catch(() => {});
+    }
+  }
+
+  private syncHarmonyPcDesktopLyrics(timeMs: number, force: boolean = false): void {
+    if (!this.desktopLyrics || !isHarmonyPc()) return;
+    const now = Date.now();
+    if (!force && now - this.lastPcLyricPushAt < 220) return;
+    this.lastPcLyricPushAt = now;
+    const adj = timeMs + this.lyricOffset;
+    let mainLine = this.selected ? `${this.selected.name}${this.selected.singer ? ' - ' + this.selected.singer : ''}` : 'LxMine';
+    let subLine = '';
+    if (this.lyrics.length) {
+      let idx = 0;
+      for (let i = 0; i < this.lyrics.length; i += 1) {
+        if (this.lyrics[i].timeMs <= adj) idx = i;
+        else break;
+      }
+      mainLine = this.lyrics[idx]?.text || mainLine;
+      const trans = this.translatedLyrics.find((line: LyricLine) => Math.abs(line.timeMs - this.lyrics[idx].timeMs) <= 450);
+      if (this.lyricPrefs.showTranslation && trans && trans.text) subLine = trans.text;
+    }
+    this.pcWindow.syncLyrics(mainLine, subLine, lyricPrimary(this.lyricPrefs, this.coverColors), this.desktopLyricsLocked);
+  }
+
+  private toggleHarmonyPcWallpaper(enabled: boolean): void {
+    this.wallpaperMode = enabled;
+    if (enabled) {
+      this.showPlayer = true;
+      this.stageControlsVisible = false;
+    } else {
+      this.stageControlsVisible = true;
+    }
+    this.pcWindow.setWallpaperMode(enabled).catch(() => {});
+  }
   private assetRetryTimer: number = -1;
   private page: number = 1;
   private submitted: string = '';
@@ -491,6 +543,7 @@ struct Index {
         this.lastPositionUiAt = now;
         this.positionMs = time;
       }
+      this.syncHarmonyPcDesktopLyrics(time, false);
       const duration = this.player.durationMs();
       if (duration !== this.duration) this.duration = duration;
       if (now - this.lastPlaybackSave > 5000) this.savePlayback();
@@ -517,6 +570,7 @@ struct Index {
     this.pendingHomeFeed = null;
     for (const timer of this.introTimers) clearTimeout(timer);
     this.discovery?.stop(); this.syncServer.stop().catch(() => {});
+    this.pcWindow.dispose().catch(() => {});
     try { display.off('foldStatusChange', this.foldListener); } catch (_) {}
     this.car.stop();
     this.shareService.stop();
@@ -2813,8 +2867,19 @@ struct Index {
         allowLandscapeLocked: this.allowLandscapeLocked, mixWithOthers: this.mixWithOthers, refreshAlgoDoubleTap: this.refreshAlgoDoubleTap, lanAutoSync: this.lanAutoSync, lanLocalAddress: this.lanLocalAddress, carDetail: this.carDetail,
         completedDownloads: this.downloadItems.filter((item: MusicDownload) => item.state === 'complete').length, devices: this.devices, lanSsid: this.lanSsid, message: this.message,
         lyrics: this.lyricPrefs, lyricOffset: this.lyricOffset, previewPrimary: lyricPrimary(this.lyricPrefs, this.coverColors), previewSecondary: lyricSecondary(this.lyricPrefs, this.coverColors),
-        previewText: this.lyrics.find((line: LyricLine) => line.timeMs <= this.positionMs)?.text || '音乐在这里，与你相遇', contentTop: this.headerHeight(), updateChecking: this.updateChecking, scroller: this.settingsScroller,
+        previewText: this.lyrics.find((line: LyricLine) => line.timeMs <= this.positionMs)?.text || '音乐在这里，与你相遇', contentTop: this.headerHeight(), updateChecking: this.updateChecking,
+        isHarmonyPc: isHarmonyPc(), desktopLyrics: this.desktopLyrics, desktopLyricsLocked: this.desktopLyricsLocked, wallpaperMode: this.wallpaperMode, scroller: this.settingsScroller,
         onCheckUpdate: () => { this.checkAppUpdate(false).catch(() => {}); },
+        onDesktopLyrics: (value: boolean) => {
+          this.desktopLyrics = value;
+          this.pcWindow.setDesktopLyrics(value, this.desktopLyricsLocked).catch(() => {});
+          if (value) this.syncHarmonyPcDesktopLyrics(this.livePositionMs, true);
+        },
+        onDesktopLyricsLocked: (value: boolean) => {
+          this.desktopLyricsLocked = value;
+          this.pcWindow.setDesktopLyricsLocked(value).catch(() => {});
+        },
+        onWallpaperMode: (value: boolean) => { this.toggleHarmonyPcWallpaper(value); },
         onScroll: (offset: number) => this.homeScroll(offset), onOpenSources: () => this.openSources(), onPanel: (panel: string) => this.openSettingsPanel(panel),
         onDownloads: () => this.openDownloads('设置'),
         onSend: (device: LanDevice) => this.send(device), onSendDirect: (target: string) => { this.sendDirect(target); },

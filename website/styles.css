@@ -275,7 +275,7 @@ button {
 .cinema-bezel video {
   width: 100%;
   aspect-ratio: 16 / 10;
-  object-fit: cover;
+  object-fit: contain;
   border-radius: 19px;
   background: #0c0e14;
 }
@@ -424,6 +424,7 @@ button {
 
 .media-desktop {
   aspect-ratio: 16 / 10;
+  background: #0e1117;
 }
 
 .media-desktop img {
@@ -431,7 +432,7 @@ button {
   inset: 0;
   width: 100%;
   height: 100%;
-  object-fit: cover;
+  object-fit: contain;
   opacity: 0;
   transition: opacity 0.35s var(--ease);
 }
@@ -442,28 +443,39 @@ button {
 
 .media-phone {
   display: flex;
+  align-items: center;
   justify-content: center;
-  padding: 20px 20px 0;
+  padding: 20px;
   background: linear-gradient(180deg, #f4f6fa 0%, #eaedf3 100%);
   flex: 1;
 }
 
 .media-phone img {
-  width: min(228px, 82%);
-  border-radius: 22px 22px 0 0;
-  box-shadow: 0 -4px 24px rgba(11, 15, 25, 0.10);
-  object-fit: cover;
-  object-position: top;
+  width: auto;
+  max-width: 100%;
+  max-height: 460px;
+  height: auto;
+  border-radius: 20px;
+  box-shadow: 0 12px 32px rgba(11, 15, 25, 0.14);
+  object-fit: contain;
 }
 
 .media-tablet {
-  aspect-ratio: 16 / 10;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 16px;
+  background: linear-gradient(180deg, #f4f6fa 0%, #eaedf3 100%);
+  flex: 1;
 }
 
 .media-tablet img {
   width: 100%;
-  height: 100%;
-  object-fit: cover;
+  max-height: 460px;
+  height: auto;
+  border-radius: 14px;
+  box-shadow: 0 10px 28px rgba(11, 15, 25, 0.12);
+  object-fit: contain;
 }
 
 /* Swiss Grid Principles */

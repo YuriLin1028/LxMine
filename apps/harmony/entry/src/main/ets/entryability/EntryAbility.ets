@@ -62,11 +62,12 @@ export default class EntryAbility extends UIAbility {
     if (typeof continued === 'string') AppStorage.setOrCreate('lxmine_continue_playback', continued);
   }
   private loadStage(stage: window.WindowStage): void {
+    AppStorage.setOrCreate('lxmine_window_stage', stage);
     // 全面屏沉浸：内容延伸到状态栏与导航条之下
     const main = stage.getMainWindowSync();
     main.setWindowLayoutFullScreen(true).catch(() => {});
-    // 手机默认竖屏（仅详情页放开）；平板与车机不锁方向。
-    const freeRotate = deviceInfo.deviceType === 'car' || deviceInfo.deviceType === 'tablet';
+    // 手机默认竖屏（仅详情页放开）；平板、车机与鸿蒙 PC 不锁方向。
+    const freeRotate = deviceInfo.deviceType === 'car' || deviceInfo.deviceType === 'tablet' || deviceInfo.deviceType === '2in1';
     main.setPreferredOrientation(freeRotate ? window.Orientation.AUTO_ROTATION : window.Orientation.PORTRAIT)
       .catch((error: BusinessError) => console.warn(`[Orientation] ${error.message}`));
     stage.loadContent('pages/Index').catch(() => {});
