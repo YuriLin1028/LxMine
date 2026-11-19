@@ -553,7 +553,32 @@ struct Index {
         setLatestPlaybackState(this.selected, this.queue, time, this.playing);
       }
     });
-    this.player.onError((message: string) => { this.error = message; this.resolving = false; });
+    this.player.onError((message: string) => {
+      this.resolving = false;
+      const cur = this.selected;
+      const curKey = cur ? songKey(cur) : '';
+      // 容器/解码/网络异常时静默触发跨平台换源，不弹英文红字报错
+      if (cur && curKey && this.previewRetryKey !== curKey) {
+        this.previewRetryKey = curKey;
+        this.error = '';
+        const retryToken = this.playToken;
+        this.raceAllSourcesForSong(cur, this.activeId ? [this.activeId] : [], true).then((hit: RaceUrlResult) => {
+          if (retryToken !== this.playToken || this.disposed || !hit.url) return;
+          if (hit.sourceId && hit.sourceId !== this.activeId) {
+            this.activeId = hit.sourceId;
+            this.save();
+          }
+          const nextIntent = this.player.beginSwitch(true);
+          this.player.playUrl(hit.url, cur, 0, true, nextIntent).then(() => {
+            if (retryToken === this.playToken) this.playbackUrl = hit.url ?? '';
+          }).catch(() => {});
+        }).catch(() => {});
+        return;
+      }
+      const raw = String(message || '').trim();
+      const hasRawTech = /[A-Za-z_]{4,}|CONTAINER_ERR|Unsupported|HTTP\s*\d|ECONN|ETIMEDOUT|IO_ERR/i.test(raw);
+      this.error = hasRawTech ? '当前音源暂不可播放，请切换其他音源或重试' : (raw || '当前音源暂不可播放');
+    });
     this.player.onNext((step: number) => this.advance(step));
     this.initialize().catch((error: Error) => { this.error = `初始化失败：${error.message}`; });
   }

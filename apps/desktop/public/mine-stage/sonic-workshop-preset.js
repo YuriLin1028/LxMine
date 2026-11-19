@@ -610,33 +610,17 @@
     fx = fx || {};
     var coverHexes = workshopPaletteHexesFromCover();
     var props = Object.assign({}, WORKSHOP_DEFAULT_PROPERTIES);
-    // Keep original gridSize (320) so tile physical scale never zooms in!
-    props.gridSize = WORKSHOP_DEFAULT_PROPERTIES.gridSize;
+    // Balanced gridSize for crisp diamond scale + smooth 60-120fps on mobile/tablet/desktop
+    props.gridSize = global.__LXMINE_NATIVE_STAGE ? 220 : 280;
     var defaultDist = defaultWorkshopDistance();
     if (!state.cameraDistance) {
       state.cameraDistance = defaultDist;
     }
-    if (global.__LXMINE_NATIVE_STAGE) {
-      var theta = (global.orbit && Number.isFinite(global.orbit.userTheta)) ? Number(global.orbit.userTheta) : 0;
-      var hasPhi = !!(global.orbit && Number.isFinite(global.orbit.userPhi) && Number.isFinite(global.orbit.baselinePhi));
-      var phi = hasPhi ? (Number(global.orbit.userPhi) - Number(global.orbit.baselinePhi)) : 0;
-      if (state.nativeTheta === null) {
-        state.nativeTheta = theta;
-        state.nativePhi = phi;
-        state.cameraAngleX = WORKSHOP_DEFAULT_PROPERTIES.cameraAngleX;
-      } else if (theta !== state.nativeTheta || phi !== state.nativePhi) {
-        state.nativeTheta = theta;
-        state.nativePhi = phi;
-        state.cameraAngleX = WORKSHOP_DEFAULT_PROPERTIES.cameraAngleX + theta * 180 / Math.PI +
-          Math.max(0, nowMs() - state.cameraStartedAt) * props.autoRotateSpeed / 1000;
-      }
-      props.cameraAngleX = state.cameraAngleX;
-      props.cameraAngleY = clamp(WORKSHOP_DEFAULT_PROPERTIES.cameraAngleY + phi * 180 / Math.PI, 16, 56);
-      props.cameraDistance = clamp(state.cameraDistance, 62, 145);
-    } else {
-      props.cameraDistance = clamp(state.cameraDistance || WORKSHOP_DEFAULT_PROPERTIES.cameraDistance, 58, 145);
-      props.cameraAngleY = WORKSHOP_DEFAULT_PROPERTIES.cameraAngleY;
-    }
+    // Never push cameraAngleX/Y per frame from orbit drag: applyUserProperties
+    // rebuilds the workshop scene and would freeze the stage while rotating lyrics.
+    props.cameraAngleX = WORKSHOP_DEFAULT_PROPERTIES.cameraAngleX;
+    props.cameraAngleY = WORKSHOP_DEFAULT_PROPERTIES.cameraAngleY;
+    props.cameraDistance = clamp(state.cameraDistance || defaultDist, 62, 145);
     props.audioIntensity = clamp(fx.sonicWorkshopAudioIntensity == null ? props.audioIntensity : Number(fx.sonicWorkshopAudioIntensity), 0.3, 2.5);
     props.responseRange = clamp(fx.sonicWorkshopResponseRange == null ? props.responseRange : Number(fx.sonicWorkshopResponseRange), 0.3, 2);
     props.peakColorIntensity = clamp(fx.sonicWorkshopPeakIntensity == null ? props.peakColorIntensity : Number(fx.sonicWorkshopPeakIntensity), 0, 1.4);
@@ -781,7 +765,7 @@
         out[j] = clamp(Math.pow(clamp01(v), 1.35) * 0.30 + fallbackLift, 0, WORKSHOP_AUDIO_TARGET_MAX_SAMPLE) * inputGain;
       }
     }
-    if (!(global.playing && global.isAnalysisPlaybackActive())) {
+    if (!global.playing) {
       for (var k = 0; k < out.length; k++) out[k] = out[k] * WORKSHOP_AUDIO_PAUSED_GAIN;
     }
     state.samples = out;

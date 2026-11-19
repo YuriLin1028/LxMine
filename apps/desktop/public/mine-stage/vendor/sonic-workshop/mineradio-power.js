@@ -6,13 +6,14 @@
   if (isMobileNative) {
     try {
       const realDpr = Math.max(1, Number(window.devicePixelRatio) || 1);
-      const cappedDpr = Math.min(realDpr, 0.78);
+      // Never set DPR < 1.0: Three.js/R3F viewport scaling breaks when DPR < 1.
+      const cappedDpr = Math.min(realDpr, 1.0);
       Object.defineProperty(window, 'devicePixelRatio', { configurable: true, get: () => cappedDpr });
     } catch (_) {}
   } else {
     try {
       const realDpr = Math.max(1, Number(window.devicePixelRatio) || 1);
-      const cappedDpr = Math.min(realDpr, 1.15);
+      const cappedDpr = Math.min(realDpr, 1.25);
       Object.defineProperty(window, 'devicePixelRatio', { configurable: true, get: () => cappedDpr });
     } catch (_) {}
   }
@@ -26,7 +27,7 @@
   let warmHandle = 0;
   let frames = 0;
   let lastFrameAt = 0;
-  const minFrameGapMs = isMobileNative ? 15 : 0;
+  const minFrameGapMs = 0;
 
   function schedule(id, item) {
     item.handle = nativeRequest(time => {
@@ -42,16 +43,15 @@
   }
 
   function resizeBuffers(active) {
-    document.querySelectorAll('canvas').forEach(canvas => {
-      if (active) {
-        const size = sizes.get(canvas);
-        if (size) { canvas.width = size.width; canvas.height = size.height; sizes.delete(canvas); }
-      } else if (canvas.width > 1 || canvas.height > 1) {
-        sizes.set(canvas, { width: canvas.width, height: canvas.height });
-        canvas.width = 1;
-        canvas.height = 1;
-      }
-    });
+    // Do NOT mutate canvas.width/height to 1x1 behind React Three Fiber's back:
+    // mutating the WebGL drawing buffer corrupts R3F's camera/viewport on the 2nd visit.
+    // Pausing rAF when visible===false already drops GPU/CPU work to 0%.
+    if (active) {
+      try { window.dispatchEvent(new Event('resize')); } catch (_) {}
+      nativeRequest(() => {
+        try { window.dispatchEvent(new Event('resize')); } catch (_) {}
+      });
+    }
   }
 
   window.requestAnimationFrame = callback => {

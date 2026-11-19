@@ -2,8 +2,8 @@
 var scene = new THREE.Scene();
 scene.background = null;
 var camera = new THREE.PerspectiveCamera(45, innerWidth / innerHeight, 0.1, 100);
-var RENDER_DPR_CAP = 1.35;
-var RENDER_PIXEL_BUDGET = 5200000;
+var RENDER_DPR_CAP = window.__LXMINE_NATIVE_STAGE ? 1.15 : 1.35;
+var RENDER_PIXEL_BUDGET = window.__LXMINE_NATIVE_STAGE ? 2200000 : 4800000;
 var RENDER_MIN_DPR = 0.72;
 // 0 = display vsync. Foreground visible motion must keep VSync cadence.
 var RENDER_VISIBLE_VSYNC = true;

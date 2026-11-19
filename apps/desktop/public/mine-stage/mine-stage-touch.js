@@ -8,6 +8,9 @@
   var primary = null;
   var pinchDistance = 0;
   var pinchStartDistance = 0;
+  var twoFingerStartMidX = 0;
+  var twoFingerStartMidY = 0;
+  var twoFingerMode = ''; // '' | 'pinch' | 'scroll'
   var lastTap = null;
   var stats = { moves: 0, taps: 0, pinches: 0, cancelled: 0 };
   canvas.style.touchAction = 'none';
@@ -25,6 +28,10 @@
   function distance() {
     var p = Array.from(fingers.values());
     return p.length < 2 ? 0 : Math.hypot(p[0].x - p[1].x, p[0].y - p[1].y);
+  }
+  function midpoint() {
+    var p = Array.from(fingers.values());
+    return p.length < 2 ? { x: 0, y: 0 } : { x: (p[0].x + p[1].x) * 0.5, y: (p[0].y + p[1].y) * 0.5 };
   }
   function clear() {
     orbit.rotating = false; particlePointerSpin.active = false;
@@ -50,6 +57,11 @@
       clear(); primary = null;
       pinchDistance = distance();
       pinchStartDistance = pinchDistance;
+      var mid0 = midpoint();
+      twoFingerStartMidX = mid0.x;
+      twoFingerStartMidY = mid0.y;
+      twoFingerMode = '';
+      window.__lxminePinchActive = false;
     }
   }, { passive: false });
   canvas.addEventListener('pointermove', function (event) {
@@ -59,8 +71,20 @@
     window.lxmineMultiTouchActive = fingers.size > 1;
     if (fingers.size > 1) {
       var next = distance();
-      if (pinchDistance > 0 && (window.__lxminePinchActive || Math.abs(next - pinchStartDistance) > 12)) {
-        window.__lxminePinchActive = true;
+      var mid = midpoint();
+      if (!twoFingerMode) {
+        var distDelta = Math.abs(next - pinchStartDistance);
+        var midYDelta = Math.abs(mid.y - twoFingerStartMidY);
+        var midXDelta = Math.abs(mid.x - twoFingerStartMidX);
+        if (midYDelta > 16 && midYDelta > distDelta * 1.45) {
+          twoFingerMode = 'scroll';
+          window.__lxminePinchActive = false;
+        } else if (distDelta > 26 && distDelta > (midYDelta + midXDelta) * 0.9) {
+          twoFingerMode = 'pinch';
+          window.__lxminePinchActive = true;
+        }
+      }
+      if (twoFingerMode === 'pinch' && pinchDistance > 0) {
         var delta = (pinchDistance - next) * 2.4;
         canvas.dispatchEvent(new WheelEvent('wheel', { bubbles: true, cancelable: true,
           clientX: event.clientX, clientY: event.clientY, deltaY: delta }));
@@ -104,7 +128,8 @@
     } else { clear(); if (cancelled) stats.cancelled++; }
     fingers.delete(event.pointerId);
     if (canvas.hasPointerCapture(event.pointerId)) canvas.releasePointerCapture(event.pointerId);
-    if (!fingers.size) { primary = null; pinchDistance = 0; clear(); }
+    if (!fingers.size) { primary = null; pinchDistance = 0; twoFingerMode = ''; window.__lxminePinchActive = false; clear(); }
+    else if (fingers.size < 2) { twoFingerMode = ''; window.__lxminePinchActive = false; }
     window.lxmineMultiTouchActive = fingers.size > 1;
   }
   canvas.addEventListener('pointerup', function (event) { end(event, false); }, { passive: false });
