@@ -3,680 +3,295 @@
 <head>
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1">
-  <meta name="theme-color" content="#040508">
-  <meta name="description" content="LxMine 跨端开源音乐播放器，融合 Mineradio 3D 粒子舞台、LX Music 自定义音源生态与原生光学液态玻璃。支持 Windows、HarmonyOS 与 Android，提供中国大陆极速镜像下载。">
-  <meta property="og:title" content="LxMine · 音乐，自有光感">
-  <meta property="og:description" content="3D 粒子音场、逐字流光歌词、光学折射液态玻璃与四平台融合曲库。免费开源，支持中国大陆镜像极速下载。">
-  <meta property="og:type" content="website">
-  <meta property="og:url" content="https://yurilin1028.github.io/LxMine/">
-  <meta property="og:image" content="https://yurilin1028.github.io/LxMine/assets/windows-home-1.1.0.png">
-  <title>LxMine · 音乐，自有光感</title>
-  <link rel="canonical" href="https://yurilin1028.github.io/LxMine/">
+  <title>LxMine — 把音乐，还给纯粹</title>
+  <meta name="description" content="LxMine 是一款跨 Windows、Android 与 HarmonyOS 的开源音乐播放器，接入自定义 LX 音源，融合 MineRadio 实时 3D 声场与液态玻璃交互。">
+  <meta name="theme-color" content="#fbfbfd">
   <link rel="icon" type="image/png" href="./assets/icon.png">
-  <link rel="preload" href="./assets/fonts/InterVariable.woff2" as="font" type="font/woff2" crossorigin>
-  <link rel="stylesheet" href="./assets/immersive/hx-immersive.css">
-  <link rel="stylesheet" href="./styles.css?v=20261118-pro2">
-  <script src="./assets/immersive/hx-material.js" defer></script>
-  <script src="./assets/immersive/hx-interactions.js" defer></script>
-  <script src="./app.js?v=20261118-pro2" type="module"></script>
+  <link rel="stylesheet" href="./styles.css">
 </head>
 <body>
-  <a class="skip-link" href="#main">跳到主要内容</a>
-
-  <!-- Ambient Caustic & Interactive 3D Particle Soundstage -->
-  <div class="cosmos-backdrop" aria-hidden="true">
-    <div class="aurora-orb aurora-orb--gold"></div>
-    <div class="aurora-orb aurora-orb--ice"></div>
-    <div class="aurora-orb aurora-orb--pearl"></div>
-    <canvas id="stage-canvas"></canvas>
-    <div class="cosmos-vignette"></div>
-    <div class="cosmos-grain"></div>
-  </div>
-
-  <!-- Floating Optical Liquid-Glass Header -->
-  <header class="site-header-wrap">
-    <div class="site-header hx-glass hx-light">
-      <a class="brand" href="#" aria-label="LxMine 首页">
-        <img src="./assets/icon.png" width="34" height="34" alt="">
+  <header class="topbar" id="topbar">
+    <div class="container topbar-inner">
+      <a class="brand" href="#top" aria-label="LxMine 首页">
+        <img class="brand-icon" src="./assets/icon.png" width="32" height="32" alt="LxMine 图标">
         <span class="brand-name">LxMine</span>
-        <span class="brand-badge" data-release-version>v1.1.0</span>
       </a>
-
-      <nav class="main-nav" aria-label="主导航">
-        <a href="#stage-showcase">粒子舞台</a>
-        <a href="#experience">光学实验室</a>
-        <a href="#devices">全端生态</a>
-        <a href="#library" class="hide-tablet">融合曲库</a>
-        <a href="#download" class="hide-mobile">大陆镜像</a>
+      <nav class="nav" aria-label="主导航">
+        <a href="#showcase">三端体验</a>
+        <a href="#principles">设计原则</a>
+        <a href="#download">下载</a>
+        <a href="https://github.com/YuriLin1028/LxMine" target="_blank" rel="noopener noreferrer">GitHub</a>
       </nav>
-
-      <div class="header-actions">
-        <a href="https://github.com/YuriLin1028/LxMine" target="_blank" rel="noopener noreferrer" class="header-github hx-glass hx-light" aria-label="前往 GitHub 查看 LxMine 开源仓库">
-          <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M12 2a10 10 0 0 0-3.16 19.49c.5.09.68-.22.68-.48v-1.86c-2.78.6-3.37-1.18-3.37-1.18-.45-1.16-1.11-1.47-1.11-1.47-.91-.62.07-.61.07-.61 1 .07 1.53 1.03 1.53 1.03.89 1.52 2.34 1.08 2.91.83.09-.65.35-1.08.63-1.33-2.22-.25-4.56-1.11-4.56-4.95 0-1.09.39-1.98 1.03-2.68-.1-.25-.45-1.27.1-2.65 0 0 .84-.27 2.75 1.03A9.6 9.6 0 0 1 12 6.83c.85 0 1.7.11 2.5.34 1.91-1.3 2.75-1.03 2.75-1.03.55 1.38.2 2.4.1 2.65.64.7 1.03 1.59 1.03 2.68 0 3.85-2.34 4.7-4.57 4.95.36.31.68.92.68 1.85v2.74c0 .27.18.58.69.48A10 10 0 0 0 12 2Z"/></svg>
-          <span>GitHub</span>
-        </a>
-        <a class="header-cta" href="#download">
-          <span>极速下载</span>
-          <span aria-hidden="true">↓</span>
-        </a>
-      </div>
+      <a class="topbar-cta" href="#download" id="topbar-cta">获取 v1.1.0</a>
     </div>
   </header>
 
-  <main id="main">
-    <!-- ==================== HERO & 3D STAGE ==================== -->
-    <section class="hero" aria-labelledby="hero-title">
-      <div class="wrap hero-center">
-        <div class="hero-kicker reveal">
-          <span class="pulse-dot" aria-hidden="true"></span>
-          <span>MINERADIO 粒子舞台 × LX MUSIC 音源生态 × 原生光学液态玻璃</span>
+  <main id="top">
+    <!-- Hero -->
+    <section class="hero">
+      <div class="container hero-inner">
+        <div class="eyebrow-pill reveal">
+          <span class="status-dot" aria-hidden="true"></span>
+          <span id="hero-version">v1.1.0</span>
+          <span class="sep">·</span>
+          <span>Windows · Android · HarmonyOS</span>
         </div>
 
-        <h1 id="hero-title" class="hero-title reveal">
-          音乐，<span class="shimmer-text">自有光感。</span>
-        </h1>
-
-        <p class="hero-subtitle reveal">
-          跨越 <strong>Windows</strong>、<strong>HarmonyOS</strong> 与 <strong>Android</strong> 的次世代开源音乐播放器。<br class="desktop-br">
-          当 3D 粒子地形随节拍起伏，逐字流光歌词穿透光学折射玻璃——每一首歌，都是一场私人光影现场。
+        <h1 class="hero-title reveal">把音乐，还给纯粹。</h1>
+        <p class="hero-sub reveal">
+          接入自定义 LX 音源，融合 MineRadio 实时 3D 声场与原生液态玻璃交互。<br class="br-desktop">
+          零广告、无内置源、三端同源开源，让每一次聆听都安静顺滑。
         </p>
 
-        <div class="hero-cta-group reveal">
-          <a class="btn-flagship" href="#download" id="hero-download-cta">
-            <span class="btn-flagship__glow" aria-hidden="true"></span>
-            <span class="btn-flagship__text" id="hero-cta-label">立即免费下载</span>
-            <span class="btn-flagship__tag">大陆镜像加速 ↓</span>
+        <div class="hero-actions reveal">
+          <a class="btn btn-primary" id="hero-download" href="#download">
+            <span id="hero-download-label">下载 LxMine</span>
+            <span class="btn-arrow" aria-hidden="true">↓</span>
           </a>
-
-          <a class="btn-secondary hx-glass hx-light" href="https://github.com/YuriLin1028/LxMine" target="_blank" rel="noopener noreferrer">
-            <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M12 2a10 10 0 0 0-3.16 19.49c.5.09.68-.22.68-.48v-1.86c-2.78.6-3.37-1.18-3.37-1.18-.45-1.16-1.11-1.47-1.11-1.47-.91-.62.07-.61.07-.61 1 .07 1.53 1.03 1.53 1.03.89 1.52 2.34 1.08 2.91.83.09-.65.35-1.08.63-1.33-2.22-.25-4.56-1.11-4.56-4.95 0-1.09.39-1.98 1.03-2.68-.1-.25-.45-1.27.1-2.65 0 0 .84-.27 2.75 1.03A9.6 9.6 0 0 1 12 6.83c.85 0 1.7.11 2.5.34 1.91-1.3 2.75-1.03 2.75-1.03.55 1.38.2 2.4.1 2.65.64.7 1.03 1.59 1.03 2.68 0 3.85-2.34 4.7-4.57 4.95.36.31.68.92.68 1.85v2.74c0 .27.18.58.69.48A10 10 0 0 0 12 2Z"/></svg>
-            <span>GitHub 开源仓库</span>
-            <span class="ext-arrow" aria-hidden="true">↗</span>
+          <a class="btn btn-ghost" href="https://github.com/YuriLin1028/LxMine" target="_blank" rel="noopener noreferrer">
+            <span>浏览源码</span>
+            <span class="btn-arrow" aria-hidden="true">↗</span>
           </a>
-
-          <button type="button" class="btn-pulse hx-glass hx-light" id="soundwave-burst" aria-label="在背景触发 3D 声浪光脉冲">
-            <span class="eq-bars" aria-hidden="true"><i></i><i></i><i></i><i></i></span>
-            <span>触发声场脉冲</span>
-          </button>
         </div>
 
-        <div class="hero-meta reveal">
-          <span><strong data-release-version>v1.1.0</strong> 正式版已发布</span>
-          <span class="dot-sep" aria-hidden="true">·</span>
-          <span>GPL-3.0 免费开源 · 零广告零追踪</span>
-          <span class="dot-sep" aria-hidden="true">·</span>
-          <a href="#download" class="meta-mirror-link">内置 GH-Proxy / GHFast 国内极速通道 →</a>
-        </div>
-      </div>
-
-      <!-- 3D Tilt Product Theater Showcase -->
-      <div id="stage-showcase" class="wrap cinema-section">
-        <div class="cinema-rig" id="cinema-rig">
-          <div class="cinema-halo" aria-hidden="true"></div>
-
-          <div class="cinema-window">
-            <div class="cinema-topbar">
-              <div class="cinema-brand">
-                <img src="./assets/icon.png" width="20" height="20" alt="">
-                <span>LxMine Desktop · <em id="scene-badge">3D 粒子地形舞台</em></span>
-              </div>
-              <div class="cinema-controls-top">
-                <a class="cinema-raw-link" id="recording-link" href="./assets/windows-stage-1.1.0.mp4" target="_blank" rel="noopener">原画直看 ↗</a>
-                <button id="motion-toggle" class="cinema-quiet-btn" type="button" aria-pressed="false" aria-label="暂停实际录屏">暂停演示</button>
-                <span class="win-dots" aria-hidden="true"><i></i><i></i><i></i></span>
-              </div>
-            </div>
-
-            <figure class="cinema-viewport">
-              <video id="product-demo" src="./assets/windows-stage-1.1.0.mp4" poster="./assets/windows-stage-1.1.0.webp" width="1280" height="800" muted loop playsinline preload="metadata" aria-label="Windows 1.1.0 播放录屏，展示粒子舞台与逐字歌词">你的浏览器可通过上方链接查看录屏。</video>
-              <img id="product-shot" src="./assets/windows-home-1.1.0.webp" width="1440" height="900" alt="LxMine Windows 1.1.0 融合首页实机界面" hidden>
-            </figure>
+        <figure class="cinema-frame reveal">
+          <div class="cinema-bezel">
+            <video id="product-demo" src="./assets/windows-stage-1.1.0.mp4" autoplay muted loop playsinline preload="metadata" poster="./assets/windows-home-1.1.0.webp"></video>
           </div>
-
-          <!-- Floating Optical Switcher Dock -->
-          <div class="stage-switcher hx-glass hx-light" role="group" aria-label="切换实机演示画面">
-            <button class="stage-pill is-selected" type="button" data-scene="stage" aria-pressed="true">
-              <span class="pill-dot" aria-hidden="true"></span>
-              <span>粒子地形舞台</span>
-            </button>
-            <button class="stage-pill" type="button" data-scene="lyrics" aria-pressed="false">
-              <span>逐字流光歌词</span>
-            </button>
-            <button class="stage-pill" type="button" data-scene="homeDark" aria-pressed="false">
-              <span>融合首页 · 深色</span>
-            </button>
-            <button class="stage-pill" type="button" data-scene="homeLight" aria-pressed="false">
-              <span>融合首页 · 浅色</span>
-            </button>
-          </div>
-        </div>
+          <figcaption class="cinema-caption">
+            <span>MineRadio 实时 3D 声场舞台 · Windows 实机录制</span>
+            <button type="button" class="caption-toggle" id="demo-toggle" aria-label="暂停或播放演示视频">暂停</button>
+          </figcaption>
+        </figure>
       </div>
     </section>
 
-    <!-- ==================== ARCHITECTURAL METRICS RIBBON ==================== -->
-    <section class="metrics-strip wrap reveal" aria-label="核心规格">
-      <div class="metric-item">
-        <span class="metric-value">3 端原生</span>
-        <span class="metric-label">Windows · HarmonyOS · Android</span>
-      </div>
-      <div class="metric-item">
-        <span class="metric-value">4 平台聚合</span>
-        <span class="metric-label">每日三十首 · 跨平台榜单交错去重</span>
-      </div>
-      <div class="metric-item">
-        <span class="metric-value">SVG 光学折射</span>
-        <span class="metric-label">独立开源 huawei-immersive-pc 材质层</span>
-      </div>
-      <div class="metric-item">
-        <span class="metric-value">双线国内镜像</span>
-        <span class="metric-label">GH-Proxy + GHFast + GitHub 直连</span>
-      </div>
-    </section>
-
-    <!-- ==================== INTERACTIVE OPTICAL & KARAOKE LAB ==================== -->
-    <section id="experience" class="section wrap" aria-labelledby="experience-title">
-      <div class="section-head reveal">
-        <span class="eyebrow">OPTICAL GLASS &amp; KARAOKE ENGINE</span>
-        <h2 id="experience-title">不止能看，<br>现在就用指尖触碰光感。</h2>
-        <p>下方搭载了与 LxMine 桌面端<strong>完全同源</strong>的 <code>hx-glass</code> 实时光学折射皮肤与弹簧物理引擎。试着<strong>按住并拖动</strong>底部的液态玻璃播控胶囊，或点击任意歌词行切换焦点。</p>
-      </div>
-
-      <div class="lab-grid">
-        <!-- Interactive Live Karaoke + Real hx-dock Playground -->
-        <div class="karaoke-stage reveal" id="karaoke-stage" data-stage-fx="on">
-          <div class="karaoke-stage__bg" aria-hidden="true">
-            <img src="./assets/hero-glass.webp" width="1672" height="941" alt="" loading="lazy">
-            <div class="karaoke-glow-orb"></div>
-          </div>
-
-          <div class="karaoke-topbar">
-            <span class="karaoke-tag hx-glass hx-light">
-              <span class="live-dot" aria-hidden="true"></span>
-              <span>实时交互预览 · 点击歌词或拖拽底栏</span>
-            </span>
-            <div class="karaoke-actions">
-              <button type="button" class="hx-icon-button hx-glass hx-light is-fx-on" id="toggle-stage-fx" aria-pressed="true" title="切换背景光效与纯净模式" aria-label="切换动效">
-                <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M12 3l1.9 5.1L19 10l-5.1 1.9L12 17l-1.9-5.1L5 10l5.1-1.9L12 3z"/><path d="M19 16l.9 2.1L22 19l-2.1.9L19 22l-.9-2.1L16 19l2.1-.9L19 16z"/></svg>
-              </button>
-            </div>
-          </div>
-
-          <div class="karaoke-lyrics" id="karaoke-lyrics" role="listbox" aria-label="逐字流光歌词交互演示">
-            <button type="button" class="lyric-line" data-line="0"><span>让</span><span>耳</span><span>机</span><span>接</span><span>住</span><span>晚</span><span>风</span></button>
-            <button type="button" class="lyric-line" data-line="1"><span>让</span><span>旋</span><span>律</span><span>穿</span><span>过</span><span>人</span><span>海</span></button>
-            <button type="button" class="lyric-line is-active" data-line="2"><span>把</span><span>喜</span><span>欢</span><span>留</span><span>在</span><span>此</span><span>刻</span></button>
-            <button type="button" class="lyric-line" data-line="3"><span>每</span><span>个</span><span>音</span><span>符</span><span>都</span><span>有</span><span>光</span></button>
-            <button type="button" class="lyric-line" data-line="4"><span>从</span><span>指</span><span>尖</span><span>去</span><span>往</span><span>远</span><span>方</span></button>
-          </div>
-
-          <!-- Real LxMine Floating Optical Dock -->
-          <div class="karaoke-dock-wrap">
-            <div class="hx-dock hx-glass hx-light lab-dock" id="lab-dock">
-              <button type="button" class="hx-dock__cover" id="lab-cover-btn" aria-label="切换播放状态">
-                <span class="hx-dock__ring" id="lab-progress-ring" style="--hx-progress: 58%"></span>
-                <span class="hx-dock__cover-inner lab-disc"></span>
-              </button>
-              <div class="hx-dock__copy" id="lab-track-copy">
-                <strong>把音乐留在此刻</strong>
-                <span id="lab-track-sub">LxMine 光学材质实机同源演示 · 按住任意处拖拽试试</span>
-              </div>
-              <div class="hx-dock__controls">
-                <button type="button" class="hx-dock__button is-active" id="lab-like-btn" aria-pressed="true" aria-label="喜欢">
-                  <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M12 20.5s-7-4.35-7-10.1A4.4 4.4 0 0 1 9.4 6c1.45 0 2.6.75 2.6.75S13.15 6 14.6 6A4.4 4.4 0 0 1 19 10.4c0 5.75-7 10.1-7 10.1z"/></svg>
-                </button>
-                <button type="button" class="hx-dock__button" id="lab-prev-btn" aria-label="上一句歌词">
-                  <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M6 6v12"/><path d="M18 6l-8.5 6L18 18V6z"/></svg>
-                </button>
-                <button type="button" class="hx-dock__button hx-dock__play" id="lab-play-btn" aria-label="暂停歌词律动">
-                  <svg id="lab-play-icon" viewBox="0 0 24 24" aria-hidden="true"><path d="M9 6v12M15 6v12"/></svg>
-                </button>
-                <button type="button" class="hx-dock__button" id="lab-next-btn" aria-label="下一句歌词">
-                  <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M18 6v12"/><path d="M6 6l8.5 6L6 18V6z"/></svg>
-                </button>
-              </div>
-            </div>
-          </div>
-        </div>
-
-        <!-- 3 Optical Engineering Cards -->
-        <div class="lab-cards">
-          <article class="glass-card spotlight-card reveal">
-            <div class="card-index">01 / OPTICAL LENS</div>
-            <h3>SVG 边缘折射与环境取色</h3>
-            <p>独立光学皮肤层实时采样背景色彩并计算弯月面边缘折射。玻璃随背景流动变幻，而上层文字与图标始终保持零畸变、像素级锐利。</p>
-          </article>
-
-          <article class="glass-card spotlight-card reveal">
-            <div class="card-index">02 / SPRING PHYSICS</div>
-            <h3>阻尼弹簧形变与指尖追光</h3>
-            <p>每一次点按、拖拽与释放都由物理弹簧驱动形变回弹；径向掠射高光沿控件轮廓游走，松手即归于克制。</p>
-          </article>
-
-          <article class="glass-card spotlight-card reveal">
-            <div class="card-index">03 / FOCUS OR STILLNESS</div>
-            <h3>粒子盛景，亦可一键归零</h3>
-            <p>既能展开 3D 粒子地形与电影镜头，也能在播放页随时点按星芒键「关闭动效」，切换为低功耗柔和封面与左对齐逐字歌词。</p>
-          </article>
-        </div>
-      </div>
-    </section>
-
-    <!-- ==================== MULTI-DEVICE ECOSYSTEM ==================== -->
-    <section id="devices" class="section devices-section" aria-labelledby="devices-title">
-      <div class="wrap">
+    <!-- Editorial Showcase -->
+    <section class="section" id="showcase">
+      <div class="container">
         <div class="section-head reveal">
-          <span class="eyebrow">CROSS-DEVICE CONTINUITY</span>
-          <h2 id="devices-title">换块屏幕，<br>热爱无缝接力。</h2>
-          <p>不是简单的网页套壳，而是针对每个系统深度打磨的交互体验：Windows 无边框光学桌面、HarmonyOS 原生全场景流转、Android 13+ 液态玻璃水球导航。</p>
+          <p class="kicker">CROSS-PLATFORM CRAFT</p>
+          <h2 class="section-title">一套设计语言，三端原生体验。</h2>
+          <p class="section-desc">不妥协于套壳网页，Windows、Android 与 HarmonyOS 各自贴合系统原生质感，同时共享同一套天蓝光感视觉与交互秩序。</p>
         </div>
 
-        <div class="ecosystem-tabs reveal" role="tablist" aria-label="预览不同设备端界面">
-          <button type="button" class="eco-tab is-active" role="tab" aria-selected="true" data-eco="harmony">HarmonyOS 手机 / 平板 / 车机</button>
-          <button type="button" class="eco-tab" role="tab" aria-selected="false" data-eco="android">Android 原生液态玻璃</button>
-          <button type="button" class="eco-tab" role="tab" aria-selected="false" data-eco="windows">Windows 沉浸桌面端</button>
-        </div>
-
-        <div class="ecosystem-stage reveal">
-          <!-- HarmonyOS Showcase -->
-          <div class="eco-pane is-active" data-eco-pane="harmony">
-            <div class="eco-copy">
-              <span class="eco-badge">ArkTS · ArkUI 原生构建</span>
-              <h3>原生鸿蒙美学，<br>从掌心延伸至座舱</h3>
-              <p>基于 ArkTS 原生开发，完整适配 HarmonyOS 手机、平板横屏大视野与 HiCar 车机体验。支持华为生态应用接续与局域网跨设备歌单同步。</p>
-              <ul class="eco-points">
-                <li><strong>双轨分发</strong>：支持华为应用市场 1.1.0 邀请测试直装，同时提供车机兼容未签名 HAP</li>
-                <li><strong>手势直觉</strong>：单指滚动点击歌词精准定位，双指开合进出纯净沉浸舞台</li>
-                <li><strong>局域网互传</strong>：与 Windows / Android 端对端秒传歌单与喜欢列表</li>
-              </ul>
-              <div class="eco-links">
-                <a href="#download" class="btn-inline-gold" data-jump-platform="harmony">获取 HarmonyOS 版本 ↓</a>
-                <a href="https://github.com/YuriLin1028/LxMine#harmonyos应用市场邀请测试" target="_blank" rel="noopener noreferrer" class="text-arrow-link">阅读安装与邀请说明 ↗</a>
+        <div class="bento">
+          <!-- Windows Dark / Light Interactive Card -->
+          <article class="bento-card bento-wide reveal">
+            <div class="bento-meta">
+              <div>
+                <p class="card-kicker">WINDOWS DESKTOP</p>
+                <h3 class="card-title">桌面沉浸主界面，深浅皆宜</h3>
+              </div>
+              <div class="theme-switch" role="group" aria-label="切换 Windows 预览主题">
+                <button type="button" class="theme-btn is-active" data-win-theme="dark">深色</button>
+                <button type="button" class="theme-btn" data-win-theme="light">浅色</button>
               </div>
             </div>
-
-            <div class="eco-hardware eco-hardware--harmony">
-              <figure class="hw-tablet">
-                <div class="hw-bezel">
-                  <img src="./assets/harmony-player-1.1.0.webp" width="1600" height="1051" alt="LxMine HarmonyOS 平板端粒子舞台与逐字歌词实机截图" loading="lazy">
-                </div>
-                <figcaption>HarmonyOS 平板 · 沉浸粒子舞台</figcaption>
-              </figure>
-              <figure class="hw-phone hw-phone--overlap">
-                <div class="hw-bezel hw-bezel--phone">
-                  <img src="./assets/harmony-phone-1.1.0.webp" width="660" height="1116" alt="LxMine HarmonyOS 手机端深色融合首页实机截图" loading="lazy">
-                </div>
-                <figcaption>HarmonyOS 手机 · 首页</figcaption>
-              </figure>
+            <div class="media-stage media-desktop">
+              <img id="win-preview-dark" class="is-visible" src="./assets/windows-home-1.1.0.webp" alt="LxMine Windows 深色模式主界面" loading="lazy">
+              <img id="win-preview-light" src="./assets/windows-light-1.1.0.webp" alt="LxMine Windows 浅色模式主界面" loading="lazy">
             </div>
-          </div>
+          </article>
 
-          <!-- Android Showcase -->
-          <div class="eco-pane" data-eco-pane="android" hidden>
-            <div class="eco-copy">
-              <span class="eco-badge">Kotlin · Jetpack Compose</span>
-              <h3>Android 原生客户端，<br>液态玻璃跃然指上</h3>
-              <p>纯正 Kotlin 与 Jetpack Compose 编写，最低兼容至 Android 8.0。在 Android 13 及以上设备解锁实时液态玻璃折射与按压水球底部导航。</p>
-              <ul class="eco-points">
-                <li><strong>深浅自适应</strong>：支持深色、浅色与跟随系统三种外观，柔和封面背景随主题明暗过渡</li>
-                <li><strong>系统级播控</strong>：原生媒体服务常驻管理，无缝联动系统通知栏与蓝牙车载音频路由</li>
-                <li><strong>分享即导入</strong>：直接接收系统分享链接，大歌单自动分页拉取与完整性校验</li>
-              </ul>
-              <div class="eco-links">
-                <a href="#download" class="btn-inline-gold" data-jump-platform="android">下载 Android APK ↓</a>
-                <a href="https://github.com/YuriLin1028/LxMine/releases/latest" target="_blank" rel="noopener noreferrer" class="text-arrow-link">查看 APK 版本详情 ↗</a>
+          <!-- HarmonyOS Phone Card -->
+          <article class="bento-card bento-narrow reveal">
+            <div class="bento-meta">
+              <div>
+                <p class="card-kicker">HARMONYOS NEXT</p>
+                <h3 class="card-title">鸿蒙原生液态玻璃</h3>
               </div>
             </div>
-
-            <div class="eco-hardware eco-hardware--phones">
-              <figure class="hw-phone">
-                <div class="hw-bezel hw-bezel--phone">
-                  <img src="./assets/android-home-1.1.0.webp" width="1080" height="2400" alt="LxMine Android 1.1.0 首页截图" loading="lazy">
-                </div>
-                <figcaption>Android 1.1.0 · 浅色融合首页</figcaption>
-              </figure>
-              <figure class="hw-phone hw-phone--raised">
-                <div class="hw-bezel hw-bezel--phone">
-                  <img src="./assets/android-lyrics-1.1.0.webp" width="1080" height="2400" alt="LxMine Android 1.1.0 逐字歌词播放页截图" loading="lazy">
-                </div>
-                <figcaption>Android 1.1.0 · 逐字流光歌词</figcaption>
-              </figure>
+            <div class="media-stage media-phone">
+              <img src="./assets/harmony-phone-1.1.0.webp" alt="LxMine HarmonyOS 手机界面" loading="lazy">
             </div>
-          </div>
+          </article>
 
-          <!-- Windows Showcase -->
-          <div class="eco-pane" data-eco-pane="windows" hidden>
-            <div class="eco-copy">
-              <span class="eco-badge">Windows 10 / 11 · x64</span>
-              <h3>桌面旗舰基座，<br>无边框光影剧场</h3>
-              <p>融合 Mineradio 电影级镜头舞台与华为式 PC 沉浸光感规范。圆角无边框窗口、锚点毛玻璃菜单与常驻流光底栏，让桌面听歌充满仪式感。</p>
-              <ul class="eco-points">
-                <li><strong>双形态分发</strong>：提供向导式 <code>Setup.exe</code> 安装版与即开即用的 <code>Portable.exe</code> 便携版</li>
-                <li><strong>音源批处理</strong>：支持多选批量导入 JS / TXT 自定义音源脚本，自动去重并保留当前可用源</li>
-                <li><strong>桌面级曲库</strong>：高速扫描本地无损音乐目录，自动读取内嵌专辑封面与时间轴歌词</li>
-              </ul>
-              <div class="eco-links">
-                <a href="#download" class="btn-inline-gold" data-jump-platform="windows">下载 Windows 版 ↓</a>
-                <a href="https://github.com/YuriLin1028/LxMine" target="_blank" rel="noopener noreferrer" class="text-arrow-link">探索桌面端源码 ↗</a>
+          <!-- Android Lyrics Card -->
+          <article class="bento-card bento-medium reveal">
+            <div class="bento-meta">
+              <div>
+                <p class="card-kicker">ANDROID</p>
+                <h3 class="card-title">实时逐字歌词与动效播放页</h3>
               </div>
             </div>
-
-            <div class="eco-hardware eco-hardware--desktop">
-              <figure class="hw-desktop">
-                <div class="hw-bezel hw-bezel--desktop">
-                  <img src="./assets/harmony-home-1.1.0.webp" width="1600" height="1051" alt="LxMine 大屏深色四平台融合首页与歌单卡片" loading="lazy">
-                </div>
-                <figcaption>大屏沉浸视野 · 每日三十首与跨平台融合榜单</figcaption>
-              </figure>
+            <div class="media-stage media-phone">
+              <img src="./assets/android-lyrics-1.1.0.webp" alt="LxMine Android 播放页与歌词界面" loading="lazy">
             </div>
-          </div>
+          </article>
+
+          <!-- HarmonyOS Tablet / Wide Card -->
+          <article class="bento-card bento-large reveal">
+            <div class="bento-meta">
+              <div>
+                <p class="card-kicker">TABLET &amp; HICAR</p>
+                <h3 class="card-title">平板宽屏与车机同源适配</h3>
+              </div>
+            </div>
+            <div class="media-stage media-tablet">
+              <img src="./assets/harmony-home-1.1.0.webp" alt="LxMine HarmonyOS 平板与首页界面" loading="lazy">
+            </div>
+          </article>
         </div>
       </div>
     </section>
 
-    <!-- ==================== BENTO FEATURE ARCHITECTURE ==================== -->
-    <section id="library" class="section wrap" aria-labelledby="library-title">
-      <div class="section-head reveal">
-        <span class="eyebrow">UNIFIED MUSIC ARCHITECTURE</span>
-        <h2 id="library-title">四海曲库归于一处，<br>自由与秩序兼得。</h2>
-        <p>告别在四五个音乐客户端之间疲于奔命。LxMine 将公开榜单聚合、自定义音源扩展、歌单导入与本地无损曲库熔铸进同一套纯净界面。</p>
-      </div>
+    <!-- Engineering Principles -->
+    <section class="section section-tinted" id="principles">
+      <div class="container">
+        <div class="section-head reveal">
+          <p class="kicker">PRINCIPLES</p>
+          <h2 class="section-title">克制、高速、无感。</h2>
+        </div>
 
-      <div class="bento-grid">
-        <article class="bento-card bento-card--wide spotlight-card reveal">
-          <div class="bento-card__content">
-            <span class="bento-chip">四平台概念融合</span>
-            <h3>每日三十首 &amp; 跨平台合流榜单</h3>
-            <p>并发拉取网易云、QQ 音乐、酷狗、酷我四大平台榜单，按「飙升 / 新歌 / 热歌 / 原创」智能交错去重，按日期种子生成每日专属三十首推荐。</p>
-          </div>
-          <div class="bento-card__media">
-            <img src="./assets/windows-home-1.1.0.png" width="1440" height="900" alt="LxMine Windows 1.1.0 首页，展示每日三十首、飙升榜与新歌速递" loading="lazy">
-          </div>
-        </article>
-
-        <article class="bento-card spotlight-card reveal">
-          <span class="bento-chip">开放协议</span>
-          <h3>兼容 LX 自定义音源</h3>
-          <p>支持批量导入社区通用的 <code>.js</code> / <code>.txt</code> 音源脚本，自动跳过重复项并生成逐文件诊断报告。软件本身不捆绑音源，一切由你做主。</p>
-          <div class="bento-visual-tags" aria-hidden="true">
-            <span>JS / TXT 批量导入</span>
-            <span>自动去重容错</span>
-            <span>多平台歌单解析</span>
-          </div>
-        </article>
-
-        <article class="bento-card spotlight-card reveal">
-          <span class="bento-chip">秩序美学</span>
-          <h3>时刻拼贴歌单库 &amp; 拖拽排序</h3>
-          <p>相册“时刻”式随机几何比例拼贴封面，每次洗牌皆成画报。所有歌曲列表标配「列表内秒搜」与「长按/鼠标拖拽手动排序」。</p>
-          <div class="bento-visual-tags" aria-hidden="true">
-            <span>时刻几何拼贴</span>
-            <span>列表内即时过滤</span>
-            <span>直觉拖拽排歌</span>
-          </div>
-        </article>
-
-        <article class="bento-card spotlight-card reveal">
-          <span class="bento-chip">离线珍藏</span>
-          <h3>本地无损扫描与自动归档</h3>
-          <p>一键智能识别电脑与手机中的本地音频，完整解析 FLAC / MP3 标题、歌手、内嵌高清封面与内嵌歌词；下载完成的歌曲自动入库。</p>
-          <div class="bento-visual-tags" aria-hidden="true">
-            <span>FLAC / MP3 元数据</span>
-            <span>内嵌封面与歌词</span>
-            <span>下载自动入库</span>
-          </div>
-        </article>
+        <div class="principles-grid">
+          <article class="principle reveal">
+            <span class="principle-num">01</span>
+            <h3>全库并发竞速切源</h3>
+            <p>播放时自动对音源库全部候选并行探活，主动识别并跳过 30 秒试听片段与失效链接，毫秒级无感切至最佳完整音源。</p>
+          </article>
+          <article class="principle reveal">
+            <span class="principle-num">02</span>
+            <h3>MineRadio 实时 3D 舞台</h3>
+            <p>内置流体、星环、音乐回响工坊等 3D 声场动效，按桌面与移动端自动分级渲染分辨率与帧率，兼顾视觉与流畅。</p>
+          </article>
+          <article class="principle reveal">
+            <span class="principle-num">03</span>
+            <h3>局域网直连双向同步</h3>
+            <p>无需账号与云端托管，同一局域网内手机、平板与电脑自动发现，歌单、喜欢与音源脚本一键合并，数据只属于你自己。</p>
+          </article>
+          <article class="principle reveal">
+            <span class="principle-num">04</span>
+            <h3>在线无感覆盖升级</h3>
+            <p>内置 GitHub 与国内高速镜像双通道检测，Windows 与 Android 支持直接覆盖安装升级，HarmonyOS 支持一键跳转邀测或保存 HAP。</p>
+          </article>
+        </div>
       </div>
     </section>
 
-    <!-- ==================== DOWNLOAD COMMAND CENTER (MAINLAND MIRRORS + GITHUB) ==================== -->
-    <section id="download" class="section download-section" aria-labelledby="download-title">
-      <div class="wrap">
-        <div class="download-shell reveal">
-          <div class="download-shell__glow" aria-hidden="true"></div>
+    <!-- Download Atelier -->
+    <section class="section" id="download">
+      <div class="container">
+        <div class="download-layout">
+          <div class="download-intro reveal">
+            <p class="kicker">DOWNLOAD</p>
+            <h2 class="section-title">获取 LxMine</h2>
+            <p class="section-desc">
+              默认启用中国大陆高速镜像通道，无需额外网络工具即可满速下载；全部安装包均提供 SHA-256 指纹以供核验。
+            </p>
 
-          <div class="download-grid">
-            <!-- Left Column: Info, Live Release Status, GitHub & Open Source Links -->
-            <div class="download-aside">
-              <span class="eyebrow">CHINA MIRROR &amp; GITHUB RELEASES</span>
-              <h2 id="download-title">极速获取，<br>即刻开场。</h2>
-              <p class="download-lead">内置<strong>中国大陆双线公共加速镜像</strong>与 <strong>GitHub 官方源直连</strong>。所有通道指向同一官方构建产物，随时可核验 SHA-256 指纹。</p>
+            <dl class="release-facts">
+              <div>
+                <dt>最新版本</dt>
+                <dd id="release-tag">v1.1.0</dd>
+              </div>
+              <div>
+                <dt>发布日期</dt>
+                <dd id="release-date">2026-11-17</dd>
+              </div>
+              <div>
+                <dt>开源协议</dt>
+                <dd>GPL-3.0-only</dd>
+              </div>
+            </dl>
 
-              <div class="release-badge-box">
-                <span class="status-led" aria-hidden="true"></span>
+            <div class="invite-banner" id="harmony-invite-card">
+              <div class="invite-copy">
+                <span class="invite-badge">HarmonyOS 推荐</span>
+                <strong>华为应用市场 · 邀请测试</strong>
+                <p>手机与平板用户直接加入官方邀测，支持应用市场内一键更新。</p>
+              </div>
+              <a class="btn btn-sky" id="harmony-invite" href="https://appgallery.huawei.com/link/invite-test-wap?taskId=7181c9f3cfda4854dc2f0d8fec00ab40&amp;invitationCode=1Klp9jEJXOp" target="_blank" rel="noopener noreferrer">
+                打开应用市场 ↗
+              </a>
+            </div>
+          </div>
+
+          <div class="download-console reveal">
+            <div class="platform-tabs" role="tablist" aria-label="选择平台">
+              <button type="button" class="platform-tab is-active" role="tab" aria-selected="true" data-platform="windows">Windows</button>
+              <button type="button" class="platform-tab" role="tab" aria-selected="false" data-platform="android">Android</button>
+              <button type="button" class="platform-tab" role="tab" aria-selected="false" data-platform="harmony">HarmonyOS</button>
+            </div>
+
+            <div class="console-body">
+              <div class="console-head">
                 <div>
-                  <div class="release-status-text" id="release-status" role="status">v1.1.0 · 发布快照，正在同步 GitHub Releases…</div>
-                  <div class="release-sub-links">
-                    <a data-release-link href="https://github.com/YuriLin1028/LxMine/releases/latest" target="_blank" rel="noopener noreferrer">GitHub Releases 更新日志 ↗</a>
-                    <span aria-hidden="true">·</span>
-                    <a href="https://github.com/YuriLin1028/LxMine" target="_blank" rel="noopener noreferrer">访问 GitHub 仓库主页 ↗</a>
-                  </div>
+                  <h3 id="platform-name">LxMine for Windows</h3>
+                  <p id="platform-req">Windows 10 / 11 · x64</p>
+                </div>
+                <span class="file-size" id="asset-size">112.3 MB</span>
+              </div>
+
+              <div class="variant-row" id="windows-variants" role="group" aria-label="Windows 安装包类型">
+                <button type="button" class="variant-chip is-active" data-variant="setup">安装版 Setup</button>
+                <button type="button" class="variant-chip" data-variant="portable">便携版 Portable</button>
+              </div>
+
+              <div class="mirror-group">
+                <span class="field-label">下载线路</span>
+                <div class="mirror-pills" role="radiogroup" aria-label="下载镜像线路">
+                  <button type="button" class="mirror-pill is-active" data-source="gh-proxy" role="radio" aria-checked="true">
+                    <span>GH-Proxy</span>
+                    <small>国内推荐</small>
+                  </button>
+                  <button type="button" class="mirror-pill" data-source="ghfast" role="radio" aria-checked="false">
+                    <span>GHFast</span>
+                    <small>备用加速</small>
+                  </button>
+                  <button type="button" class="mirror-pill" data-source="github" role="radio" aria-checked="false">
+                    <span>GitHub</span>
+                    <small>官方源站</small>
+                  </button>
                 </div>
               </div>
 
-              <div class="mirror-assurance">
-                <h3>中国大陆网络友好</h3>
-                <p>默认启用 <strong>GH-Proxy</strong> 高速镜像，并提供 <strong>GHFast</strong> 备用线路。若某一节点繁忙，一键切换即可满速下载，无需额外网络工具。</p>
-              </div>
-            </div>
+              <a class="btn btn-primary btn-full" id="download-button" href="https://gh-proxy.org/https://github.com/YuriLin1028/LxMine/releases/download/v1.1.0/LxMine-1.1.0-Setup.exe" rel="noopener noreferrer">
+                <span id="download-button-label">下载 Windows 安装版</span>
+                <span class="btn-arrow" aria-hidden="true">↓</span>
+              </a>
 
-            <!-- Right Column: Interactive Download Command Console -->
-            <div class="download-console">
-              <!-- Platform Tabs -->
-              <div class="platform-tabs" role="tablist" aria-label="选择下载平台">
-                <button type="button" id="tab-windows" role="tab" aria-selected="true" aria-controls="download-content" tabindex="0" data-platform="windows">
-                  <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M3 5.5L10.5 4.5V11.5H3V5.5ZM11.5 4.35L21 3V11.5H11.5V4.35ZM3 12.5H10.5V19.5L3 18.5V12.5ZM11.5 12.5H21V21L11.5 19.65V12.5Z"/></svg>
-                  <span>Windows</span>
-                </button>
-                <button type="button" id="tab-android" role="tab" aria-selected="false" aria-controls="download-content" tabindex="-1" data-platform="android">
-                  <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M17.6 9.48l1.84-3.18c.16-.31.04-.69-.26-.85a.637.637 0 0 0-.83.22l-1.88 3.24a11.463 11.463 0 0 0-8.94 0L5.65 5.67a.643.643 0 0 0-.87-.2c-.28.18-.37.54-.22.83L6.4 9.48A10.78 10.78 0 0 0 2 18h20a10.78 10.78 0 0 0-4.4-8.52zM8.5 15a1 1 0 1 1 0-2 1 1 0 0 1 0 2zm7 0a1 1 0 1 1 0-2 1 1 0 0 1 0 2z"/></svg>
-                  <span>Android</span>
-                </button>
-                <button type="button" id="tab-harmony" role="tab" aria-selected="false" aria-controls="download-content" tabindex="-1" data-platform="harmony">
-                  <svg viewBox="0 0 24 24" aria-hidden="true"><circle cx="12" cy="11" r="6.5" fill="none" stroke="currentColor" stroke-width="2"/><path d="M5 19.5h14" stroke="currentColor" stroke-width="2" stroke-linecap="round"/></svg>
-                  <span>HarmonyOS</span>
-                </button>
-              </div>
+              <p class="platform-note" id="platform-note">安装包尚未进行商业代码签名，Windows 可能提示“未知发布者”，可放心继续运行。</p>
 
-              <!-- Active Tab Panel -->
-              <div id="download-content" role="tabpanel" aria-labelledby="tab-windows" tabindex="0">
-                <div class="console-header">
-                  <div>
-                    <h3 id="platform-name">LxMine for Windows</h3>
-                    <p id="platform-requirements">Windows 10 / 11 · x64</p>
-                  </div>
-                  <span class="version-pill" data-release-version>v1.1.0</span>
-                </div>
-
-                <!-- Windows Variant Toggle -->
-                <div class="variant-options" id="variant-options" role="group" aria-label="Windows 安装方式">
-                  <button type="button" data-variant="setup" aria-pressed="true" class="is-selected">
-                    <strong>安装版 Setup.exe</strong>
-                    <span>向导安装 · 自动创建快捷方式</span>
-                  </button>
-                  <button type="button" data-variant="portable" aria-pressed="false">
-                    <strong>便携版 Portable.exe</strong>
-                    <span>免安装单文件 · 即点即用</span>
-                  </button>
-                </div>
-
-                <!-- HarmonyOS AppGallery Invite Test Highlight Card -->
-                <div class="invite-banner" id="harmony-invite-card" hidden>
-                  <div class="invite-banner__top">
-                    <span class="invite-badge">免签名推荐 · 手机 / 平板 / 2in1</span>
-                    <span class="invite-quota">名额 10,000 人</span>
-                  </div>
-                  <p>鸿蒙手机与平板用户可直接加入<strong>华为应用市场 1.1.0 官方邀请测试</strong>，无需电脑签名即可安装与更新：</p>
-                  <div class="invite-actions">
-                    <a class="btn-invite" id="harmony-invite" href="https://appgallery.huawei.com/link/invite-test-wap?taskId=7181c9f3cfda4854dc2f0d8fec00ab40&amp;invitationCode=1Klp9jEJXOp" target="_blank" rel="noopener noreferrer">打开华为应用市场邀请测试 ↗</a>
-                    <button type="button" class="btn-copy-invite" id="copy-invite-link">复制邀请链接（供鸿蒙浏览器打开）</button>
-                  </div>
-                  <span class="copy-feedback" id="invite-copy-status" role="status"></span>
-                </div>
-
-                <!-- Mainland China Mirror Selector Cards (Synced with #download-source) -->
-                <div class="mirror-selector-head">
-                  <label class="source-label" for="download-source">选择下载线路（支持中国大陆免代理直连）</label>
-                </div>
-
-                <div class="mirror-cards" role="radiogroup" aria-label="下载加速线路">
-                  <button type="button" class="mirror-card is-selected" data-source-card="gh-proxy" role="radio" aria-checked="true">
-                    <span class="mirror-card__badge">国内推荐</span>
-                    <strong>中国大陆加速 · GH-Proxy</strong>
-                    <span>公共镜像高速转发</span>
-                  </button>
-                  <button type="button" class="mirror-card" data-source-card="ghfast" role="radio" aria-checked="false">
-                    <span class="mirror-card__badge">国内备用</span>
-                    <strong>中国大陆加速 · GHFast</strong>
-                    <span>备用镜像容灾节点</span>
-                  </button>
-                  <button type="button" class="mirror-card" data-source-card="github" role="radio" aria-checked="false">
-                    <span class="mirror-card__badge">官方源站</span>
-                    <strong>GitHub 官方直连</strong>
-                    <span>海外及直连环境推荐</span>
-                  </button>
-                </div>
-
-                <!-- Accessible Native Select Fallback (Synced) -->
-                <select id="download-source" class="sr-select" aria-label="下载线路选择">
-                  <option value="gh-proxy">大陆加速 · GH-Proxy</option>
-                  <option value="ghfast">大陆加速 · GHFast 备用</option>
-                  <option value="github">GitHub 官方直连</option>
-                </select>
-
-                <!-- Primary Download CTA -->
-                <a id="download-button" class="download-cta" href="https://gh-proxy.org/https://github.com/YuriLin1028/LxMine/releases/download/v1.1.0/LxMine-1.1.0-Setup.exe" rel="noopener noreferrer">
-                  <span class="download-cta__label">下载 Windows 安装版</span>
-                  <span class="download-cta__arrow" aria-hidden="true">↓</span>
-                </a>
-
-                <!-- File Meta & All-Mirrors Instant Links -->
-                <div class="download-meta-bar" aria-live="polite">
-                  <div class="file-meta">
-                    <span id="file-name" class="mono">LxMine-1.1.0-Setup.exe</span>
-                    <span id="file-size" class="size-tag">112.3 MB</span>
-                  </div>
-                  <div class="quick-links">
-                    <a id="mirror-ghproxy-link" href="https://gh-proxy.org/https://github.com/YuriLin1028/LxMine/releases/download/v1.1.0/LxMine-1.1.0-Setup.exe" rel="noopener noreferrer">GH-Proxy</a>
-                    <span aria-hidden="true">/</span>
-                    <a id="mirror-ghfast-link" href="https://ghfast.top/https://github.com/YuriLin1028/LxMine/releases/download/v1.1.0/LxMine-1.1.0-Setup.exe" rel="noopener noreferrer">GHFast</a>
-                    <span aria-hidden="true">/</span>
-                    <a id="direct-link" href="https://github.com/YuriLin1028/LxMine/releases/download/v1.1.0/LxMine-1.1.0-Setup.exe">GitHub 直连 ↗</a>
-                  </div>
-                </div>
-
-                <p id="platform-note" class="platform-note">安装包尚未进行商业代码签名，Windows SmartScreen 若提示“未知发布者”，点击“更多信息 → 仍要运行”即可。</p>
-
-                <!-- SHA-256 Verifier -->
-                <details class="checksum-box">
-                  <summary>核验文件 SHA-256 数字指纹</summary>
-                  <p>以下 SHA-256 哈希值同步自 GitHub Release 官方构建记录，镜像下载与直连下载完全一致：</p>
+              <details class="checksum-box">
+                <summary>文件详情与 SHA-256 校验</summary>
+                <div class="checksum-content">
                   <div class="checksum-row">
-                    <code id="file-checksum">fb2b31321b190e89bcf1409265e523fc19447297d7f4468fb705c74de849d8ec</code>
-                    <button type="button" id="copy-checksum">复制 SHA-256</button>
+                    <span>文件名</span>
+                    <code id="asset-name">LxMine-1.1.0-Setup.exe</code>
                   </div>
-                  <span id="copy-status" class="copy-feedback" role="status"></span>
-                </details>
-              </div>
-
-              <noscript>
-                <p class="noscript-note">当前浏览器未启用脚本，你仍可直接上方点击下载，或前往 <a href="https://github.com/YuriLin1028/LxMine/releases/latest">GitHub Releases</a> 获取全部平台安装包。</p>
-              </noscript>
+                  <div class="checksum-row">
+                    <span>SHA-256</span>
+                    <code id="asset-digest">—</code>
+                  </div>
+                  <div class="checksum-actions">
+                    <button type="button" class="text-link" id="copy-digest">复制 SHA-256</button>
+                    <a class="text-link" id="release-page-link" href="https://github.com/YuriLin1028/LxMine/releases/tag/v1.1.0" target="_blank" rel="noopener noreferrer">前往 GitHub Release ↗</a>
+                  </div>
+                </div>
+              </details>
             </div>
           </div>
-        </div>
-      </div>
-    </section>
-
-    <!-- ==================== FAQ & OPEN-SOURCE UPSTREAM ==================== -->
-    <section class="section wrap faq-section" aria-labelledby="faq-title">
-      <div class="faq-layout">
-        <div class="faq-intro reveal">
-          <span class="eyebrow">BEFORE YOU PLAY</span>
-          <h2 id="faq-title">常见问题<br>与开源致谢。</h2>
-          <p>LxMine 站在开源社区的肩膀上诞生，坚持透明、克制与纯粹的本地掌控权。</p>
-
-          <div class="upstream-cards">
-            <a class="upstream-card" href="https://github.com/lyswhut/lx-music-desktop" target="_blank" rel="noopener noreferrer">
-              <div>
-                <strong>LX Music（洛雪音乐助手）</strong>
-                <span>自定义音源协议、公开搜索与歌单能力基石</span>
-              </div>
-              <span aria-hidden="true">↗</span>
-            </a>
-            <a class="upstream-card" href="https://github.com/XxHuberrr/Mineradio-paused" target="_blank" rel="noopener noreferrer">
-              <div>
-                <strong>Mineradio</strong>
-                <span>沉浸桌面舞台、粒子地形与电影镜头系统基座</span>
-              </div>
-              <span aria-hidden="true">↗</span>
-            </a>
-            <a class="upstream-card upstream-card--self" href="https://github.com/YuriLin1028/LxMine" target="_blank" rel="noopener noreferrer">
-              <div>
-                <strong>YuriLin1028 / LxMine</strong>
-                <span>在 GitHub 点亮 Star、查阅源码或提交 Issue</span>
-              </div>
-              <span aria-hidden="true">★ ↗</span>
-            </a>
-          </div>
-        </div>
-
-        <div class="faq-list">
-          <details class="faq-item reveal" open>
-            <summary>第一次打开 LxMine，如何导入音源开始听歌？</summary>
-            <p>打开应用后进入「<strong>设置 → 音源</strong>」，多选导入你自行获取的 LX Music 兼容 <code>.js</code> 或 <code>.txt</code> 自定义音源脚本，启用后即可跨平台搜索与播放。本官网与所有安装包均不内置、不分发任何第三方音源脚本。</p>
-          </details>
-
-          <details class="faq-item reveal">
-            <summary>中国大陆下载缓慢或无法访问 GitHub 怎么办？</summary>
-            <p>下载面板默认已选中「<strong>中国大陆加速 · GH-Proxy</strong>」镜像通道，无需任何代理即可高速下载。如遇晚高峰拥堵，一键切换至「<strong>GHFast 备用镜像</strong>」即可；下载后可展开 SHA-256 指纹进行一致性校验。</p>
-          </details>
-
-          <details class="faq-item reveal">
-            <summary>HarmonyOS 手机、平板与车机分别推荐哪种安装方式？</summary>
-            <p><strong>手机 / 平板 / 2in1 用户</strong>优先推荐点击下载区的「<strong>华为应用市场 1.1.0 邀请测试</strong>」（用鸿蒙系统自带浏览器打开链接），免签名一键安装更新。<strong>车机 HiCar 或本地折腾用户</strong>可下载未签名 <code>HiCar-unsigned.hap</code>，使用自动签名工具或 DevEco Studio 签名后安装，详阅 <a href="https://github.com/YuriLin1028/LxMine#安装" target="_blank" rel="noopener noreferrer">GitHub 仓库安装指南</a>。</p>
-          </details>
-
-          <details class="faq-item reveal">
-            <summary>在哪里反馈问题、查看源码或参与贡献？</summary>
-            <p>全部客户端与光学材质标准包源码均托管于 <a href="https://github.com/YuriLin1028/LxMine" target="_blank" rel="noopener noreferrer">GitHub (YuriLin1028/LxMine)</a>。遇到问题欢迎前往 <a href="https://github.com/YuriLin1028/LxMine/issues" target="_blank" rel="noopener noreferrer">GitHub Issues</a> 附上系统版本与复现步骤，也欢迎提交 Pull Request 共建。</p>
-          </details>
         </div>
       </div>
     </section>
   </main>
 
-  <!-- ==================== FOOTER ==================== -->
-  <footer class="site-footer wrap">
-    <div class="footer-main">
-      <div class="footer-brand-col">
-        <a class="brand" href="#">
-          <img src="./assets/icon.png" width="34" height="34" alt="">
-          <span class="brand-name">LxMine</span>
-        </a>
-        <p class="footer-tagline">跨端开源音乐播放器 · 让每一首歌都拥有自己的光感舞台。</p>
+  <footer class="footer">
+    <div class="container footer-inner">
+      <div class="footer-brand">
+        <img src="./assets/icon.png" width="24" height="24" alt="">
+        <span>LxMine</span>
       </div>
-
-      <div class="footer-nav-cols">
-        <div>
-          <h4>获取软件</h4>
-          <a href="#download" data-jump-platform="windows">Windows 安装版 / 便携版</a>
-          <a href="#download" data-jump-platform="android">Android 原生 APK</a>
-          <a href="#download" data-jump-platform="harmony">HarmonyOS 邀请测试 &amp; HAP</a>
-        </div>
-        <div>
-          <h4>GitHub 与开源</h4>
-          <a href="https://github.com/YuriLin1028/LxMine" target="_blank" rel="noopener noreferrer">GitHub 源码仓库 ↗</a>
-          <a href="https://github.com/YuriLin1028/LxMine/releases/latest" target="_blank" rel="noopener noreferrer">Releases 历史版本 ↗</a>
-          <a href="https://github.com/YuriLin1028/LxMine/issues" target="_blank" rel="noopener noreferrer">Issues 问题反馈 ↗</a>
-          <a href="https://github.com/YuriLin1028/LxMine/blob/main/NOTICE.md" target="_blank" rel="noopener noreferrer">NOTICE 开源声明 ↗</a>
-        </div>
+      <p class="footer-copy">© 2026 咩霸与贡献者 · GPL-3.0-only</p>
+      <div class="footer-links">
+        <a href="https://github.com/YuriLin1028/LxMine" target="_blank" rel="noopener noreferrer">GitHub</a>
+        <a href="https://github.com/YuriLin1028/LxMine/releases" target="_blank" rel="noopener noreferrer">Releases</a>
+        <a href="https://github.com/YuriLin1028/LxMine/issues" target="_blank" rel="noopener noreferrer">反馈</a>
       </div>
-    </div>
-
-    <div class="footer-legal">
-      <p>© 2026 咩霸与贡献者 · GPL-3.0-only</p>
-      <p>衍生自 <a href="https://github.com/lyswhut/lx-music-desktop" target="_blank" rel="noopener noreferrer">LX Music</a> 与 <a href="https://github.com/XxHuberrr/Mineradio-paused" target="_blank" rel="noopener noreferrer">Mineradio</a>，与上游作者及各音乐平台无隶属或背书关系 · 本项目不托管任何音频内容。</p>
     </div>
   </footer>
+
+  <script type="module" src="./app.js"></script>
 </body>
 </html>
