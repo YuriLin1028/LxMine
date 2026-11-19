@@ -40,6 +40,15 @@ class DockVisualModel {
 struct DockPlaybackContent {
   @Consume('dockVisual') model: DockVisualModel;
   @State private playbackPressed: boolean = false;
+  private modeIcon(): Resource {
+    if (this.model.mode === '随机播放') return $r('app.media.ic_shuffle');
+    if (this.model.mode === '单曲循环') return $r('app.media.ic_repeat_one');
+    if (this.model.mode === '顺序播放') return $r('app.media.ic_order_seq');
+    return $r('app.media.ic_repeat');
+  }
+  private modeIconRaw(): boolean {
+    return this.model.mode === '单曲循环' || this.model.mode === '顺序播放';
+  }
   @Builder private moreMenu() {
     Menu() {
       MenuItem({ content: '播放顺序 · ' + this.model.mode }).onClick(() => this.model.onMode())
@@ -51,11 +60,11 @@ struct DockPlaybackContent {
     Row({ space: 3 }) {
       Stack() {
         Stack() {
-          SymbolGlyph($r('sys.symbol.music_note_list')).fontSize(18).fontColor([TEXT])
-          if (this.model.song?.coverUrl) { Image(this.model.song.coverUrl).width('100%').height('100%').objectFit(ImageFit.Cover).rotate({ angle: this.model.coverAngle }) }
+          Image($r('app.media.ic_music')).width(18).height(18).fillColor(TEXT)
+          if (this.model.song?.coverUrl) { Image(this.model.song.coverUrl).width('100%').height('100%').objectFit(ImageFit.Cover) }
         }.width(this.model.coverSize - 8).height(this.model.coverSize - 8).borderRadius(this.model.capsule ? 24 : 20).clip(true)
         Progress({ value: Math.min(this.model.positionMs, this.model.duration), total: Math.max(1, this.model.duration), type: ProgressType.Ring })
-          .width(this.model.coverSize).height(this.model.coverSize).color(new LinearGradient([{ color: '#F4D28A', offset: 0 }, { color: this.model.colorLast, offset: 1 }]))
+          .width(this.model.coverSize).height(this.model.coverSize).color(new LinearGradient([{ color: '#64D2FF', offset: 0 }, { color: this.model.colorLast, offset: 1 }]))
           .backgroundColor('#55FFFFFF').style({ strokeWidth: 3, enableSmoothEffect: true }).hitTestBehavior(HitTestMode.None)
       }.width(this.model.coverSize).height(this.model.coverSize).id('dock-cover').onClick(() => this.model.onPlayer()).accessibilityText('打开歌曲详情')
       Column({ space: 2 }) {
@@ -66,31 +75,33 @@ struct DockPlaybackContent {
         MaterialIcon({ icon: $r('app.media.ic_previous'), label: '上一首', diameter: 28, grouped: true, disabled: !this.model.song || this.model.busy, action: () => this.model.onNext(-1) }).id('dock-previous')
         MaterialIcon({ icon: this.model.playing ? $r('app.media.ic_pause') : $r('app.media.ic_play'), label: this.model.playing ? '暂停' : '播放', diameter: 34, grouped: true, disabled: this.model.busy || !this.model.song, action: () => this.model.onToggle() }).id('dock-play-toggle')
         MaterialIcon({ icon: $r('app.media.ic_next'), label: '下一首', diameter: 28, grouped: true, disabled: !this.model.song || this.model.busy, action: () => this.model.onNext(1) }).id('dock-next')
-        MaterialIcon({ icon: $r('app.media.ic_heart'), label: this.model.liked ? '取消喜欢' : '喜欢', diameter: 28, grouped: true, selected: this.model.liked, disabled: !this.model.song, action: () => this.model.onLike() }).id('dock-like')
-        MaterialIcon({ icon: this.model.mode === '随机播放' ? $r('app.media.ic_shuffle') : $r('app.media.ic_repeat'), label: '播放顺序：' + this.model.mode, diameter: 28, grouped: true, action: () => this.model.onMode() })
+        MaterialIcon({ icon: this.model.liked ? $r('app.media.ic_heart_fill') : $r('app.media.ic_heart'), tint: !this.model.liked, label: this.model.liked ? '取消喜欢' : '喜欢', diameter: 28, grouped: true, selected: this.model.liked, disabled: !this.model.song, action: () => this.model.onLike() }).id('dock-like')
+        MaterialIcon({ icon: this.modeIcon(), label: '播放顺序：' + this.model.mode, diameter: 28, grouped: true, action: () => this.model.onMode() })
         MaterialIcon({ icon: $r('app.media.ic_download'), label: '下载歌曲', diameter: 28, grouped: true, disabled: !this.model.song, action: () => this.model.onDownload() })
         MaterialIcon({ icon: $r('app.media.ic_queue'), label: '播放队列', diameter: 30, grouped: true, action: () => this.model.onQueue() }).id('dock-queue')
       } else {
-        MaterialIcon({ icon: $r('app.media.ic_heart'), label: this.model.liked ? '取消喜欢' : '喜欢', diameter: 26, grouped: true, selected: this.model.liked, disabled: !this.model.song, action: () => this.model.onLike() }).id('dock-like')
+        MaterialIcon({ icon: this.model.liked ? $r('app.media.ic_heart_fill') : $r('app.media.ic_heart'), tint: !this.model.liked, label: this.model.liked ? '取消喜欢' : '喜欢', diameter: 26, grouped: true, selected: this.model.liked, disabled: !this.model.song, action: () => this.model.onLike() }).id('dock-like')
         MaterialIcon({ icon: $r('app.media.ic_previous'), label: '上一首', diameter: 28, grouped: true, disabled: !this.model.song || this.model.busy, action: () => this.model.onNext(-1) }).id('dock-previous')
         MaterialIcon({ icon: this.model.playing ? $r('app.media.ic_pause') : $r('app.media.ic_play'), label: this.model.playing ? '暂停' : '播放', diameter: 34, grouped: true, disabled: this.model.busy || !this.model.song, action: () => this.model.onToggle() }).id('dock-play-toggle')
         MaterialIcon({ icon: $r('app.media.ic_next'), label: '下一首', diameter: 28, grouped: true, disabled: !this.model.song || this.model.busy, action: () => this.model.onNext(1) }).id('dock-next')
         if (this.model.wideControls) {
-          MaterialIcon({ icon: this.model.mode === '随机播放' ? $r('app.media.ic_shuffle') : $r('app.media.ic_repeat'), label: '播放顺序：' + this.model.mode, diameter: 30, grouped: true, action: () => this.model.onMode() })
+          MaterialIcon({ icon: this.modeIcon(), label: '播放顺序：' + this.model.mode, diameter: 30, grouped: true, action: () => this.model.onMode() })
           MaterialIcon({ icon: $r('app.media.ic_download'), label: '下载歌曲', diameter: 30, grouped: true, disabled: !this.model.song, action: () => this.model.onDownload() })
           MaterialIcon({ icon: $r('app.media.ic_queue'), label: '播放队列', diameter: 30, grouped: true, action: () => this.model.onQueue() }).id('dock-queue')
         } else {
           Button({ type: ButtonType.Circle }) {
-            SymbolGlyph($r('sys.symbol.ellipsis_circle')).fontSize(20).fontColor([TEXT])
+            Image($r('app.media.ic_more')).width(20).height(20).fillColor(TEXT)
           }.width(28).height(34).padding(0).stateEffect(false).buttonStyle(ButtonStyleMode.TEXTUAL).backgroundColor(Color.Transparent)
             .systemMaterial(uiMaterial.Material.empty).accessibilityText('更多播放操作').bindMenu(this.moreMenu()).id('dock-more')
         }
       }
     }.width(this.model.playbackWidth).height(this.model.playbackHeight).padding({ left: 6, right: 6 }).borderRadius(28)
       .backgroundColor(Color.Transparent).systemMaterial(musicSurfaceMaterial()).clip(false).id('dock-playback')
+      .hitTestBehavior(HitTestMode.Default)
       .position({ x: 16, y: 16 })
       .scale({ x: this.playbackPressed ? MATERIAL_PRESS_SCALE : 1, y: this.playbackPressed ? MATERIAL_PRESS_SCALE : 1 })
       .animation({ curve: curves.springMotion(0.46, 0.82) })
+      .onClick(() => {})
       .onTouch((event: TouchEvent) => {
         if (event.type === TouchType.Down) this.playbackPressed = true;
         else if (event.type === TouchType.Up || event.type === TouchType.Cancel) this.playbackPressed = false;
@@ -110,12 +121,12 @@ struct DockNavigationContent {
     Button({ type: ButtonType.Normal }) {
       if (this.model.collapsed) {
         Stack({ alignContent: Alignment.Center }) {
-          SymbolGlyph(this.model.tab === '发现' ? $r('sys.symbol.house') : this.model.tab === '资料库' ? $r('sys.symbol.square_grid_2x2') : $r('sys.symbol.gearshape'))
-            .fontSize(24).fontColor([ACCENT])
+          Image(this.model.tab === '发现' ? $r('app.media.ic_home') : this.model.tab === '资料库' ? $r('app.media.ic_library') : $r('app.media.ic_settings'))
+            .width(24).height(24).fillColor(ACCENT)
         }.width(56).height(56)
       } else {
         Column({ space: 2 }) {
-          SymbolGlyph(icon).fontSize(20).fontColor([this.model.tab === target ? ACCENT : TEXT])
+          Image(icon).width(20).height(20).fillColor(this.model.tab === target ? ACCENT : TEXT)
           Text(label).fontSize(8).fontColor(this.model.tab === target ? ACCENT : MUTED)
         }
       }
@@ -132,9 +143,9 @@ struct DockNavigationContent {
   build() {
     Stack({ alignContent: Alignment.TopStart }) {
     Stack({ alignContent: Alignment.TopStart }) {
-      this.navButton('发现', '首页', $r('sys.symbol.house'), 0)
-      this.navButton('资料库', '歌单库', $r('sys.symbol.square_grid_2x2'), 1)
-      this.navButton('设置', '设置', $r('sys.symbol.gearshape'), 2)
+      this.navButton('发现', '首页', $r('app.media.ic_home'), 0)
+      this.navButton('资料库', '曲库', $r('app.media.ic_library'), 1)
+      this.navButton('设置', '设置', $r('app.media.ic_settings'), 2)
     }.onTouch((event: TouchEvent) => {
       if (event.type === TouchType.Down) {
         this.navPressed = true; this.navTap = true; this.navDragging = false;
@@ -202,8 +213,8 @@ export struct DockLayer {
   @Prop @Watch('inputsChanged') song: Song | null = null;
   @Prop @Watch('inputsChanged') tab: string = '发现';
   @Prop @Watch('inputsChanged') gripSide: GripSide = 'center';
-  @Prop @Watch('spinChanged') playing: boolean = false;
-  @StorageProp('lxliaForeground') @Watch('spinChanged') private foreground: boolean = true;
+  @Prop @Watch('inputsChanged') playing: boolean = false;
+  @StorageProp('lxliaForeground') private foreground: boolean = true;
   @Prop @Watch('inputsChanged') busy: boolean = false;
   @Prop @Watch('inputsChanged') availableWidth: number = 400;
   @Prop @Watch('inputsChanged') landscape: boolean = false;
@@ -231,7 +242,6 @@ export struct DockLayer {
   @State private scrubbing: boolean = false;
   @State private seekValue: number = 0;
   private seekSong: string = '';
-  private spinTimer: number = -1;
   aboutToAppear(): void {
     this.model.onPlayer = () => this.onPlayer();
     this.model.onToggle = () => this.onToggle();
@@ -243,9 +253,7 @@ export struct DockLayer {
     this.model.onTab = (tab: string) => this.onTab(tab);
     this.model.onExpand = () => this.onExpand();
     this.inputsChanged();
-    this.spinChanged();
   }
-  aboutToDisappear(): void { clearTimeout(this.spinTimer); }
   private inputsChanged(): void {
     this.model.song = this.song; this.model.tab = this.tab;
     this.model.playing = this.playing; this.model.busy = this.busy;
@@ -254,15 +262,6 @@ export struct DockLayer {
     this.model.playbackWidth = this.barWidth(); this.model.playbackHeight = this.barHeight();
     this.model.coverSize = this.coverSize(); this.model.capsule = this.capsule();
     this.model.wideControls = this.wideControls(); this.model.collapsed = this.collapsed(); this.model.navWidth = this.navWidth();
-  }
-  private spinChanged(): void {
-    this.inputsChanged();
-    clearTimeout(this.spinTimer);
-    if (!this.playing || !this.foreground) return;
-    this.spinTimer = setTimeout(() => {
-      this.getUIContext().animateTo({ duration: 100, curve: Curve.Linear }, () => { this.model.coverAngle += 1.5; });
-      this.spinChanged();
-    }, 100);
   }
   private centered(): boolean { return this.searchOpen || this.secondary || this.detail; }
   // 左右分体停靠只在放得下时启用：分体需要 16+240（导航）+16+520（播放栏下限）

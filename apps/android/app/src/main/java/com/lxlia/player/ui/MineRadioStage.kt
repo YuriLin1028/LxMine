@@ -49,6 +49,7 @@ fun MineRadioStage(
     lyricColorMode: String,
     lyricPrimary: String,
     lyricSecondary: String,
+    lyricScale: Float = 1f,
     mode: String,
     light: Boolean,
     duration: Long,
@@ -152,6 +153,7 @@ fun MineRadioStage(
             data.put("cover", app.server.coverProxy(song.coverUrl))
             data.put("duration", duration)
             data.put("lyricOffset", lyricOffset)
+            data.put("lyricScale", lyricScale.coerceIn(0.75f, 1.40f).toDouble())
             data.put("topInset", topInset)
             data.put("bottomInset", bottomInset)
             val pushKey = data.toString()
@@ -166,8 +168,8 @@ fun MineRadioStage(
     // current presentation/metadata when a cached page finishes loading late.
     val latestPush = rememberUpdatedState<(WebView?, Boolean, Boolean) -> Unit> { target, metadata, clock -> push(target, metadata, clock) }
 
-    // 元数据变化（换歌/换词/换配色）时整体下发；时钟按播放状态与进度跳变下发。
-    LaunchedEffect(ready, song.key, audioUrl, lines, translationLines, lyricColorMode, lyricPrimary, lyricSecondary, mode, light, duration, lyricOffset, topInset, bottomInset) {
+    // 元数据变化（换歌/换词/换配色/字号）时整体下发；时钟按播放状态与进度跳变下发。
+    LaunchedEffect(ready, song.key, audioUrl, lines, translationLines, lyricColorMode, lyricPrimary, lyricSecondary, lyricScale, mode, light, duration, lyricOffset, topInset, bottomInset) {
         if (!ready) return@LaunchedEffect
         push(webView, metadata = true, clock = true)
     }

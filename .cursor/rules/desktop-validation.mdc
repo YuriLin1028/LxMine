@@ -1,0 +1,10 @@
+---
+description: LxMine Windows 项目的源码与控件验收方式
+globs: apps/desktop/**
+alwaysApply: false
+---
+
+# Windows 验收
+
+- 使用项目源码、Electron API、Playwright 和应用现有控件接口进行 Windows 调试与验收。
+- 用户要求 Windows 开发验收避免使用 Computer Use。

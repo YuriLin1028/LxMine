@@ -1,5 +1,5 @@
 import { uiMaterial } from '@kit.ArkUI';
-import { TEXT } from './Theme';
+import { TEXT, ACCENT, ON_ACCENT } from './Theme';
 import { MATERIAL_PRESS_SCALE, musicMaterial, MaterialSurface } from './MaterialControls';
 
 // 华为音乐样式的首页快捷胶囊：点击滚动到对应板块，白色常驻为当前所在板块。
@@ -34,13 +34,14 @@ export struct HomeChips {
             Button({ type: ButtonType.Capsule }) {
               Row({ space: 5 }) {
                 Image(chip.anchor === this.active ? chip.iconOn : chip.icon).width(16).height(16)
+                  .fillColor(chip.anchor === this.active ? ON_ACCENT : TEXT)
                 if (!this.labelsHidden()) {
-                  Text(chip.label).fontSize(14).maxLines(1).fontColor(chip.anchor === this.active ? '#08090B' : TEXT)
+                  Text(chip.label).fontSize(14).maxLines(1).fontColor(chip.anchor === this.active ? ON_ACCENT : TEXT)
                 }
               }.justifyContent(FlexAlign.Center)
             }.layoutWeight(1).height(40).padding({ left: 4, right: 4 }).stateEffect(false)
-              .fontColor(chip.anchor === this.active ? '#08090B' : TEXT)
-              .backgroundColor(chip.anchor === this.active ? '#F2F1F7' : Color.Transparent)
+              .fontColor(chip.anchor === this.active ? ON_ACCENT : TEXT)
+              .backgroundColor(chip.anchor === this.active ? ACCENT : Color.Transparent)
               .systemMaterial(chip.anchor === this.active ? uiMaterial.Material.empty : musicMaterial())
               .scale({ x: this.pressed === chip.anchor ? MATERIAL_PRESS_SCALE : 1, y: this.pressed === chip.anchor ? MATERIAL_PRESS_SCALE : 1 })
               .animation({ duration: 150, curve: Curve.EaseOut })

@@ -26,10 +26,11 @@ export struct FeedSectionPage {
   onPlaySongs: (songs: Song[]) => void = () => {};
   @Prop statusInset: number = 28;
   @Prop bottomInset: number = 16;
+  @Prop likedSignature: string = '';
   onOpenLocal: (playlist: MusicPlaylist) => void = () => {};
   onScroll: (offset: number) => void = () => {};
   // 歌曲行统一走标准 SongRow（与歌单详情一致），这些回调供其操作按钮使用。
-  selectedKey: string = '';
+  @Prop selectedKey: string = '';
   likedSong: (song: Song) => boolean = () => false;
   onLikeSong: (song: Song) => void = () => {};
   onAddToPlaylist: (song: Song) => void = () => {};
@@ -40,8 +41,8 @@ export struct FeedSectionPage {
   @State private orderSongs: Song[] = [];
   private orderedSongs(): Song[] { return orderSongList(this.songs, this.sortMode, this.manualOrder); }
   private static readonly GRADS: string[][] = [
-    ['#2E3A8C', '#6C4AB6'], ['#0F6F5C', '#3FA796'], ['#8C2E2E', '#C76B4A'],
-    ['#3C5A99', '#7FA8E0'], ['#6A3A8C', '#B84AB6'], ['#8C6A1E', '#D9B24A'],
+    ['#1E3A8A', '#38BDF8'], ['#0F6F5C', '#3FA796'], ['#312E81', '#818CF8'],
+    ['#164E63', '#22D3EE'], ['#4C1D95', '#A78BFA'], ['#0C4A6E', '#60A5FA'],
   ];
   private gradFor(name: string): string[] {
     let hash = 0;
@@ -82,8 +83,14 @@ export struct FeedSectionPage {
   @Builder private localCard(playlist: MusicPlaylist) {
     Column({ space: 8 }) {
       Stack() {
-        SymbolGlyph(playlist.isFavorite ? $r('sys.symbol.heart') : $r('sys.symbol.music_note_list')).fontSize(34).fontColor([ACCENT])
-        if (playlist.songs?.[0]?.coverUrl) { Image(playlist.songs[0].coverUrl).width('100%').height('100%').objectFit(ImageFit.Cover) }
+        if (playlist.isFavorite) {
+          Image($r('app.media.ic_heart_fill')).width(34).height(34)
+        } else {
+          Image($r('app.media.ic_music')).width(34).height(34).fillColor(ACCENT)
+        }
+        if ((playlist.songs ?? []).some((s: Song) => s.coverUrl.length > 0)) {
+          Image((playlist.songs ?? []).find((s: Song) => s.coverUrl.length > 0)!.coverUrl).width('100%').height('100%').objectFit(ImageFit.Cover)
+        }
       }.width('100%').aspectRatio(1).borderRadius(14).clip(true).backgroundColor('#17191C')
       Text(playlist.name).fontSize(13).fontColor(TEXT).maxLines(1).textOverflow({ overflow: TextOverflow.Ellipsis }).width('100%')
       Text(`${playlist.songs?.length ?? playlist.songIds?.length ?? 0} 首歌曲`).fontSize(10).fontColor(MUTED).width('100%')
@@ -100,12 +107,12 @@ export struct FeedSectionPage {
             onSort: (mode: string) => { this.sortMode = mode; },
             onManual: () => { this.orderSongs = this.orderedSongs(); this.orderOpen = true; } })
           Column({ space: 8 }) {
-            ForEach(this.orderedSongs(), (song: Song) => { this.songRow(song) }, (song: Song) => song.source + ':' + song.id)
+            ForEach(this.orderedSongs(), (song: Song) => { this.songRow(song) }, (song: Song) => `${song.source}:${song.id}|${song.coverUrl ?? ''}`)
           }.width('100%')
         }
         if (this.playlists.length) {
           Flex({ wrap: FlexWrap.Wrap, justifyContent: FlexAlign.SpaceBetween, space: { main: LengthMetrics.vp(10), cross: LengthMetrics.vp(18) } }) {
-            ForEach(this.playlists, (item: FeedPlaylist) => { this.feedCard(item) }, (item: FeedPlaylist) => item.id)
+            ForEach(this.playlists, (item: FeedPlaylist) => { this.feedCard(item) }, (item: FeedPlaylist) => `${item.id}|${item.cover ?? ''}|${item.count}`)
           }.width('100%')
         }
         if (this.localPlaylists.length) {
@@ -125,7 +132,7 @@ export struct FeedSectionPage {
         }
       }.width('100%').constraintSize({ maxWidth: 1000 }).padding({ left: this.wide ? 32 : 20, right: this.wide ? 32 : 20, top: this.contentTop + 16, bottom: 180 }).alignItems(HorizontalAlign.Start)
       }.width('100%').justifyContent(FlexAlign.Center).alignItems(VerticalAlign.Top)
-    }.width('100%').height('100%').scrollBar(BarState.Off).edgeEffect(EdgeEffect.Spring)
+    }.width('100%').height('100%').align(Alignment.TopStart).scrollBar(BarState.Off).edgeEffect(EdgeEffect.Spring)
       .onDidScroll((x: number, y: number, state: ScrollState) => { if (state !== ScrollState.Idle) this.onScroll(this.scroller.currentOffset().yOffset); })
       if (this.orderOpen) {
         SongOrderDialog({ songs: this.orderSongs, wide: this.wide, statusInset: this.statusInset, bottomInset: this.bottomInset,

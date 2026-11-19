@@ -1,13 +1,18 @@
 package com.lxlia.player
 
+import com.lxlia.player.lx.HomeFeedApi
 import com.lxlia.player.lx.LyricParser
 import com.lxlia.player.model.HomeFeed
 import com.lxlia.player.model.LyricLine
 import com.lxlia.player.model.MusicPlaylist
 import com.lxlia.player.model.Song
 import com.lxlia.player.model.SyncSourcePayload
+import com.lxlia.player.ui.LyricPreferences
+import com.lxlia.player.ui.MULTICOLOR_ASSET_ICONS
 import com.lxlia.player.ui.orderSongList
 import com.lxlia.player.ui.parseLyricOffset
+import com.lxlia.player.ui.parsePlaylists
+import com.lxlia.player.ui.playModeIcon
 import com.lxlia.player.ui.stageBridgeCall
 import com.lxlia.player.ui.supportsFullLiquidGlass
 import org.json.JSONArray
@@ -175,5 +180,79 @@ class LogicTest {
         val unique = uniqueSyncSources(sources)
         assertEquals(3, unique.map { it.id }.toSet().size)
         assertEquals(listOf("a", "b", "c"), unique.map { it.script })
+    }
+
+    @Test
+    fun playModeIconsCoverAllFourModes() {
+        assertEquals("ic_repeat.svg", playModeIcon("列表循环"))
+        assertEquals("ic_repeat_one.svg", playModeIcon("单曲循环"))
+        assertEquals("ic_shuffle.svg", playModeIcon("随机播放"))
+        assertEquals("ic_order_seq.svg", playModeIcon("顺序播放"))
+    }
+
+    @Test
+    fun lyricPreferencesRoundTripsAndClampsLyricScale() {
+        val defaults = LyricPreferences()
+        assertEquals("#7DD3FC", defaults.primary)
+        assertEquals("#A5B4FC", defaults.secondary)
+
+        val prefs = LyricPreferences(lyricScale = 1.25f, showTranslation = true, showRomaji = true)
+        val restored = LyricPreferences.fromJson(prefs.toJson().toString())
+        assertEquals(1.25f, restored.lyricScale, 0.001f)
+        assertTrue(restored.showRomaji)
+        assertEquals(0.75f, LyricPreferences.fromJson("""{"lyricScale":0.2}""").lyricScale, 0.001f)
+        assertEquals(1.40f, LyricPreferences.fromJson("""{"lyricScale":2.5}""").lyricScale, 0.001f)
+
+        val legacyHex = "#" + "F4D2" + "8A"
+        val legacySage = "#" + "8FB2" + "A6"
+        val migrated = LyricPreferences.fromJson("""{"colorMode":"cover-gradient","primary":"$legacyHex","secondary":"$legacySage"}""")
+        assertEquals("#7DD3FC", migrated.primary)
+        assertEquals("#A5B4FC", migrated.secondary)
+    }
+
+    @Test
+    fun personalizedTasteExtractsTopArtistsAndBlendsDaily30() {
+        val fav = MusicPlaylist(
+            id = "fav",
+            name = "我喜欢的",
+            isFavorite = true,
+            songs = listOf(
+                song("1", "晴天", "周杰伦"),
+                song("2", "七里香", "周杰伦"),
+                song("3", "泡沫", "邓紫棋"),
+            ),
+        )
+        val recent = listOf(
+            song("4", "光年之外", "邓紫棋"),
+            song("5", "江南", "林俊杰"),
+            song("6", "纯伴奏", "未知歌手"),
+        )
+        val topArtists = HomeFeedApi.extractTopTasteArtists(listOf(fav), recent, maxArtists = 3)
+        assertEquals(listOf("周杰伦", "邓紫棋", "林俊杰"), topArtists)
+
+        val base = (1..25).map { song("b-$it", "新歌$it", "歌手$it") }
+        val personal = (1..15).map { song("p-$it", "定制$it", "周杰伦") }
+        val blended = HomeFeedApi.blendPersonalizedDaily(base, personal, dayNumber = 20000L, targetCount = 30)
+        assertEquals(30, blended.size)
+        assertTrue(blended.any { it.id.startsWith("p-") })
+        assertTrue(blended.any { it.id.startsWith("b-") })
+
+        val rotated = HomeFeedApi.extractTopTasteArtists(listOf(fav), recent, maxArtists = 2, seedOffset = 1)
+        assertEquals(listOf("邓紫棋", "林俊杰"), rotated)
+    }
+
+    @Test
+    fun parsePlaylistsMarksNamedFavoriteAndMulticolorIconsAreProtected() {
+        val raw = JSONArray()
+            .put(JSONObject().put("id", "lx-custom").put("name", "我喜欢的").put("kind", "lx"))
+            .toString()
+        val parsed = parsePlaylists(raw)
+        assertEquals(1, parsed.size)
+        assertTrue(parsed[0].isFavorite)
+
+        assertTrue("ic_heart_fill.svg" in MULTICOLOR_ASSET_ICONS)
+        assertTrue("ic_style_wand.svg" in MULTICOLOR_ASSET_ICONS)
+        assertTrue("ic_sparkle.svg" in MULTICOLOR_ASSET_ICONS)
+        assertTrue("chip_music_on.svg" in MULTICOLOR_ASSET_ICONS)
     }
 }

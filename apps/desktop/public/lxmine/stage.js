@@ -3,15 +3,15 @@
    MineRadio engine so the new renderer stays small and predictable. */
 (function () {
   'use strict';
-  const stage = { ready: false, playing: false, style: 'mine-7', colors: ['#6f8f83', '#d8c07b', '#16252b'], intensity: 0 };
+  const stage = { ready: false, playing: false, style: 'mine-7', colors: ['#1e3a5f', '#64d2ff', '#172033'], intensity: 0 };
   let renderer, scene, camera, particles, hills, hillData = [], light, clock;
   let width = 1, height = 1, raf = 0, lastHill = 0;
   const COLORS = [
-    ['#6f8f83', '#d8c07b', '#16252b'],
-    ['#6a8fd8', '#e0b6ff', '#141a2d'],
-    ['#d8a06a', '#f4d28a', '#2a1813'],
-    ['#4fb7b2', '#c6f0e1', '#0c1d20'],
-    ['#c27b9b', '#f2c7d8', '#24131a']
+    ['#1e3a5f', '#64d2ff', '#172033'],
+    ['#2563eb', '#a5b4fc', '#111827'],
+    ['#0284c7', '#7dd3fc', '#0b192c'],
+    ['#0f766e', '#67e8f9', '#0c1d24'],
+    ['#4f46e5', '#c4b5fd', '#151329']
   ];
 
   function init(canvas) {
@@ -26,8 +26,8 @@
     camera.lookAt(0, -0.4, 0);
     clock = new THREE.Clock();
 
-    scene.add(new THREE.HemisphereLight(0xb9d6d0, 0x0a0c10, 0.55));
-    light = new THREE.PointLight(0xf4d28a, 1.6, 26, 2);
+    scene.add(new THREE.HemisphereLight(0xb9d6f0, 0x0a0c10, 0.55));
+    light = new THREE.PointLight(0x64d2ff, 1.6, 26, 2);
     light.position.set(0, 4.2, 2.4);
     scene.add(light);
     const back = new THREE.PointLight(0x6f9bd8, 0.9, 24, 2);
@@ -61,7 +61,7 @@
     }
     const geometry = new THREE.BufferGeometry();
     geometry.setAttribute('position', new THREE.BufferAttribute(positions, 3));
-    const material = new THREE.PointsMaterial({ color: 0xf4efe4, size: 0.055, transparent: true, opacity: 0.7, depthWrite: false, blending: THREE.AdditiveBlending });
+    const material = new THREE.PointsMaterial({ color: 0xe0f2fe, size: 0.055, transparent: true, opacity: 0.7, depthWrite: false, blending: THREE.AdditiveBlending });
     particles = new THREE.Points(geometry, material);
     scene.add(particles);
   }

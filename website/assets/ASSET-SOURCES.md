@@ -3,7 +3,8 @@
 - `lm-mark.svg` 来自项目的 `apps/desktop/build/lm-mark.svg`，为 LxMine 正式黑白 LM 标志。页头与页脚使用同一资产。
 - `icon.png` 来自 `apps/desktop/build/icon.png`，与已发布桌面应用的图标一致。
 - `lm-symbol.svg` 复用同一 LM 矢量路径，导出透明、紧裁切的展示版本。
-- `windows-home-1.1.0.png` 来自 `.runtime/promo-1.1.0/effectcraft-v3/fresh/windows-dark.png`，完整保留 Windows 1.1.0 首页截图。版本记录为同目录 `windows-version.json`，采集时间为北京时间 2026 年 11 月 18 日 00:15。
+- `windows-home-1.1.0.png` 与 `windows-home-1.1.0.webp` 来自 `.runtime/promo-1.1.0/effectcraft-v3/fresh/windows-dark.png`，完整保留 Windows 1.1.0 深色首页截图；`windows-light-1.1.0.webp` 来自同批次 `windows-light-110.png` 浅色首页截图。版本记录为同目录 `windows-version.json`，采集时间为北京时间 2026 年 11 月 18 日 00:15。
+- `harmony-home-1.1.0.webp` 与 `harmony-player-1.1.0.webp` 来自 `.runtime/promo-1.1.0/effectcraft-v3/assets/harmony-home-110.png` 与 `harmony-player-110.png` 实机截图转换；`harmony-phone-1.1.0.webp` 来自 `docs/assets/screenshots/phone-home.jpeg` 鸿蒙手机端首页实机截图转换。
 - `windows-stage-1.1.0.mp4` 与 `windows-lyrics-1.1.0.mp4` 从 `.runtime/promo-1.1.0/effectcraft-v3/assets/windows-player.mp4` 的最终横屏实机录屏裁切并压缩，分别展示 1.1.0 的粒子地形舞台与逐字歌词。最终源文件生成于北京时间 2026 年 11 月 17 日 23:58。录屏中的歌词为录制脚本创作的示例文字，两段网页视频均移除音轨。
 - `windows-stage-1.1.0.webp` 与 `windows-lyrics-1.1.0.webp` 为对应网页录屏的原始画面截帧。
 - `android-home-1.1.0.webp` 与 `android-lyrics-1.1.0.webp` 分别由 `.runtime/promo-1.1.0/effectcraft-v3/fresh/android-home.png` 与 `android-player.png` 转换格式。画面来自 Android 1.1.0 调试构建的模拟器实测，版本记录为同目录 `android-version.json`，采集时间为北京时间 2026 年 11 月 18 日 00:16。

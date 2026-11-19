@@ -143,6 +143,7 @@ function renderQualityProfile() {
   var quality = normalizePerformanceQuality(fx && fx.performanceQuality);
   var profile = (typeof runtimeHardwareProfile !== 'undefined' && runtimeHardwareProfile) ? runtimeHardwareProfile : null;
   var lowSpec = profile && profile.lowSpec;
+  if (typeof window !== 'undefined' && window.__LXMINE_NATIVE_STAGE && quality === 'eco') return { cap: 0.78, min: 0.48, budget: 540000 };
   if (quality === 'eco') return { cap: lowSpec ? 0.88 : 0.95, min: 0.52, budget: lowSpec ? 1900000 : 2400000 };
   if (quality === 'balanced') return { cap: lowSpec ? 0.98 : 1.12, min: 0.62, budget: lowSpec ? 2800000 : 3800000 };
   if (quality === 'ultra') return { cap: 1.75, min: 0.85, budget: 7800000 };

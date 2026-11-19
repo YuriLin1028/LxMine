@@ -21,12 +21,46 @@ internal object AppAppearance {
 val INK: Color get() = if (AppAppearance.light) Color(0xFFDCE0E5) else Color(0xFF151619)
 val TEXT: Color get() = if (AppAppearance.light) Color(0xFF17181A) else Color(0xFFF4F4F4)
 val MUTED: Color get() = if (AppAppearance.light) Color(0xFF565C65) else Color(0xFF9D9FA3)
-val ACCENT: Color get() = if (AppAppearance.light) Color(0xFF886020) else Color(0xFFF4D28A)
-val ON_ACCENT: Color get() = if (AppAppearance.light) Color.White else Color(0xFF17191C)
-// ArkUI's component-activated color is used by the system switch.
-val CONTROL_BLUE = Color(0xFF317AF7)
-// Textual list actions use the system action color.
-val BLUE: Color get() = if (AppAppearance.light) Color(0xFF235BB5) else Color(0xFF5E9FFF)
+val ACCENT: Color get() = if (AppAppearance.light) Color(0xFF38BDF8) else Color(0xFF64D2FF)
+val ON_ACCENT: Color get() = if (AppAppearance.light) Color.White else Color(0xFF081018)
+// 统一使用天蓝色主题，与底部栏高亮及首页快捷胶囊完全一致。
+val CONTROL_BLUE: Color get() = ACCENT
+val BLUE: Color get() = ACCENT
+// Solid liked heart tint across dock, lists, and player controls.
+val HEART_RED = Color(0xFFFF4D5A)
+
+private val GLACIAL_FALLBACK_GRADS = listOf(
+    listOf(Color(0xFF0B2B5B), Color(0xFF38BDF8)),
+    listOf(Color(0xFF162456), Color(0xFF64D2FF)),
+    listOf(Color(0xFF1E295E), Color(0xFF818CF8)),
+    listOf(Color(0xFF0D4A56), Color(0xFF2DD4BF)),
+    listOf(Color(0xFF1B3A73), Color(0xFF7DD3FC)),
+    listOf(Color(0xFF2B2467), Color(0xFFA5B4FC)),
+)
+
+fun glacialGradFor(name: String): List<Color> {
+    var hash = 0
+    for (char in name) hash = (hash * 31 + char.code) and 0x7FFFFFFF
+    return GLACIAL_FALLBACK_GRADS[hash % GLACIAL_FALLBACK_GRADS.size]
+}
+
+val MULTICOLOR_ASSET_ICONS = setOf(
+    "ic_heart_fill.svg",
+    "ic_style_wand.svg",
+    "ic_sparkle.svg",
+    "chip_music_on.svg",
+    "chip_library_on.svg",
+    "chip_queue_on.svg",
+    "chip_play_on.svg",
+    "chip_more_on.svg",
+)
+
+fun playModeIcon(mode: String): String = when (mode) {
+    "单曲循环" -> "ic_repeat_one.svg"
+    "随机播放" -> "ic_shuffle.svg"
+    "顺序播放" -> "ic_order_seq.svg"
+    else -> "ic_repeat.svg"
+}
 
 fun parseColor(value: String?, fallback: Color = Color.White): Color {
     if (value.isNullOrEmpty()) return fallback
@@ -75,18 +109,19 @@ fun formatPlayCount(count: Long): String = when {
     else -> ""
 }
 
-/** 资源目录里的 SVG/PNG 图标（与鸿蒙 media 目录同源）。 */
+/** 资源目录里的 SVG/PNG 图标（自带多色高光的 SVG 自动保留原色，不被单色滤镜覆盖）。 */
 @Composable
 fun AssetIcon(
     name: String,
     size: Dp,
     modifier: Modifier = Modifier,
-    tint: Color? = if (name.endsWith(".svg")) TEXT else null,
+    tint: Color? = if (name.endsWith(".svg") && name !in MULTICOLOR_ASSET_ICONS) TEXT else null,
     alpha: Float = 1f,
     systemSymbol: Boolean = true,
 ) {
     val context = LocalContext.current
-    val asset = if (!systemSymbol) name else when (name) {
+    val isMulticolor = name in MULTICOLOR_ASSET_ICONS || !name.endsWith(".svg")
+    val asset = if (!systemSymbol || isMulticolor) name else when (name) {
         "ic_settings.svg" -> "symbol_settings.svg"
         "ic_import.svg" -> "symbol_import.svg"
         "ic_shuffle.svg" -> "symbol_shuffle.svg"
@@ -97,12 +132,17 @@ fun AssetIcon(
         "ic_cast.svg" -> "symbol_cast.svg"
         else -> name
     }
+    val effectiveTint = if (isMulticolor) null else tint
     AsyncImage(
         model = remember(context, asset) {
-            ImageRequest.Builder(context).data("file:///android_asset/icons/$asset").crossfade(false).build()
+            ImageRequest.Builder(context)
+                .data("file:///android_asset/icons/$asset")
+                .memoryCacheKey("asset_icon:$asset")
+                .crossfade(false)
+                .build()
         },
         contentDescription = null,
-        colorFilter = tint?.let { ColorFilter.tint(it) },
+        colorFilter = effectiveTint?.let { ColorFilter.tint(it) },
         alpha = alpha,
         modifier = modifier.size(size),
     )

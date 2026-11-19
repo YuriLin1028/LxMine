@@ -23,10 +23,11 @@ export struct MineHome {
   @Prop feed: HomeFeed | null = null;
   @Prop platform: string = 'wy';
   onOpenFeed: (playlist: FeedPlaylist) => void = () => {};
-  onPlayFeedSong: (song: Song) => void = () => {};
+  onPlayFeedSong: (song: Song, queue: Song[]) => void = () => {};
   onPlaySongs: (songs: Song[]) => void = () => {};
   @Prop statusInset: number = 28;
   @Prop bottomInset: number = 16;
+  @Prop likedSignature: string = '';
   likedSong: (song: Song) => boolean = () => false;
   onLikeSong: (song: Song) => void = () => {};
   onAddToPlaylist: (song: Song) => void = () => {};
@@ -83,8 +84,8 @@ export struct MineHome {
     }
   }
   private static readonly GRADS: string[][] = [
-    ['#2E3A8C', '#6C4AB6'], ['#0F6F5C', '#3FA796'], ['#8C2E2E', '#C76B4A'],
-    ['#3C5A99', '#7FA8E0'], ['#6A3A8C', '#B84AB6'], ['#8C6A1E', '#D9B24A'],
+    ['#1E3A8A', '#38BDF8'], ['#0F6F5C', '#3FA796'], ['#312E81', '#818CF8'],
+    ['#164E63', '#22D3EE'], ['#4C1D95', '#A78BFA'], ['#1E293B', '#60A5FA'],
   ];
   private gradFor(name: string): string[] {
     let hash = 0;
@@ -104,7 +105,7 @@ export struct MineHome {
         }
         if ($$.countText) {
           Row({ space: 3 }) {
-            SymbolGlyph($r('sys.symbol.play_fill')).fontSize(12).fontColor([TEXT])
+            Image($r('app.media.ic_play')).width(11).height(11).fillColor(TEXT)
             Text($$.countText).fontSize(10).fontColor(TEXT).maxLines(1)
           }.padding({ left: 6, right: 7, top: 3, bottom: 3 }).margin(6)
             .borderRadius(11).backgroundColor('#66000000')
@@ -115,15 +116,20 @@ export struct MineHome {
   }
   @Builder private sectionTitle(title: string, note: string = '', section: string = '') {
     Row({ space: 10 }) {
-      Text(title).fontSize(21).fontWeight(FontWeight.Medium).fontColor(TEXT)
-      Blank()
+      Column({ space: 2 }) {
+        Text(title).fontSize(21).fontWeight(FontWeight.Bold).fontColor(TEXT)
+        if (note) { Text(note).fontSize(11).fontColor(MUTED).maxLines(1).textOverflow({ overflow: TextOverflow.Ellipsis }) }
+      }.alignItems(HorizontalAlign.Start).layoutWeight(1)
       if (section) {
         MaterialBall({ icon: $r('app.media.ic_more'), label: title + '，更多', diameter: 36, componentId: 'feed-more-' + section, action: () => this.openMore(section) })
-      } else if (note) { Text(note).fontSize(11).fontColor(MUTED) }
+      }
     }.width('100%').padding({ left: this.bleed(), right: this.bleed() })
   }
   private bannerNote(item: FeedPlaylist): string {
     if (item.id === 'daily-30') {
+      if (this.feed?.personalized) {
+        return `为你定制 · 结合听歌口味 ${item.count} 首`;
+      }
       const now = new Date();
       return `${now.getMonth() + 1}月${now.getDate()}日 · 融合推荐 ${item.count} 首`;
     }
@@ -136,7 +142,8 @@ export struct MineHome {
   private bannerItems(): FeedPlaylist[] {
     const items: FeedPlaylist[] = [];
     if (this.feed?.daily) items.push(this.feed.daily);
-    for (const chart of this.feed?.charts ?? []) {
+    const chartPool = this.feed?.bannerCharts?.length ? this.feed.bannerCharts : (this.feed?.charts ?? []);
+    for (const chart of chartPool) {
       if (items.length >= 6) break;
       items.push(chart);
     }
@@ -148,7 +155,13 @@ export struct MineHome {
   @Builder private homeBanner(item: FeedPlaylist) {
     Stack({ alignContent: Alignment.TopEnd }) {
       Stack({ alignContent: Alignment.BottomStart }) {
-        if (item.cover) { Image(item.cover).width('100%').height('100%').objectFit(ImageFit.Cover) }
+        if (item.cover) {
+          Image(item.cover).width('100%').height('100%').objectFit(ImageFit.Cover)
+        } else {
+          Column()
+            .width('100%').height('100%')
+            .linearGradient({ angle: 135, colors: [[this.gradFor(item.name)[0], 0], [this.gradFor(item.name)[1], 1]] })
+        }
         Column().width('100%').height('100%')
           .linearGradient({ angle: 180, colors: [['#22000000', 0.3], ['#CC05070A', 1]] })
         Row({ space: 8 }) {
@@ -158,9 +171,9 @@ export struct MineHome {
           }.alignItems(HorizontalAlign.Start).layoutWeight(1)
           Row() {
             if (this.playing && (this.activeFeedId === item.id || this.activePlaylistId === 'feed-' + item.id)) {
-              SymbolGlyph($r('sys.symbol.pause_fill')).fontSize(26).fontColor([ACCENT])
+              Image($r('app.media.ic_pause')).width(24).height(24).fillColor(ACCENT)
             } else {
-              SymbolGlyph($r('sys.symbol.play_fill')).fontSize(26).fontColor([ACCENT])
+              Image($r('app.media.ic_play')).width(24).height(24).fillColor(ACCENT)
             }
           }.justifyContent(FlexAlign.Center)
           // 播放键只管播放/暂停（ArkUI 点击不冒泡，不会触发卡片跳转）。
@@ -174,7 +187,7 @@ export struct MineHome {
     List({ space: 12 }) {
       LazyForEach(this.rowSource('banner', this.bannerItems()), (item: Object) => {
         ListItem() { this.homeBanner(item as FeedPlaylist) }.width('46%')
-      }, (item: Object) => (item as FeedPlaylist).id)
+      }, (item: Object) => { const p = item as FeedPlaylist; return `${p.id}|${p.cover ?? ''}|${p.count}|${this.playing ? '1' : '0'}|${this.activeFeedId}`; })
     }.listDirection(Axis.Horizontal).scrollBar(BarState.Off).edgeEffect(EdgeEffect.Spring)
       .width('100%').height(238)
       .contentStartOffset(this.bleed()).contentEndOffset(this.bleed())
@@ -186,19 +199,19 @@ export struct MineHome {
       Text(item.name).fontSize(13).fontColor(TEXT).maxLines(2).textOverflow({ overflow: TextOverflow.Ellipsis }).width('100%').height(36)
     }.width(148).height(202).alignItems(HorizontalAlign.Start).onClick(() => this.onOpenFeed(item))
   }
-  @Builder private feedSongCard(song: Song) {
+  @Builder private feedSongCard(song: Song, queue: Song[]) {
     Column({ space: 8 }) {
       this.coverWithBadge(song.coverUrl, 16, song.source, 20, { fallback: 36, countText: '', name: song.name })
       Text(song.name).fontSize(13).fontColor(TEXT).maxLines(1).textOverflow({ overflow: TextOverflow.Ellipsis }).width('100%').height(18)
       Text(song.singer).fontSize(10).fontColor(MUTED).maxLines(1).textOverflow({ overflow: TextOverflow.Ellipsis }).width('100%').height(14)
-    }.width(140).height(190).alignItems(HorizontalAlign.Start).onClick(() => this.onPlayFeedSong(song))
+    }.width(140).height(190).alignItems(HorizontalAlign.Start).onClick(() => this.onPlayFeedSong(song, queue))
   }
   @Builder private feedSongLine(song: Song) {
     // 新歌速递行 = 标准 SongRow（与歌单详情/搜索一致），禁止自造列表样式。
     SongRow({ song, index: 0, wide: this.wide,
       active: this.playing && this.selectedKey === songKey(song),
       liked: this.likedSong(song),
-      onPlay: () => this.onPlayFeedSong(song),
+      onPlay: () => this.onPlayFeedSong(song, this.sortedNewSongs()),
       onLike: () => this.onLikeSong(song),
       onMore: () => this.onAddToPlaylist(song),
       onDownload: () => this.onDownloadSong(song) })
@@ -206,8 +219,14 @@ export struct MineHome {
   @Builder private localPlaylistCard(playlist: MusicPlaylist) {
     Column({ space: 8 }) {
       Stack() {
-        SymbolGlyph(playlist.isFavorite ? $r('sys.symbol.heart') : $r('sys.symbol.music_note_list')).fontSize(34).fontColor([ACCENT])
-        if (playlist.songs?.[0]?.coverUrl) { Image(playlist.songs[0].coverUrl).width('100%').height('100%').objectFit(ImageFit.Cover) }
+        if (playlist.isFavorite) {
+          Image($r('app.media.ic_heart_fill')).width(34).height(34)
+        } else {
+          Image($r('app.media.ic_music')).width(34).height(34).fillColor(ACCENT)
+        }
+        if ((playlist.songs ?? []).some((s: Song) => s.coverUrl.length > 0)) {
+          Image((playlist.songs ?? []).find((s: Song) => s.coverUrl.length > 0)!.coverUrl).width('100%').height('100%').objectFit(ImageFit.Cover)
+        }
       }.width('100%').aspectRatio(1).borderRadius(14).clip(true).backgroundColor('#17191C')
       Text(playlist.name).fontSize(12).fontColor(TEXT).maxLines(1).textOverflow({ overflow: TextOverflow.Ellipsis }).width('100%').height(16)
     }.width(108).height(132).alignItems(HorizontalAlign.Start).onClick(() => this.onOpen(playlist))
@@ -216,7 +235,7 @@ export struct MineHome {
     List({ space: 12 }) {
       LazyForEach(this.rowSource('p:' + key, items), (item: Object) => {
         ListItem() { this.feedPlaylistCard(item as FeedPlaylist) }
-      }, (item: Object) => (item as FeedPlaylist).source + ':' + (item as FeedPlaylist).id)
+      }, (item: Object) => { const p = item as FeedPlaylist; return `${p.source ?? ''}:${p.id}|${p.cover ?? ''}`; })
     }.listDirection(Axis.Horizontal).scrollBar(BarState.Off).edgeEffect(EdgeEffect.Spring)
       .width('100%').height(216)
       .contentStartOffset(this.bleed()).contentEndOffset(this.bleed())
@@ -224,8 +243,8 @@ export struct MineHome {
   @Builder private feedSongCardRow(key: string, items: Song[]) {
     List({ space: 12 }) {
       LazyForEach(this.rowSource('s:' + key, items), (item: Object) => {
-        ListItem() { this.feedSongCard(item as Song) }
-      }, (item: Object) => { const song = item as Song; return song.source + ':' + song.id; })
+        ListItem() { this.feedSongCard(item as Song, items) }
+      }, (item: Object) => { const song = item as Song; return `${song.source}:${song.id}|${song.coverUrl ?? ''}`; })
     }.listDirection(Axis.Horizontal).scrollBar(BarState.Off).edgeEffect(EdgeEffect.Spring)
       .width('100%').height(194)
       .contentStartOffset(this.bleed()).contentEndOffset(this.bleed())
@@ -248,16 +267,23 @@ export struct MineHome {
           }.width('100%').id('section-banner')
         }
 
+        if (this.feed && (this.feed.forYou?.length ?? 0) > 0) {
+          Column({ space: 12 }) {
+            this.sectionTitle('猜你喜欢', (this.feed.topArtists?.length ? '基于常听：' + this.feed.topArtists.slice(0, 3).join(' · ') : '根据你的听歌口味推荐'), 'forYou')
+            this.feedSongCardRow('forYou', this.feed.forYou ?? [])
+          }.width('100%').alignItems(HorizontalAlign.Start).id('section-forYou')
+        }
+
         if (this.feed && this.feed.newSongs.length) {
           Column({ space: 10 }) {
-            this.sectionTitle('新歌速递', '全平台一起看', 'newSongs')
+            this.sectionTitle('新歌速递', '四平台新声同步汇聚', 'newSongs')
             SongListTools({ countText: `${this.feed.newSongs.length} 首歌曲`,
               onPlayAll: () => { const list = this.sortedNewSongs(); if (list.length) this.onPlaySongs(list); },
               onSort: (mode: string) => { this.newSongsSort = mode; },
               onManual: () => this.openNewSongsOrder() })
               .padding({ left: this.bleed(), right: this.bleed() })
             Column({ space: 2 }) {
-              ForEach(this.sortedNewSongs().slice(0, 10), (song: Song) => { this.feedSongLine(song) }, (song: Song) => song.source + ':' + song.id)
+              ForEach(this.sortedNewSongs().slice(0, 10), (song: Song) => { this.feedSongLine(song) }, (song: Song) => `${song.source}:${song.id}|${song.coverUrl ?? ''}`)
             }.width('100%').padding({ left: this.bleed(), right: this.bleed() })
           }.width('100%').alignItems(HorizontalAlign.Start).id('section-newSongs')
         }
@@ -281,7 +307,7 @@ export struct MineHome {
         }
 
       }.width('100%').padding({ bottom: 180, top: this.contentTop + 64 }).alignItems(HorizontalAlign.Start)
-    }.width('100%').height('100%').scrollBar(BarState.Off).edgeEffect(EdgeEffect.Spring)
+    }.width('100%').height('100%').align(Alignment.TopStart).scrollBar(BarState.Off).edgeEffect(EdgeEffect.Spring)
       .onDidScroll((x: number, y: number, state: ScrollState) => { if (state !== ScrollState.Idle) this.onScroll(this.scroller.currentOffset().yOffset); })
       .onScrollEdge((edge: Edge) => { this.onEdge(edge); })
       if (this.newSongsOrderOpen) {

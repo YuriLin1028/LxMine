@@ -89,7 +89,16 @@ export async function searchKuwo(keyword: string, page: number = 1, limit: numbe
       const id = entry.MUSICRID.replace('MUSIC_', '');
       if (!id) continue;
       const duration = parseInt(entry.DURATION ?? '0');
-      const coverPath = entry.web_albumpic_short ?? '';
+      const albumShort = (entry.web_albumpic_short ?? '').replace(/^120\//, '500/');
+      const artistShort = (entry.web_artistpic_short ?? '').replace(/^120\//, '500/');
+      const rawPic = (entry.albumpic ?? entry.hts_MVPIC ?? '').replace(/^http:/, 'https:');
+      const coverUrl = albumShort.length > 0
+        ? `https://img1.kuwo.cn/star/albumcover/${albumShort}`
+        : rawPic.length > 0
+          ? rawPic
+          : artistShort.length > 0
+            ? `https://img1.kuwo.cn/star/starheads/${artistShort}`
+            : '';
       items.push({
         source: 'kw',
         id,
@@ -99,7 +108,7 @@ export async function searchKuwo(keyword: string, page: number = 1, limit: numbe
         albumId: entry.ALBUMID ?? '',
         durationMs: Number.isFinite(duration) ? duration * 1000 : 0,
         qualitys: parseQualitys(entry.N_MINFO),
-        coverUrl: coverPath.length > 0 ? `https://img1.kuwo.cn/star/albumcover/${coverPath}` : '',
+        coverUrl,
       });
     }
     const total = parseInt(raw.TOTAL ?? '0');

@@ -48,9 +48,35 @@ class LxMineApp : Application(), ImageLoaderFactory {
         downloads.initialize()
 
         PlaybackController.urlResolver = { song -> engine.resolveUrl(song) }
+        PlaybackController.previewFallbackResolver = { song ->
+            engine.resolveUrl(song, excludeSourceIds = listOfNotNull(engine.activeId.takeIf { it.isNotEmpty() }), raceAll = true)
+        }
         PlaybackController.localResolver = { song ->
             val local = localMusic.pathFor(song)
             if (local.isNotEmpty()) local else downloads.offline(song)
+        }
+
+        // 预热高频矢量图标到内存缓存，确保列表点喜欢红心切换等操作 0ms 同帧渲染。
+        val loader = coil.Coil.imageLoader(this)
+        listOf(
+            "ic_heart.svg",
+            "ic_heart_fill.svg",
+            "ic_play.svg",
+            "ic_pause.svg",
+            "ic_switch_platform.svg",
+            "ic_plus.svg",
+            "ic_trash.svg",
+            "ic_edit.svg",
+            "ic_style_wand.svg",
+            "ic_sparkle.svg",
+        ).forEach { asset ->
+            loader.enqueue(
+                coil.request.ImageRequest.Builder(this)
+                    .data("file:///android_asset/icons/$asset")
+                    .memoryCacheKey("asset_icon:$asset")
+                    .crossfade(false)
+                    .build(),
+            )
         }
 
         // 播放服务由 MainActivity.onResume 在前台启动，返回应用时也会恢复连接。

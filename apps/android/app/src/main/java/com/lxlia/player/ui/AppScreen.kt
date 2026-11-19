@@ -81,7 +81,7 @@ fun AppScreen(
 ) {
     val showPlayer = viewModel.showPlayer
     val currentShowPlayer by rememberUpdatedState(showPlayer)
-    LaunchedEffect(showPlayer) { onShowPlayerChanged(currentShowPlayer) }
+    LaunchedEffect(showPlayer, viewModel.allowLandscapeWhenLocked) { onShowPlayerChanged(currentShowPlayer) }
 
     val context = LocalContext.current
     val stagePlaceholder = remember { com.lxlia.player.model.Song(source = "local", id = "", name = "") }
@@ -241,7 +241,7 @@ fun AppScreen(
                         surfaceVariant = Color(0xFFD3D8DF), onSurfaceVariant = MUTED,
                     ) else darkColorScheme(
                         primary = ACCENT,
-                        onPrimary = Color(0xFF17191C),
+                        onPrimary = ON_ACCENT,
                         background = INK,
                         onBackground = TEXT,
                         surface = Color(0xFF1A1C1F),
@@ -294,6 +294,7 @@ fun AppScreen(
                                                 lyricColorMode = if (viewModel.lyricPrefs.colorMode.endsWith("gradient")) "custom-gradient" else "custom-solid",
                                                 lyricPrimary = viewModel.previewPrimary(),
                                                 lyricSecondary = viewModel.previewSecondary(),
+                                                lyricScale = viewModel.lyricPrefs.lyricScale,
                                                 mode = if (plain) "off" else viewModel.dynamicStyle,
                                                 light = light,
                                                 duration = viewModel.duration,
@@ -414,6 +415,7 @@ fun AppScreen(
                             }
                             // 底栏永远在最上层（板块浮层/详情之上），与鸿蒙 DockLayer 同层级。
                             // 鸿蒙版弹键盘时底栏不随输入法上浮，这里也只按系统导航栏 inset 固定。
+                            val likedSet = viewModel.likedKeys
                             Box(Modifier.align(Alignment.BottomCenter).padding(bottom = navInset + 8.dp)
                                 .playerChromeVisibility(playerControlsVisible, playerControlsReveal, 24.dp)) {
                                 DockLayer(
@@ -432,7 +434,7 @@ fun AppScreen(
                                     duration = viewModel.duration,
                                     colorFirst = colorFirst,
                                     colorLast = colorLast,
-                                    liked = viewModel.selected?.let { viewModel.liked(it) } == true,
+                                    liked = viewModel.selected?.let { it.key in likedSet } == true,
                                     onTab = { viewModel.navigateTab(it) },
                                     onPlayer = {
                                         if (viewModel.selected != null) {
@@ -475,10 +477,39 @@ fun AppScreen(
                                     onDone = { viewModel.applyManualOrder(it) },
                                 )
                             }
+                            viewModel.editPlaylistTarget?.let { target ->
+                                PlaylistEditDialog(
+                                    playlist = target,
+                                    wide = viewModel.wide,
+                                    statusInset = statusInsetDp,
+                                    bottomInset = bottomInsetDp,
+                                    onCancel = { viewModel.editPlaylistTarget = null },
+                                    onDownloadSelected = { viewModel.downloadBatch(it) },
+                                    onSave = { newName, newSongs ->
+                                        viewModel.saveEditedPlaylist(target.id, newName, newSongs)
+                                    },
+                                )
+                            }
+                            viewModel.switchPlatformTarget?.let { target ->
+                                SwitchPlatformDialog(
+                                    vm = viewModel,
+                                    target = target,
+                                    wide = viewModel.wide,
+                                    statusInset = statusInsetDp,
+                                    bottomInset = bottomInsetDp,
+                                    onDismiss = { viewModel.switchPlatformTarget = null },
+                                    onSelect = { candidate -> viewModel.confirmSwitchPlatform(candidate) },
+                                )
+                            }
                             AppSheets(viewModel)
                             // 菜单宿主绘制在页面浮层之上，同步确认置于菜单之上。
                             GlassOverlayHost(glassOverlay)
                             IncomingSyncDialog(viewModel)
+                            AppUpdateDialog(vm = viewModel, wide = viewModel.wide)
+                            LaunchedEffect(Unit) {
+                                kotlinx.coroutines.delay(5500)
+                                viewModel.checkAppUpdate(silent = true)
+                            }
                             // 隐藏的 LX 运行时（1dp，不参与布局观感）：等首帧画完再挂载，别抢启动。
                             var runtimeMounted by remember { mutableStateOf(false) }
                             LaunchedEffect(Unit) {
@@ -489,9 +520,6 @@ fun AppScreen(
                                 Box(Modifier.size(1.dp).align(Alignment.TopStart)) {
                                     lxRuntime(Modifier.fillMaxSize())
                                 }
-                            }
-                            if (viewModel.intro) {
-                                LaunchScene(onFinish = { viewModel.finishIntro() })
                             }
                         }
                     }

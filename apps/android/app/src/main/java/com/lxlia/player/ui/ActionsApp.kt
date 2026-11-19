@@ -2,13 +2,17 @@ package com.lxlia.player.ui
 
 import androidx.lifecycle.viewModelScope
 import com.lxlia.player.audio.PlaybackController
+import com.lxlia.player.lx.LanDiscovery
 import com.lxlia.player.lx.LanSyncClient
 import com.lxlia.player.lx.LanDevice
+import com.lxlia.player.lx.mergeSyncedPlaylists
 import com.lxlia.player.model.SyncSourcePayload
 import com.lxlia.player.model.MusicPlaylist
 import com.lxlia.player.model.Song
 import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.delay
 import kotlinx.coroutines.launch
+import kotlinx.coroutines.runBlocking
 import kotlinx.coroutines.withContext
 import kotlinx.coroutines.sync.withLock
 import org.json.JSONArray
@@ -26,6 +30,7 @@ fun AppViewModel.onHostReady() {
         sources = engine.sources
         consumeSharedPlaylist()
         restorePlaybackIfReady()
+        hydrateLibraryPlaylistCovers()
         refreshHomeFeed()
     }
 }
@@ -65,10 +70,14 @@ fun AppViewModel.onBackground() {
 private fun AppViewModel.lanDiscoveryRestart() {
     viewModelScope.launch {
         runCatching {
-            withContext(Dispatchers.IO) {
-                lanDiscovery?.port = lanSyncServer?.start() ?: 0
+            val (port, ip) = withContext(Dispatchers.IO) {
+                val p = lanSyncServer?.start() ?: 0
+                lanDiscovery?.port = p
                 lanDiscovery?.restart(app)
+                p to LanDiscovery.localIpv4()
             }
+            lanPort = port
+            localLanIp = ip
             lanSsid = lanDiscovery?.ssid ?: lanSsid
         }.onFailure { message = "局域网同步启动失败：${it.message}" }
     }
@@ -154,6 +163,14 @@ fun AppViewModel.onBackPress(): Boolean {
         return consume()
     }
     if (incoming != null) return consume()
+    if (switchPlatformTarget != null) {
+        switchPlatformTarget = null
+        return consume()
+    }
+    if (editPlaylistTarget != null) {
+        editPlaylistTarget = null
+        return consume()
+    }
     if (orderOpen) {
         orderOpen = false
         return consume()
@@ -183,7 +200,7 @@ fun AppViewModel.onBackPress(): Boolean {
         return consume()
     }
     if (downloadsOpen) {
-        downloadsOpen = false
+        closeDownloads()
         return consume()
     }
     if (feedSection.isNotEmpty()) {
@@ -213,11 +230,15 @@ fun AppViewModel.openSheet(name: String) {
     error = ""
     addToPlaylistSong = null
     showSheet = true
+    if (name == "播放队列") {
+        hydrateCoversFor(queue.take(40))
+    }
 }
 
 fun AppViewModel.closeSheet() {
     showSheet = false
     draft = ""
+    renamingPlaylistId = ""
     busy = false
 }
 
@@ -232,12 +253,27 @@ fun AppViewModel.submitSheet() {
     error = ""
     viewModelScope.launch {
         var createdName = ""
+        var renamedName = ""
+        var playlistMutated = false
         try {
             when (sheet) {
                 "新建歌单" -> {
                     val created = createPlaylist(draft.trim())
                     playlists = playlists + created
                     createdName = created.name
+                    playlistMutated = true
+                }
+                "重命名歌单" -> {
+                    val targetName = draft.trim()
+                    val targetId = renamingPlaylistId
+                    val current = playlists.firstOrNull { it.id == targetId && !it.isFavorite && it.kind == "lx" }
+                        ?: throw IllegalStateException("找不到要重命名的歌单")
+                    val updated = current.copy(name = targetName, updatedAt = System.currentTimeMillis())
+                    playlists = playlists.map { if (it.id == targetId) updated else it }
+                    if (openedPlaylist?.id == targetId) openedPlaylist = updated
+                    renamingPlaylistId = ""
+                    renamedName = targetName
+                    playlistMutated = true
                 }
                 "导入歌单" -> {
                     val source = if (platform.id == "all") "wy" else platform.id
@@ -248,6 +284,7 @@ fun AppViewModel.submitSheet() {
                     message = "已导入 ${lists.size} 个歌单，共 $total 首"
                     val warnings = lists.map { it.warning }.filter { it.isNotBlank() }.joinToString("\n")
                     notify(listOf(message, warnings).filter { it.isNotBlank() }.joinToString("\n"), if (warnings.isEmpty()) 3000 else 8000)
+                    playlistMutated = true
                 }
                 "添加音源" -> {
                     val source = engine.sourceFromScript(draft)
@@ -263,8 +300,13 @@ fun AppViewModel.submitSheet() {
                 }
             }
             persist()
+            if (playlistMutated) {
+                scheduleAutoPlaylistSync()
+                hydrateLibraryPlaylistCovers()
+            }
             showSheet = false
             if (createdName.isNotEmpty()) notify("已创建歌单「${createdName}」")
+            if (renamedName.isNotEmpty()) notify("已重命名为「${renamedName}」")
         } catch (exception: Exception) {
             error = exception.message ?: "操作失败"
         } finally {
@@ -342,6 +384,126 @@ fun AppViewModel.importSourceFiles(uris: List<android.net.Uri>) {
 
 // ---- 局域网同步 ----
 
+private fun AppViewModel.buildSyncBundle(): JSONObject = JSONObject()
+    .put("protocol", com.lxlia.player.lx.SYNC_PROTOCOL)
+    .put("version", 1)
+    .put("createdAt", System.currentTimeMillis())
+    .put("device", JSONObject().put("id", deviceId).put("name", deviceName).put("platform", "android"))
+    .put("settings", JSONObject(settings))
+    .put("playlists", JSONArray().apply { playlists.forEach { put(it.toJson()) } })
+    .put("sources", JSONArray().apply { sources.forEach { put(it.toJson()) } })
+    .put("activeSourceId", activeId)
+
+fun AppViewModel.setLanAutoSync(value: Boolean) {
+    lanAutoSync = value
+    save()
+    viewModelScope.launch(Dispatchers.IO) {
+        runCatching { lanDiscovery?.announceNow() }
+    }
+    if (value) scheduleAutoPlaylistSync()
+}
+
+fun AppViewModel.scheduleAutoPlaylistSync() {
+    if (!lanAutoSync || !storeReady) return
+    autoSyncJob?.cancel()
+    autoSyncJob = viewModelScope.launch {
+        delay(1200)
+        if (!lanAutoSync) return@launch
+        val peers = devices.filter { it.autoSyncPlaylists && it.port > 0 }
+        if (peers.isEmpty()) return@launch
+        runCatching {
+            persist()
+            val bundle = JSONObject()
+                .put("protocol", com.lxlia.player.lx.SYNC_PROTOCOL)
+                .put("version", 1)
+                .put("createdAt", System.currentTimeMillis())
+                .put("device", JSONObject().put("id", deviceId).put("name", deviceName).put("platform", "android"))
+                .put("playlists", JSONArray().apply { playlists.forEach { put(it.toJson()) } })
+            val syncedCount = withContext(Dispatchers.IO) {
+                peers.count { peer -> LanSyncClient.pushAutoPlaylists(peer, bundle) }
+            }
+            if (syncedCount > 0) {
+                message = "已自动同步歌单至 $syncedCount 台局域网设备"
+            }
+        }
+    }
+}
+
+internal fun AppViewModel.applyIncomingAutoPlaylists(
+    peerName: String,
+    incomingPlaylists: List<MusicPlaylist>,
+): Boolean {
+    if (!lanAutoSync || !storeReady) return false
+    return runBlocking {
+        val (changed, mergedCount) = withContext(Dispatchers.Main) {
+            val current = playlists.toList()
+            val merged = mergeSyncedPlaylists(current, incomingPlaylists)
+            val isChanged = MusicPlaylist.listToJson(merged) != MusicPlaylist.listToJson(current)
+            if (isChanged) {
+                playlists = merged
+                openedPlaylist?.let { opened ->
+                    val match = if (opened.isFavorite) merged.firstOrNull { it.isFavorite }
+                    else merged.firstOrNull { it.id == opened.id }
+                    if (match != null) openedPlaylist = match
+                }
+                message = "已自动合并「$peerName」的歌单更新"
+            }
+            isChanged to merged.size
+        }
+        if (changed) {
+            persist()
+        }
+        mergedCount >= 0
+    }
+}
+
+fun AppViewModel.sendDirect(targetInput: String) {
+    if (busy) return
+    val endpoint = LanSyncClient.parseManualEndpoint(targetInput, 41300)
+    if (endpoint == null) {
+        message = "请输入有效的 IP 或 IP:端口（默认端口 41300）"
+        notify(message)
+        return
+    }
+    val (host, port) = endpoint
+    lanManualTarget = targetInput.trim()
+    save()
+    busy = true
+    message = "正在连接 $host:$port 并等待对方确认接收…"
+    viewModelScope.launch {
+        try {
+            persist()
+            val bundle = buildSyncBundle()
+            val (accepted, peerLabel) = withContext(Dispatchers.IO) {
+                val pingInfo = LanSyncClient.ping(host, port)
+                val peerId = pingInfo?.optString("id").orEmpty()
+                if (peerId.isNotEmpty() && peerId == deviceId) {
+                    throw IllegalStateException("不能向本机自身发送同步")
+                }
+                val peerName = pingInfo?.optString("name")?.takeIf { it.isNotEmpty() } ?: "$host:$port"
+                val peerPlatform = pingInfo?.optString("platform")?.takeIf { it.isNotEmpty() } ?: "direct"
+                val target = LanDevice(
+                    id = peerId.ifEmpty { "manual-$host-$port" },
+                    name = peerName,
+                    platform = peerPlatform,
+                    address = host,
+                    port = port,
+                    lastSeen = System.currentTimeMillis(),
+                    receiveMode = "direct",
+                )
+                LanSyncClient.push(target, bundle) to peerName
+            }
+            message = if (accepted) "已同步到「$peerLabel」" else "对方未接受同步"
+            notify(message)
+        } catch (exception: Exception) {
+            message = "直连发送失败：${exception.message}"
+            notify(message, 3000)
+        } finally {
+            busy = false
+        }
+    }
+}
+
 fun AppViewModel.send(device: LanDevice) {
     if (busy) return
     busy = true
@@ -349,21 +511,7 @@ fun AppViewModel.send(device: LanDevice) {
     viewModelScope.launch {
         try {
             persist()
-            val bundle = JSONObject()
-                .put("protocol", com.lxlia.player.lx.SYNC_PROTOCOL)
-                .put("version", 1)
-                .put("createdAt", System.currentTimeMillis())
-                .put("device", JSONObject().put("id", deviceId).put("name", deviceName).put("platform", "android"))
-                .put("settings", JSONObject(settings))
-                .put(
-                    "playlists",
-                    JSONArray().apply { playlists.forEach { put(it.toJson()) } },
-                )
-                .put(
-                    "sources",
-                    JSONArray().apply { sources.forEach { put(it.toJson()) } },
-                )
-                .put("activeSourceId", activeId)
+            val bundle = buildSyncBundle()
             val accepted = withContext(Dispatchers.IO) {
                 if (device.receiveMode == "pull") {
                     checkNotNull(lanSyncServer).offerPush(device.id, bundle) { lanDiscovery?.announceNow() }

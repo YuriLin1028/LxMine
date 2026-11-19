@@ -385,8 +385,8 @@ html.desktop-shell-root body {
   --chill-blue: #73a7ff;
   --chill-mint: #9cffdf;
   --chill-soft: rgba(214, 248, 255, .9);
-  --champagne: #f4d28a;
-  --champagne-deep: #9a6f2c;
+  --champagne: #64d2ff;
+  --champagne-deep: #0a66c2;
   --home-accent: #00f5d4;
   --home-accent-rgb: 0, 245, 212;
   --visual-tint: #9db8cf;
@@ -421,7 +421,7 @@ html.desktop-shell-root body {
 }
 
 :root {
-  --home-icon-color: #f4d28a;
+  --home-icon-color: #64d2ff;
   --home-icon-rgb: 244, 210, 138;
   --visual-icon-color: #7fd8ff;
   --visual-icon-rgb: 127, 216, 255
@@ -1470,7 +1470,7 @@ body.idle-guide-dragging #canvas-container {
   width: .108em;
   height: .565em;
   border-radius: .06em;
-  background: linear-gradient(180deg, #f8edd1 0%, #d8bd78 100%);
+  background: linear-gradient(180deg, #f8edd1 0%, #7dd3fc 100%);
   transform: translateX(-50%);
   box-shadow: 0 0 14px rgba(244, 210, 138, .12)
 }
@@ -1493,8 +1493,8 @@ body.idle-guide-dragging #canvas-container {
 .splash-word-o {
   display: inline-block;
   position: relative;
-  color: #d8c486;
-  -webkit-text-fill-color: #d8c486
+  color: #a5b4fc;
+  -webkit-text-fill-color: #a5b4fc
 }
 
 .splash-signal-line {
@@ -4600,7 +4600,7 @@ body.desktop-shell.empty-home-active.controls-visible #empty-home {
 }
 
 .top-account-vip.svip {
-  background: linear-gradient(135deg, #fff8d8, #f4d28a 46%, #e0a13b 100%);
+  background: linear-gradient(135deg, #fff8d8, #64d2ff 46%, #e0a13b 100%);
   color: #1e1203;
   box-shadow: 0 0 14px rgba(244, 210, 138, .30)
 }
@@ -8764,7 +8764,7 @@ body.login-guide-active #login-guide-canvas {
 }
 
 .login-provider-state-badge.svip {
-  background: linear-gradient(135deg, #fff8d8, #f4d28a 46%, #e0a13b 100%);
+  background: linear-gradient(135deg, #fff8d8, #64d2ff 46%, #e0a13b 100%);
   color: #1e1203;
   box-shadow: 0 0 12px rgba(244, 210, 138, .26)
 }
@@ -10044,7 +10044,7 @@ body.login-guide-active #login-guide-canvas {
 
 .cover-zoom-control input {
   flex: 1;
-  accent-color: #f4d28a
+  accent-color: #64d2ff
 }
 
 .cover-crop-modal .btn-row {
@@ -10845,7 +10845,7 @@ body.login-guide-active #login-guide-canvas {
 }
 
 .local-beat-status.warn {
-  color: #f4d28a
+  color: #64d2ff
 }
 
 .local-beat-status.fail {
@@ -12487,7 +12487,7 @@ body.desktop-shell.diy-mode #bottom-bar.stage-mode {
   transform-origin: 0 50%;
   transform: scaleX(0);
   border-radius: inherit;
-  background: linear-gradient(90deg, #33e6ff, #f4d28a, #ff5258);
+  background: linear-gradient(90deg, #33e6ff, #64d2ff, #ff5258);
   transition: transform .08s linear
 }
 
@@ -16457,7 +16457,7 @@ html.control-glass-svg-ok #visual-guide-btn:hover {
 
 .lyric-color-row.bg-cover-mode #bg-color-picker {
   border-color: rgba(255, 255, 255, .26) !important;
-  background: conic-gradient(from 210deg, #f8f4ee, #9db8cf, #2442ff, #f4d28a, #f8f4ee) !important;
+  background: conic-gradient(from 210deg, #f8f4ee, #9db8cf, #2442ff, #64d2ff, #f8f4ee) !important;
   box-shadow: 0 0 0 1px rgba(var(--fc-accent-rgb), .12), 0 10px 24px rgba(0, 0, 0, .22) !important;
 }
 

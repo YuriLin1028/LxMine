@@ -4765,6 +4765,21 @@ ipcMain.handle('mineradio-built-in-playlist-reorder-track', async (event, id, fr
   try { return await builtInPlaylistLibrary.reorderTrack(id, fromIndex, toIndex); } catch (error) { return builtInPlaylistMutationError(error); }
 });
 
+ipcMain.handle('mineradio-built-in-playlist-remove-tracks', async (event, id, indices) => {
+  if (!isTrustedMainWindowIpc(event)) return { ok: false, error: 'UNTRUSTED_SENDER' };
+  try { return await builtInPlaylistLibrary.removeTracks(id, indices); } catch (error) { return builtInPlaylistMutationError(error); }
+});
+
+ipcMain.handle('mineradio-built-in-playlist-replace-tracks', async (event, id, tracks) => {
+  if (!isTrustedMainWindowIpc(event)) return { ok: false, error: 'UNTRUSTED_SENDER' };
+  try { return await builtInPlaylistLibrary.replaceTracks(id, tracks); } catch (error) { return builtInPlaylistMutationError(error); }
+});
+
+ipcMain.handle('mineradio-built-in-playlist-sync-favorites', async (event, tracks) => {
+  if (!isTrustedMainWindowIpc(event)) return { ok: false, error: 'UNTRUSTED_SENDER' };
+  try { return await builtInPlaylistLibrary.setFavoriteTracks(tracks); } catch (error) { return builtInPlaylistMutationError(error); }
+});
+
 ipcMain.handle('mineradio-local-library-lyric', async (event, localFileId) => {
   if (!isTrustedMainWindowIpc(event)) return { ok: false, lyric: '', lyricSource: '', error: 'UNTRUSTED_SENDER' };
   try {

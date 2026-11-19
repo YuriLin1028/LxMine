@@ -9,7 +9,7 @@ import java.util.LinkedHashMap
 
 data class CoverColors(val first: String, val last: String)
 
-val EMPTY_COVER_COLORS = CoverColors("#FFFFFF", "#B8B8B8")
+val EMPTY_COVER_COLORS = CoverColors("#7DD3FC", "#A5B4FC")
 
 /** 小尺寸原生取色：不在 UI 线程做整图解码，也不编造合成色。 */
 class CoverPalette(private val http: okhttp3.OkHttpClient) {

@@ -74,7 +74,7 @@ import kotlin.math.min
 /**
  * 背景光晕：鸿蒙端 systemMaterial 从窗口取色，安卓端用封面取色做色膜。
  */
-val LocalBackdropTint = compositionLocalOf { Pair(Color(0xFFF4D28A), Color(0xFF8FB2A6)) }
+val LocalBackdropTint = compositionLocalOf { Pair(Color(0xFF64D2FF), Color(0xFFA5B4FC)) }
 
 /**
  * 液态玻璃的采样源。AppScreen 录制包含 WebView 舞台的背景，
@@ -203,15 +203,16 @@ fun GlassSurface(
                     val progress = interaction.pressProgress
                     val scale = 1f + (GLASS_PRESS_SCALE - 1f) * progress
                     val offset = interaction.offset
-                    val maximumOffset = size.minDimension
+                    val maximumOffset = size.minDimension.coerceAtLeast(1f)
+                    val maxDim = size.maxDimension.coerceAtLeast(1f)
                     translationX = maximumOffset * tanh(0.05f * offset.x / maximumOffset)
                     translationY = maximumOffset * tanh(0.05f * offset.y / maximumOffset)
                     val dragScale = GLASS_PRESS_SCALE - 1f
                     val angle = atan2(offset.y, offset.x)
-                    scaleX = scale + dragScale * abs(cos(angle) * (offset.x / size.maxDimension).coerceIn(-0.25f, 0.25f)) *
-                        (size.width / size.height).coerceAtMost(1f)
-                    scaleY = scale + dragScale * abs(sin(angle) * (offset.y / size.maxDimension).coerceIn(-0.25f, 0.25f)) *
-                        (size.height / size.width).coerceAtMost(1f)
+                    scaleX = scale + dragScale * abs(cos(angle) * (offset.x / maxDim).coerceIn(-0.25f, 0.25f)) *
+                        (size.width / size.height.coerceAtLeast(1f)).coerceAtMost(1f)
+                    scaleY = scale + dragScale * abs(sin(angle) * (offset.y / maxDim).coerceIn(-0.25f, 0.25f)) *
+                        (size.height / size.width.coerceAtLeast(1f)).coerceAtMost(1f)
                 }
             } else null,
             effects = {

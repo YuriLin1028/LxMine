@@ -263,6 +263,7 @@ var lyricViewportFitLeft = typeof THREE !== 'undefined' ? new THREE.Vector3() : 
 var lyricViewportFitRight = typeof THREE !== 'undefined' ? new THREE.Vector3() : null;
 
 function lyricRowLiveViewportScale(row, intendedScale) {
+  if (typeof fx !== 'undefined' && fx && fx.lyricLiveViewportFit === false) return 1;
   if (!row || !row.mesh || !row.lineMask || !lyricViewportFitLeft || !lyricViewportFitRight || typeof camera === 'undefined' || !camera) return 1;
   var documentWidth = typeof document !== 'undefined' && document.documentElement
     ? Number(document.documentElement.clientWidth) || 0
@@ -1610,7 +1611,7 @@ function updateLyricRowLayers(data, opts) {
     } else {
       if (row.isTranslation) baseScale *= 1.00 + translationFocus * 0.16;
     }
-    if ((row.isPrimary || row.isTranslation) && renderWindowActive && (!fx || fx.lyricLiveViewportFit !== false)) {
+    if ((row.isPrimary || row.isTranslation) && renderWindowActive) {
       baseScale *= lyricRowLiveViewportScale(row, baseScale);
     } else if (row.viewportFitScale !== 1) {
       row.viewportFitScale = 1;
@@ -1631,12 +1632,13 @@ function updateLyricRowLayers(data, opts) {
     }
     if (row.mat && row.mat.uniforms) {
       if (row.mat.uniforms.uOpacity) {
-        var lineOpacityTarget = data.usesTrack && (initialTextRevealPending || !lineLayerVisible || !row.renderLineUploaded) ? 0 : target * depthFade;
-        if (initialTextRevealPending) row.mat.uniforms.uOpacity.value = 0;
+        var holdInitial = initialTextRevealPending && !row.renderLineUploaded && !motionAnchor;
+        var lineOpacityTarget = data.usesTrack && (holdInitial || !lineLayerVisible || !row.renderLineUploaded) ? 0 : target * depthFade;
+        if (holdInitial) row.mat.uniforms.uOpacity.value = 0;
         else {
-          row.mat.uniforms.uOpacity.value += (lineOpacityTarget - row.mat.uniforms.uOpacity.value) * ease;
-          if (trackTargetJustCommitted && lineOpacityTarget > 0.001 && row.renderLineUploaded && row.mat.uniforms.uOpacity.value < 0.004) {
-            row.mat.uniforms.uOpacity.value = Math.min(lineOpacityTarget, 0.004);
+          row.mat.uniforms.uOpacity.value += (lineOpacityTarget - row.mat.uniforms.uOpacity.value) * (motionAnchor ? Math.max(ease, 0.35) : ease);
+          if ((trackTargetJustCommitted || motionAnchor) && lineOpacityTarget > 0.001 && row.renderLineUploaded && row.mat.uniforms.uOpacity.value < 0.02) {
+            row.mat.uniforms.uOpacity.value = Math.min(lineOpacityTarget, motionAnchor ? 0.35 : 0.02);
           }
         }
       }

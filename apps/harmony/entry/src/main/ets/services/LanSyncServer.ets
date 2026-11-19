@@ -91,12 +91,16 @@ export class LanSyncServer {
   private outgoing: Map<string, OutgoingTransfer> = new Map();
   private seq: number = 0;
   private handler: ((incoming: SyncIncoming) => void) | null = null;
+  private autoPlaylistHandler: ((playlistsJson: string) => boolean) | null = null;
+  private autoSyncEnabled: boolean = false;
   private queue: SyncIncoming[] = [];
   private connections: Map<number, socket.TCPSocketConnection> = new Map();
   private deviceId: string = '';
   private deviceName: string = 'Harmony';
 
   setIdentity(id: string, name: string): void { this.deviceId = id; this.deviceName = name; }
+  setAutoSync(enabled: boolean): void { this.autoSyncEnabled = enabled; }
+  onAutoPlaylists(handler: (playlistsJson: string) => boolean): void { this.autoPlaylistHandler = handler; }
 
   onIncoming(handler: (incoming: SyncIncoming) => void): void {
     this.handler = handler;
@@ -277,6 +281,24 @@ export class LanSyncServer {
     }
     if (head.method === 'GET' && head.path === '/lxlia-sync/ping') {
       this.reply(conn, 200, JSON.stringify({ protocol: PROTOCOL, id: this.deviceId, name: this.deviceName, platform: 'harmony', port: this.port }));
+      return;
+    }
+    if (head.method === 'POST' && head.path === '/lxlia-sync/auto-playlists') {
+      if (!this.autoSyncEnabled || !this.autoPlaylistHandler) {
+        this.reply(conn, 403, '{"accepted":false,"message":"auto sync disabled"}');
+        return;
+      }
+      try {
+        const bundle = JSON.parse(body) as BundleShape;
+        if (bundle.protocol !== PROTOCOL || bundle.version !== 1 || !bundle.device || !bundle.device.id || bundle.device.id === this.deviceId || !Array.isArray(bundle.playlists)) {
+          this.reply(conn, 400, '{"accepted":false,"message":"invalid auto-sync payload"}');
+          return;
+        }
+        const changed = this.autoPlaylistHandler(JSON.stringify(bundle.playlists));
+        this.reply(conn, 200, JSON.stringify({ accepted: true, changed }));
+      } catch (_) {
+        this.reply(conn, 400, '{"accepted":false,"message":"invalid json"}');
+      }
       return;
     }
     if (head.method !== 'POST' || head.path !== '/lxlia-sync/push') {

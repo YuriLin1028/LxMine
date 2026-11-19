@@ -2,6 +2,7 @@ import http from '@ohos.net.http';
 import { Song } from '../model/Song';
 import { searchLx } from './SearchApi';
 import { LxHost } from './LxRuntime';
+import { MusicPlaylist } from './MusicLibrary';
 
 export interface FeedPlaylist {
   source?: string;
@@ -24,7 +25,12 @@ export interface HomeFeed {
   playlists: FeedPlaylist[];
   newSongs: Song[];
   charts: FeedPlaylist[];
+  /** 首页第一行随机推荐榜单（每日与双击刷新轮换，保证全部带封面）。 */
+  bannerCharts?: FeedPlaylist[];
   similar: Song[];
+  forYou?: Song[];
+  personalized?: boolean;
+  topArtists?: string[];
   /** 每日三十首：四平台新歌按日期种子融合挑选，卡片与歌曲队列一同给出。 */
   daily?: FeedPlaylist;
   dailySongs?: Song[];
@@ -133,7 +139,52 @@ function dailyShuffle(songs: Song[], dayNumber: number): Song[] {
   return pool.slice(0, 30);
 }
 
-export async function loadMergedHome(host: LxHost): Promise<HomeFeed> {
+function httpsUrl(url: string | undefined): string {
+  if (!url) return '';
+  return url.replace('{size}', '400').replace(/^\/\//, 'https://').replace(/^http:/, 'https:');
+}
+
+export async function hydrateSongCovers(host: LxHost, songs: Song[]): Promise<Map<string, string>> {
+  const result = new Map<string, string>();
+  const missing: Song[] = [];
+  const seen = new Set<string>();
+  for (const s of songs) {
+    if (!s || s.coverUrl || s.source === 'local') continue;
+    const k = `${s.source}:${s.id}`;
+    if (seen.has(k)) continue;
+    seen.add(k);
+    missing.push(s);
+    if (missing.length >= 32) break;
+  }
+  if (!missing.length) return result;
+  try {
+    const raw = await host.catalogue('song-covers', JSON.stringify({ songs: missing }));
+    const parsed = JSON.parse(raw) as Record<string, string>;
+    const keys = Object.keys(parsed);
+    for (const k of keys) {
+      const val = httpsUrl(parsed[k]);
+      if (val) result.set(k, val);
+    }
+  } catch (_) {}
+  return result;
+}
+
+export function applyCoversToSongs(songs: Song[], covers: Map<string, string>): Song[] {
+  if (!covers.size) return songs;
+  let changed = false;
+  const next = songs.map((s: Song): Song => {
+    if (s.coverUrl) return s;
+    const found = covers.get(`${s.source}:${s.id}`) ?? '';
+    if (!found) return s;
+    changed = true;
+    const copy = JSON.parse(JSON.stringify(s)) as Song;
+    copy.coverUrl = found;
+    return copy;
+  });
+  return changed ? next : songs;
+}
+
+export async function loadMergedHome(host: LxHost, algoSeed: number = 0): Promise<HomeFeed> {
   const platforms: string[] = ['wy', 'tx', 'kw', 'kg'];
   const reasons: string[] = [];
   const parts = await Promise.all(platforms.map((platform: string): Promise<PlatformLite | null> =>
@@ -146,16 +197,21 @@ export async function loadMergedHome(host: LxHost): Promise<HomeFeed> {
       })));
   const ok = parts.filter((part: PlatformLite | null) => part !== null) as PlatformLite[];
   if (!ok.length) throw new Error(`所有平台的首页都暂不可用 ${reasons.join(' | ')}`);
+  const sanitizeList = (list: FeedPlaylist[]): FeedPlaylist[] => list.map((p: FeedPlaylist): FeedPlaylist => {
+    p.cover = httpsUrl(p.cover);
+    return p;
+  });
   const playlistKey = (item: FeedPlaylist): string => `${item.source ?? ''}:${item.id}`;
   const songKey = (song: Song): string => `${song.source}:${song.id}`;
-  const recommend = mergeRoundRobin(ok.map((part: PlatformLite) => part.recommend ?? []), playlistKey);
-  const hot = mergeRoundRobin(ok.map((part: PlatformLite) => part.hot ?? []), playlistKey);
+  const recommend = sanitizeList(mergeRoundRobin(ok.map((part: PlatformLite) => part.recommend ?? []), playlistKey));
+  const hot = sanitizeList(mergeRoundRobin(ok.map((part: PlatformLite) => part.hot ?? []), playlistKey));
   // 榜单大融合：同概念（飙升/新歌/热歌/原创）的榜单合并成一个多来源榜单；
   // 融合后的榜单本身没有角标，只有里面的歌曲封面带角标。
   const charts: FeedPlaylist[] = [];
   const concepts = new Map<string, FeedPlaylist>();
   for (const part of ok) {
     for (const chart of part.charts ?? []) {
+      chart.cover = httpsUrl(chart.cover);
       const concept = chartConcept(chart.name);
       if (!concept) { charts.push(chart); continue; }
       const mergedItem = concepts.get(concept);
@@ -171,16 +227,58 @@ export async function loadMergedHome(host: LxHost): Promise<HomeFeed> {
       }
     }
   }
-  const newSongs = mergeRoundRobin(ok.map((part: PlatformLite) => part.newSongs ?? []), songKey);
-  // 分类：各平台的歌单分类标签融合，点开按平台拉取该分类的歌单列表。
+  let newSongs = mergeRoundRobin(ok.map((part: PlatformLite) => part.newSongs ?? []), songKey).map((s: Song): Song => {
+    s.coverUrl = httpsUrl(s.coverUrl);
+    return s;
+  });
+  const newCovers = await hydrateSongCovers(host, newSongs);
+  newSongs = applyCoversToSongs(newSongs, newCovers);
+  // 跨平台新歌按规范化歌名+主歌手去重，避免同一首热歌在四平台重复出现。
+  const seenCanonicalNew = new Set<string>();
+  const dedupedNew: Song[] = [];
+  for (const s of newSongs) {
+    const ck = canonicalSongKey(s);
+    if (seenCanonicalNew.has(ck)) continue;
+    seenCanonicalNew.add(ck);
+    dedupedNew.push(s);
+  }
+  newSongs = dedupedNew;
+
+  // 兜底补齐所有榜单封面：优先取融合子榜封面，其次取歌单/新歌真实封面，杜绝榜单无封面。
+  const songCoverPool: string[] = newSongs.map((s: Song) => s.coverUrl).filter((u: string) => u.length > 0);
+  const playlistCoverPool: string[] = recommend.concat(hot).map((p: FeedPlaylist) => p.cover).filter((u: string) => u.length > 0);
+  const allChartFallbackCovers: string[] = playlistCoverPool.concat(songCoverPool);
+  const usedChartCovers = new Set<string>(charts.map((c: FeedPlaylist) => c.cover).filter((u: string) => u.length > 0));
+  let chartCoverIdx = 0;
+  for (const chart of charts) {
+    if (!chart.cover && chart.parts?.length) {
+      const partCover = chart.parts.find((p: FeedPlaylist) => p.cover.length > 0)?.cover ?? '';
+      if (partCover) chart.cover = partCover;
+    }
+    if (!chart.cover && allChartFallbackCovers.length > 0) {
+      let picked = allChartFallbackCovers.find((u: string) => !usedChartCovers.has(u)) ?? '';
+      if (!picked) {
+        picked = allChartFallbackCovers[chartCoverIdx % allChartFallbackCovers.length];
+        chartCoverIdx += 1;
+      }
+      chart.cover = picked;
+      usedChartCovers.add(picked);
+    }
+  }
+
+  const coverPool: FeedPlaylist[] = recommend.concat(hot).concat(charts).filter((p: FeedPlaylist) => p.cover.length > 0);
+  // 分类：各平台的歌单分类标签融合，并从推荐/热门歌单匹配真实封面，杜绝空封面板块卡片。
   const categoryItems: FeedPlaylist[] = [];
   const categorySeen = new Set<string>();
+  let coverCursor = 0;
   for (const part of ok) {
     for (const tag of part.categories ?? []) {
       const name = typeof tag.name === 'string' ? tag.name : '';
       if (!name || categorySeen.has(name)) continue;
       categorySeen.add(name);
-      categoryItems.push({ id: `category-${name}`, name, cover: '', count: 0, playCount: 0, request: { source: part.source ?? 'wy', type: 'hot', category: name } });
+      const matched = coverPool.find((p: FeedPlaylist) => p.name.includes(name));
+      const fallbackCover = coverPool.length > 0 ? coverPool[(coverCursor++) % coverPool.length].cover : '';
+      categoryItems.push({ id: `category-${name}`, name, cover: matched ? matched.cover : fallbackCover, count: 0, playCount: 0, request: { source: part.source ?? 'wy', type: 'hot', category: name } });
     }
   }
   const sections: FeedSection[] = [
@@ -189,10 +287,266 @@ export async function loadMergedHome(host: LxHost): Promise<HomeFeed> {
     { id: 'hot', title: '热门歌单', kind: 'playlist', items: hot },
     { id: 'category', title: '歌单分类', kind: 'playlist', items: categoryItems },
   ];
-  const dayNumber = Math.floor(Date.now() / 86400000);
-  const dailySongs = dailyShuffle(newSongs, dayNumber);
-  const daily: FeedPlaylist = { id: 'daily-30', name: '每日三十首', cover: dailySongs[0]?.coverUrl ?? '', count: dailySongs.length, playCount: 0 };
-  return { source: 'all', sections, playlists: recommend, newSongs, charts, similar: [], daily, dailySongs };
+  const dayNumber = Math.floor(Date.now() / 86400000) + algoSeed * 7919;
+  const bannerCharts = pickRandomBannerCharts(charts, dayNumber + algoSeed * 1301, 5);
+  // 基础每日三十首尽量避开新歌速递前 20 首，减少板块重复。
+  const tailPool = newSongs.length > 24 ? newSongs.slice(18).concat(newSongs.slice(0, 18)) : newSongs;
+  const dailySongs = dailyShuffle(tailPool, dayNumber);
+  const firstDailyCover = dailySongs.find((s: Song) => s.coverUrl.length > 0)?.coverUrl ?? recommend[0]?.cover ?? '';
+  const daily: FeedPlaylist = { id: 'daily-30', name: '每日三十首', cover: firstDailyCover, count: dailySongs.length, playCount: 0 };
+  return { source: 'all', sections, playlists: recommend, newSongs, charts, bannerCharts, similar: [], daily, dailySongs };
+}
+
+interface HabitArtistStat {
+  score: number;
+  updatedAt: number;
+}
+const habitArtistStats: Map<string, HabitArtistStat> = new Map();
+const habitPlatformStats: Map<string, number> = new Map();
+const habitSkippedSongs: Map<string, number> = new Map();
+
+export function canonicalSongKey(song: Song): string {
+  const cleanTitle = (song.name ?? '')
+    .toLowerCase()
+    .replace(/[\(\（\[\【][^\)\）\]\】]*[\)\）\]\】]/g, '')
+    .replace(/[\s\-_·.,，。!?！？'"]+/g, '')
+    .trim();
+  const cleanSinger = (song.singer ?? '')
+    .toLowerCase()
+    .split(/[\/、,&;，]+/)[0]
+    .replace(/[\s\-_·.,，。'"]+/g, '')
+    .trim();
+  return `${cleanTitle || song.id}|${cleanSinger}`;
+}
+
+export function recordListenHabit(song: Song, listenedMs: number, durationMs: number, completed: boolean): void {
+  if (!song || !song.name) return;
+  const now = Date.now();
+  const ratio = durationMs > 0 ? listenedMs / durationMs : 0;
+  const isComplete = completed || ratio >= 0.65 || listenedMs >= 90000;
+  const isEarlySkip = !isComplete && listenedMs >= 1500 && listenedMs < 20000 && durationMs > 45000 && ratio < 0.22;
+  const delta = isComplete ? 3.6 : (isEarlySkip ? -1.8 : (listenedMs >= 30000 ? 1.2 : 0));
+  if (delta !== 0) {
+    const parts = (song.singer ?? '').split(/[\/、,&;，]+/);
+    for (const raw of parts) {
+      const name = raw.trim();
+      if (!name || name.length > 32 || name === '未知歌手' || name === '本地文件' || name === '群星') continue;
+      const prev = habitArtistStats.get(name);
+      const decay = prev ? Math.exp(-Math.max(0, now - prev.updatedAt) / (21 * 86400000)) : 1;
+      habitArtistStats.set(name, { score: (prev ? prev.score * decay : 0) + delta, updatedAt: now });
+    }
+  }
+  if (isComplete && song.source && song.source !== 'local') {
+    habitPlatformStats.set(song.source, (habitPlatformStats.get(song.source) ?? 0) + 1);
+  }
+  if (isEarlySkip) {
+    habitSkippedSongs.set(canonicalSongKey(song), now);
+  }
+}
+
+function pickRandomBannerCharts(charts: FeedPlaylist[], seed: number, limit: number): FeedPlaylist[] {
+  if (charts.length <= limit) return charts.slice();
+  const copy = charts.slice();
+  let state = (seed ^ 0x5bd1e995) >>> 0;
+  for (let i = copy.length - 1; i > 0; i -= 1) {
+    state = (Math.imul(state, 1664525) + 1013904223) >>> 0;
+    const j = state % (i + 1);
+    const tmp = copy[i]; copy[i] = copy[j]; copy[j] = tmp;
+  }
+  return copy.slice(0, limit);
+}
+
+function timeOfDayMoodQuery(hour: number, seed: number): string {
+  const buckets: string[][] = hour >= 5 && hour < 10
+    ? [['清晨', '轻快'], ['民谣', '治愈']]
+    : hour >= 10 && hour < 18
+      ? [['华语流行', '节奏'], ['轻音乐', '独立']]
+      : hour >= 18 && hour < 22
+        ? [['热门', '粤语'], ['摇滚', 'R&B']]
+        : [['深夜', '舒缓'], ['爵士', '治愈']];
+  const pair = buckets[Math.abs(seed) % buckets.length];
+  return pair[Math.abs(hour + seed) % pair.length];
+}
+
+export async function enrichPersonalizedHome(
+  feed: HomeFeed,
+  recentSongs: Song[],
+  playlists: MusicPlaylist[],
+  host?: LxHost,
+  algoSeed: number = 0,
+  searchHistory: string[] = [],
+): Promise<HomeFeed> {
+  const now = Date.now();
+  const scores = new Map<string, number>();
+  const recentBlocked = new Set<string>();
+  const platformAffinity = new Map<string, number>();
+  const addArtistScore = (singer: string, weight: number): void => {
+    const parts = singer.split(/[\/、,&;，]+/);
+    for (const raw of parts) {
+      const name = raw.trim();
+      if (!name || name.length > 32 || name === '未知歌手' || name === '本地文件' || name === '群星' || name === 'Various Artists') continue;
+      scores.set(name, (scores.get(name) ?? 0) + weight);
+    }
+  };
+  // 1. 实时听歌习惯画像（完播加权 + 切歌负反馈 + 21 天时间衰减）
+  habitArtistStats.forEach((stat: HabitArtistStat, artist: string) => {
+    const decay = Math.exp(-Math.max(0, now - stat.updatedAt) / (21 * 86400000));
+    scores.set(artist, (scores.get(artist) ?? 0) + stat.score * decay);
+  });
+  habitPlatformStats.forEach((count: number, src: string) => {
+    platformAffinity.set(src, (platformAffinity.get(src) ?? 0) + count * 1.5);
+  });
+  // 2. 最近播放（前 6 首短期避让，其余按近因衰减加权）
+  for (let i = 0; i < Math.min(recentSongs.length, 50); i += 1) {
+    const song = recentSongs[i];
+    if (i < 6) recentBlocked.add(canonicalSongKey(song));
+    addArtistScore(song.singer, Math.max(0.7, 2.8 - i * 0.045));
+    if (song.source && song.source !== 'local') {
+      platformAffinity.set(song.source, (platformAffinity.get(song.source) ?? 0) + 1);
+    }
+  }
+  // 3. 收藏与自建歌单
+  for (const list of playlists) {
+    const weight = list.isFavorite ? 4.0 : 1.4;
+    for (const song of (list.songs ?? []).slice(0, 100)) {
+      addArtistScore(song.singer, weight);
+      if (song.source && song.source !== 'local') {
+        platformAffinity.set(song.source, (platformAffinity.get(song.source) ?? 0) + (list.isFavorite ? 1.5 : 0.5));
+      }
+    }
+  }
+  // 4. 最近搜索关键词偏好
+  const cleanSearches = searchHistory
+    .map((q: string) => q.trim())
+    .filter((q: string) => q.length >= 2 && q.length <= 24)
+    .slice(0, 6);
+  for (const q of cleanSearches) {
+    scores.set(q, (scores.get(q) ?? 0) + 1.8);
+  }
+  // 48 小时内频繁秒切的歌曲避让
+  habitSkippedSongs.forEach((ts: number, key: string) => {
+    if (now - ts < 48 * 3600000) recentBlocked.add(key);
+  });
+
+  const preferredPlatforms: Array<'wy' | 'tx' | 'kg' | 'kw'> = (['wy', 'tx', 'kg', 'kw'] as Array<'wy' | 'tx' | 'kg' | 'kw'>)
+    .sort((a: string, b: string) => (platformAffinity.get(b) ?? 0) - (platformAffinity.get(a) ?? 0));
+  const daySeed = Math.floor(now / 86400000) + algoSeed * 7919;
+  const bannerCharts = pickRandomBannerCharts(feed.charts, daySeed + algoSeed * 1301, 5);
+  const allRanked: string[] = Array.from(scores.keys())
+    .filter((k: string) => (scores.get(k) ?? 0) > 0.2)
+    .sort((a: string, b: string) => (scores.get(b) ?? 0) - (scores.get(a) ?? 0))
+    .slice(0, 12);
+
+  if (!allRanked.length) {
+    // 无听歌历史时：用时段氛围召回 + 严格跨板块去重，保证猜你喜欢/每日三十首/新歌速递互不重复。
+    const moodWord = timeOfDayMoodQuery(new Date().getHours(), algoSeed);
+    let moodSongs: Song[] = await searchLx('wy', moodWord, 1, 20).then((r): Song[] => r.items).catch((): Song[] => []);
+    if (host && moodSongs.length) {
+      const mc = await hydrateSongCovers(host, moodSongs);
+      moodSongs = applyCoversToSongs(moodSongs, mc);
+    }
+    const forYou = moodSongs.slice(0, 16);
+    const usedForYou = new Set<string>(forYou.map(canonicalSongKey));
+    const freshPool = feed.newSongs.filter((s: Song) => !usedForYou.has(canonicalSongKey(s)));
+    const dailyBase = freshPool.length > 26 ? freshPool.slice(18).concat(moodSongs.slice(16)) : freshPool.concat(moodSongs.slice(16));
+    const dailySongs = dailyShuffle(dailyBase, daySeed);
+    const usedDaily = new Set<string>(dailySongs.map(canonicalSongKey));
+    const reorderedNew = feed.newSongs.filter((s: Song) => !usedDaily.has(canonicalSongKey(s)) && !usedForYou.has(canonicalSongKey(s)))
+      .concat(feed.newSongs.filter((s: Song) => usedDaily.has(canonicalSongKey(s)) || usedForYou.has(canonicalSongKey(s))));
+    const dailyCover = dailySongs.find((s: Song) => s.coverUrl.length > 0)?.coverUrl ?? feed.daily?.cover ?? '';
+    const daily: FeedPlaylist = { id: 'daily-30', name: '每日三十首', cover: dailyCover, count: dailySongs.length, playCount: 0 };
+    return {
+      source: feed.source, sections: feed.sections, playlists: feed.playlists, newSongs: reorderedNew,
+      charts: feed.charts, bannerCharts, similar: feed.similar, forYou, personalized: false, topArtists: [], daily, dailySongs,
+    };
+  }
+
+  // 选取 5 个核心兴趣词 + 1 个时段氛围词，跨用户偏好平台多路召回。
+  const ranked: string[] = [];
+  const startIdx = algoSeed > 0 && allRanked.length > 4 ? (algoSeed % allRanked.length) : 0;
+  for (let k = 0; k < Math.min(5, allRanked.length); k += 1) {
+    ranked.push(allRanked[(startIdx + k) % allRanked.length]);
+  }
+  const moodQuery = timeOfDayMoodQuery(new Date().getHours(), algoSeed);
+  const queries: string[] = ranked.concat([moodQuery]);
+  const searchPage = algoSeed > 0 ? ((algoSeed % 2) + 1) : 1;
+  const fetchedLists = await Promise.all(queries.map((q: string, idx: number): Promise<Song[]> => {
+    const src = preferredPlatforms[idx % Math.min(3, preferredPlatforms.length)];
+    return searchLx(src, q, searchPage, 14)
+      .then((res): Song[] => res.items.length ? res.items : [])
+      .catch((): Song[] => []);
+  }));
+  let rawHabitPool = mergeRoundRobin(fetchedLists, canonicalSongKey)
+    .filter((song: Song) => !recentBlocked.has(canonicalSongKey(song)));
+  if (!rawHabitPool.length && searchPage > 1) {
+    const retryLists = await Promise.all(ranked.slice(0, 3).map((artist: string): Promise<Song[]> =>
+      searchLx('wy', artist, 1, 12).then((res): Song[] => res.items).catch((): Song[] => [])
+    ));
+    rawHabitPool = mergeRoundRobin(retryLists, canonicalSongKey);
+  }
+  if (!rawHabitPool.length) return feed;
+  if (algoSeed > 0) {
+    rawHabitPool = dailyShuffle(rawHabitPool, algoSeed * 4099 + 13);
+  }
+  // 歌手多样性约束（MMR）：同一主歌手在单个板块最多出现 2 首。
+  const diversify = (list: Song[], limit: number, exclude: Set<string>): Song[] => {
+    const out: Song[] = [];
+    const artistCount = new Map<string, number>();
+    for (const s of list) {
+      const ck = canonicalSongKey(s);
+      if (exclude.has(ck)) continue;
+      const primaryArtist = (s.singer ?? '').split(/[\/、,&;，]+/)[0].trim().toLowerCase();
+      const cnt = artistCount.get(primaryArtist) ?? 0;
+      if (primaryArtist && cnt >= 2) continue;
+      exclude.add(ck);
+      if (primaryArtist) artistCount.set(primaryArtist, cnt + 1);
+      out.push(s);
+      if (out.length >= limit) break;
+    }
+    return out;
+  };
+
+  // 严格三板块互斥：猜你喜欢(16) -> 每日三十首(30) -> 新歌速递(前置无重复曲目)
+  const usedGlobal = new Set<string>();
+  let forYou = diversify(rawHabitPool, 16, usedGlobal);
+  const dailyPersonal = diversify(rawHabitPool, 18, usedGlobal);
+  // 每日三十首的平台探索配额优先从新歌尾段取，避开新歌速递前排 20 首。
+  const newTailFirst = feed.newSongs.length > 22 ? feed.newSongs.slice(20).concat(feed.newSongs.slice(0, 20)) : feed.newSongs;
+  const dailyFresh = diversify(newTailFirst, 30 - dailyPersonal.length, usedGlobal);
+  let dailySongs = dailyShuffle(dailyPersonal.concat(dailyFresh), daySeed);
+
+  if (host) {
+    const covers = await hydrateSongCovers(host, forYou.concat(dailySongs));
+    forYou = applyCoversToSongs(forYou, covers);
+    dailySongs = applyCoversToSongs(dailySongs, covers);
+  }
+  // 新歌速递把未在猜你喜欢/每日三十首出现的新歌排在最前，确保三个板块几乎零重叠。
+  const nonOverlappingNew = feed.newSongs.filter((s: Song) => !usedGlobal.has(canonicalSongKey(s)));
+  const overlappingNew = feed.newSongs.filter((s: Song) => usedGlobal.has(canonicalSongKey(s)));
+  const reorderedNewSongs = nonOverlappingNew.concat(overlappingNew);
+
+  const dailyCover = dailySongs.find((s: Song) => s.coverUrl.length > 0)?.coverUrl ?? feed.daily?.cover ?? '';
+  const daily: FeedPlaylist = {
+    id: 'daily-30',
+    name: '每日三十首',
+    cover: dailyCover,
+    count: dailySongs.length,
+    playCount: 0,
+  };
+  return {
+    source: feed.source,
+    sections: feed.sections,
+    playlists: feed.playlists,
+    newSongs: reorderedNewSongs,
+    charts: feed.charts,
+    bannerCharts,
+    similar: feed.similar,
+    forYou,
+    personalized: true,
+    topArtists: ranked.slice(0, 4),
+    daily,
+    dailySongs,
+  };
 }
 
 interface WyArtist { name?: string; }

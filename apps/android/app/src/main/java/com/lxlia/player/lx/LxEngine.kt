@@ -1,4 +1,5 @@
 package com.lxlia.player.lx
+import org.json.JSONArray
 import org.json.JSONObject
 
 import com.lxlia.player.model.LyricLine
@@ -6,10 +7,18 @@ import com.lxlia.player.model.Song
 import com.lxlia.player.model.SyncSourcePayload
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.CancellationException
+import kotlinx.coroutines.delay
 import kotlinx.coroutines.withContext
 import kotlinx.coroutines.withTimeoutOrNull
 import kotlinx.coroutines.sync.Mutex
 import kotlinx.coroutines.sync.withLock
+
+data class ResolvedSongMedia(
+    val lines: List<LyricLine> = emptyList(),
+    val translation: List<LyricLine> = emptyList(),
+    val romaji: List<LyricLine> = emptyList(),
+    val coverUrl: String = "",
+)
 
 /**
  * 音源装配：声明、启用、播放地址解析与歌词获取。
@@ -121,55 +130,87 @@ class LxEngine(private val host: LxHost) {
      * 取播放地址。与鸿蒙 playSong 一致：当前音源失败时依次尝试其余音源（最多 6 个），
      * 成功即切换为当前音源；全部失败抛出聚合错误。
      */
-    suspend fun resolveUrl(song: Song): String = withContext(Dispatchers.IO) {
-        activationMutex.withLock {
-            if (!ready || !host.ready) activeSource()?.let { activateSource(it) }
-        }
+    private fun friendlyError(raw: String?): String {
+        val msg = raw?.trim().orEmpty()
+        if (msg.isEmpty()) return "暂未找到可用完整音源，请稍后重试"
+        val looksEnglishTech = msg.all { it.code < 128 } ||
+            Regex("ECONN|ETIMEDOUT|ENOTFOUND|fetch failed|socket|HTTP \\d{3}|timeout|status code|UnknownHost", RegexOption.IGNORE_CASE).containsMatchIn(msg)
+        return if (looksEnglishTech) "当前歌曲暂无法获取完整音源，请检查网络或导入更多音源" else msg
+    }
+
+    suspend fun resolveUrl(
+        song: Song,
+        excludeSourceIds: List<String> = emptyList(),
+        raceAll: Boolean = false,
+    ): String = withContext(Dispatchers.IO) {
+        if (sources.isEmpty()) throw IllegalStateException("先在设置中启用一个支持此平台的音源")
         val resolved = resolveIdentity(song)
-        val info = songInfo(resolved)
-        val primary = activeSource()
-        if (primary == null || !ready) throw IllegalStateException("先在设置中启用一个支持此平台的音源")
+        val payload = JSONObject()
+            .put("sources", org.json.JSONArray().apply {
+                for (src in sources) {
+                    put(
+                        JSONObject()
+                            .put("id", src.id)
+                            .put("name", src.name)
+                            .put("version", src.version)
+                            .put("script", src.script)
+                    )
+                }
+            })
+            .put("activeId", activeId)
+            .put("song", resolved.toJson())
+            .put("quality", quality)
+            .put("excludeSourceIds", org.json.JSONArray(excludeSourceIds))
+            .put("raceAll", raceAll)
         try {
-            return@withContext host.requestMusicUrl(info)
+            val raw = host.catalogue("race-music-url", payload.toString())
+            val obj = JSONObject(raw)
+            val url = obj.optString("url", "")
+            if (url.startsWith("http://") || url.startsWith("https://")) {
+                val winnerId = obj.optString("sourceId", "")
+                val winnerName = obj.optString("sourceName", "")
+                val switched = obj.optBoolean("switched", false)
+                if (winnerId.isNotEmpty() && winnerId != activeId) {
+                    activeId = winnerId
+                    onSourcesChanged?.invoke()
+                    onPersist?.invoke()
+                }
+                if (switched && winnerName.isNotEmpty()) {
+                    onMessage?.invoke("已自动切换至「$winnerName」")
+                }
+                return@withContext url
+            }
+            throw IllegalStateException("暂未找到可用完整音源，请检查网络或导入更多音源")
         } catch (error: CancellationException) {
             throw error
         } catch (error: Throwable) {
-            val message = error.message ?: "音源请求失败"
-            if (sources.size <= 1) throw IllegalStateException(message)
-            val current = sources.indexOfFirst { it.id == activeId }.coerceAtLeast(0)
-            val attempts = minOf(6, sources.size - 1)
-            val tried = mutableListOf<String>()
-            var lastError = ""
-            for (offset in 1..attempts) {
-                val fallback = sources[(current + offset) % sources.size]
-                tried.add(fallback.name)
-                if (!activate(fallback)) {
-                    lastError = "音源加载失败"
-                    continue
-                }
-                try {
-                    val url = host.requestMusicUrl(songInfo(resolved))
-                    onMessage?.invoke("当前音源失败，已切换到「${fallback.name}」")
-                    return@withContext url
-                } catch (fallbackError: CancellationException) {
-                    throw fallbackError
-                } catch (fallbackError: Throwable) {
-                    lastError = fallbackError.message ?: ""
-                }
-            }
-            throw IllegalStateException(
-                "播放失败：$message（已尝试备用音源：${tried.joinToString("、").ifEmpty { "无" }}" +
-                    (if (lastError.isNotEmpty()) "；$lastError" else "") + "）"
-            )
+            throw IllegalStateException(friendlyError(error.message))
         }
     }
 
-    /** 歌词：先问音源，缺失或不完整时回落到原平台公开歌词。 */
-    suspend fun lyricBundle(song: Song, needTranslation: Boolean, needRomaji: Boolean): Triple<List<LyricLine>, List<LyricLine>, List<LyricLine>> =
-        withContext(Dispatchers.IO) {
-            var lines: List<LyricLine> = emptyList()
-            var translation: List<LyricLine> = emptyList()
-            var romaji: List<LyricLine> = emptyList()
+    private suspend fun awaitHostReady(maxWaitMs: Long = 3500L): Boolean {
+        var waited = 0L
+        while (!host.ready && waited < maxWaitMs) {
+            delay(120)
+            waited += 120
+        }
+        return host.ready
+    }
+
+    /**
+     * 歌词 + 封面 100% 级联兜底：无论自定义音源成功、返回空还是抛错，
+     * 只要缺少时间轴歌词或缺少封面，必定等待并合并 host.catalogue("song-assets") 的多平台级联结果。
+     */
+    suspend fun lyricAndCoverBundle(
+        song: Song,
+        needTranslation: Boolean,
+        needRomaji: Boolean,
+    ): ResolvedSongMedia = withContext(Dispatchers.IO) {
+        var lines: List<LyricLine> = emptyList()
+        var translation: List<LyricLine> = emptyList()
+        var romaji: List<LyricLine> = emptyList()
+        var coverUrl: String = song.coverUrl
+        if (ready && song.source != "local") {
             runCatching {
                 val resolved = resolveIdentity(song)
                 val bundle = host.requestLyricBundle(songInfo(resolved))
@@ -177,22 +218,115 @@ class LxEngine(private val host: LxHost) {
                 translation = LyricParser.parse(bundle.tlyric)
                 romaji = LyricParser.parse(bundle.romalrc.ifEmpty { bundle.rlyric })
             }
-            if (lines.size <= 1 || (needTranslation && translation.isEmpty()) || (needRomaji && romaji.isEmpty())) {
-                runCatching {
-                    val full = songAssets(song)
-                    val publicLines = LyricParser.parse(full.optString("lyric"))
-                    if (publicLines.size > lines.size) lines = publicLines
-                    if (translation.isEmpty()) translation = LyricParser.parse(full.optString("tlyric"))
-                    if (romaji.isEmpty()) romaji = LyricParser.parse(full.optString("romalrc"))
+        }
+        val hasTimelineLyrics = lines.size > 1 || (lines.size == 1 && lines[0].text.contains("纯音乐"))
+        val needsAssets = !hasTimelineLyrics ||
+            coverUrl.isEmpty() ||
+            (needTranslation && translation.isEmpty()) ||
+            (needRomaji && romaji.isEmpty())
+        if (needsAssets && awaitHostReady()) {
+            runCatching {
+                val full = songAssets(song)
+                val publicLines = LyricParser.parse(full.optString("lyric"))
+                if (publicLines.size > lines.size || !hasTimelineLyrics) {
+                    if (publicLines.isNotEmpty()) lines = publicLines
+                }
+                if (translation.isEmpty()) translation = LyricParser.parse(full.optString("tlyric"))
+                if (romaji.isEmpty()) romaji = LyricParser.parse(full.optString("romalrc"))
+                val foundCover = full.optString("coverUrl")
+                if (coverUrl.isEmpty() && foundCover.isNotEmpty()) {
+                    coverUrl = foundCover
                 }
             }
-            Triple(lines, translation, romaji)
         }
+        ResolvedSongMedia(lines, translation, romaji, coverUrl)
+    }
+
+    /** 保留旧签名供兼容调用。 */
+    suspend fun lyricBundle(song: Song, needTranslation: Boolean, needRomaji: Boolean): Triple<List<LyricLine>, List<LyricLine>, List<LyricLine>> {
+        val media = lyricAndCoverBundle(song, needTranslation, needRomaji)
+        return Triple(media.lines, media.translation, media.romaji)
+    }
+
+    /** 批量水合缺失封面：通过共享运行时 song-covers 多平台并发补齐。 */
+    suspend fun fetchSongCovers(songs: List<Song>): Map<String, String> = withContext(Dispatchers.IO) {
+        val missing = songs
+            .filter { it.coverUrl.isEmpty() && it.source != "local" && it.id.isNotEmpty() }
+            .distinctBy { it.key }
+        if (missing.isEmpty() || !awaitHostReady()) return@withContext emptyMap()
+        val out = linkedMapOf<String, String>()
+        for (chunk in missing.chunked(24)) {
+            runCatching {
+                val params = JSONObject().put(
+                    "songs",
+                    JSONArray().apply { chunk.forEach { put(it.toJson()) } },
+                )
+                val raw = host.catalogue("song-covers", params.toString())
+                val json = JSONObject(raw)
+                json.keys().forEach { key ->
+                    val url = json.optString(key).trim()
+                    if (url.startsWith("http://", true) || url.startsWith("https://", true)) {
+                        out[key] = url.replaceFirst(Regex("^http://", RegexOption.IGNORE_CASE), "https://")
+                    }
+                }
+            }
+        }
+        out
+    }
+
+    /** 获取同名同歌手跨平台候选曲目列表（含封面补全）。 */
+    suspend fun platformCandidates(
+        song: Song,
+        sources: List<String> = listOf("wy", "tx", "kg", "kw"),
+    ): List<Song> = withContext(Dispatchers.IO) {
+        val results = mutableListOf<Song>()
+        val seen = mutableSetOf<String>()
+        if (awaitHostReady(2500L)) {
+            runCatching {
+                val params = JSONObject()
+                    .put("song", song.toJson())
+                    .put("sources", JSONArray(sources))
+                val raw = host.catalogue("platform-candidates", params.toString())
+                Song.listFromJson(raw).forEach { cand ->
+                    if (seen.add(cand.key)) results.add(cand)
+                }
+            }
+        }
+        // 单平台筛选或候选不足时使用原生 SearchApi 补充
+        val query = listOf(song.name, song.singer.split(Regex("[、/,，;&]+")).firstOrNull().orEmpty())
+            .filter { it.isNotBlank() }
+            .joinToString(" ")
+            .trim()
+        if (query.isNotEmpty() && (sources.size == 1 || results.isEmpty())) {
+            val targetSources = if (sources.size == 1) listOf(SearchSource.of(sources.first())) else listOf(SearchSource.ALL)
+            for (src in targetSources) {
+                runCatching {
+                    SearchApi.search(src, query, page = 1, limit = 16).items.forEach { cand ->
+                        if (cand.source in sources && seen.add(cand.key)) results.add(cand)
+                    }
+                }
+            }
+        }
+        val missingCovers = results.filter { it.coverUrl.isEmpty() }.take(12)
+        if (missingCovers.isNotEmpty()) {
+            val covers = fetchSongCovers(missingCovers)
+            if (covers.isNotEmpty()) {
+                for (i in results.indices) {
+                    val url = covers[results[i].key]
+                    if (!url.isNullOrEmpty() && results[i].coverUrl.isEmpty()) {
+                        results[i] = results[i].copy(coverUrl = url)
+                    }
+                }
+            }
+        }
+        results
+    }
 
     suspend fun importPlaylist(input: String, source: String): String = withContext(Dispatchers.IO) {
         host.importPlaylist(input, source)
     }
     suspend fun songAssets(song: Song): JSONObject = withContext(Dispatchers.IO) {
+        if (!awaitHostReady()) return@withContext JSONObject()
         val assets = JSONObject(host.catalogue("song-assets", song.toJson().toString()))
         if (assets.optString("coverUrl").isEmpty() && ready) {
             try {

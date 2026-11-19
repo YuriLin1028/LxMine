@@ -39,7 +39,7 @@ export struct MaterialSelect {
   build() {
     Select(this.labels.map((value: string): SelectOption => { return { value }; }))
       .selected(Math.max(0, this.values.indexOf(this.value))).value(this.labels[Math.max(0, this.values.indexOf(this.value))])
-      .width(148).height(40).font({ size: 13 }).fontColor(TEXT)
+      .width(148).height(40).font({ size: 13 }).fontColor(TEXT).selectedOptionFontColor(ACCENT)
       .arrowModifier(new SymbolGlyphModifier().fontSize(0)).showDefaultSelectedIcon(false)
       .backgroundColor(Color.Transparent).systemMaterial(musicMaterial()).accessibilityText(this.label)
       .scale({ x: this.pressed ? MATERIAL_PRESS_SCALE : 1, y: this.pressed ? MATERIAL_PRESS_SCALE : 1 })
@@ -58,6 +58,7 @@ export struct MaterialToggle {
   onChange: (value: boolean) => void = () => {};
   build() {
     Toggle({ type: ToggleType.Switch, isOn: this.value })
+      .selectedColor(ACCENT)
       .backgroundColor(Color.Transparent).systemMaterial(musicMaterial()).accessibilityText(this.label)
       .scale({ x: this.pressed ? MATERIAL_PRESS_SCALE : 1, y: this.pressed ? MATERIAL_PRESS_SCALE : 1 })
       .onTouch((event: TouchEvent) => {
@@ -88,22 +89,16 @@ export struct MaterialIcon {
   @Prop disabled: boolean = false;
   @Prop grouped: boolean = false;
   @Prop componentId: string = '';
-  @Prop raw: boolean = false;
-  // raw 图标默认用 fillColor 染成白色；描边型 SVG（sparkle/scan）需关闭染色保留原描边。
+  @Prop raw: boolean = true;
+  // 多色 SVG（红心实心/魔棒/星芒）关闭染色以保留原色，单色精雕矢量默认染为 TEXT/ACCENT。
   @Prop tint: boolean = true;
   @State private pressed: boolean = false;
   action: () => void = () => {};
   @Builder private glyph() {
-      if (this.raw) {
-        // 二级页顶栏也用 38 球 + 20 图标；raw 与 MaterialBall 的 24×24 SVG 同源，避免描边粗细不一。
-        if (this.tint) {
-          Image(this.icon).width(this.diameter > 56 ? 22 : 20).height(this.diameter > 56 ? 22 : 20).fillColor(this.selected ? ACCENT : TEXT)
-        } else {
-          Image(this.icon).width(this.diameter > 56 ? 22 : 20).height(this.diameter > 56 ? 22 : 20)
-        }
+      if (this.tint) {
+        Image(this.icon).width(this.diameter > 56 ? 24 : 20).height(this.diameter > 56 ? 24 : 20).fillColor(this.selected ? ACCENT : TEXT)
       } else {
-        SymbolGlyph(musicSymbol(this.icon)).fontSize(this.diameter > 56 ? 26 : this.diameter === 38 ? 20 : 21)
-          .fontColor([this.selected ? ACCENT : TEXT])
+        Image(this.icon).width(this.diameter > 56 ? 24 : 20).height(this.diameter > 56 ? 24 : 20)
       }
   }
   build() {
@@ -139,11 +134,7 @@ export struct MaterialBall {
   @Builder private content() {
     Button({ type: ButtonType.Circle }) {
       // 图标必须在承载 systemMaterial 的 Button 内部：拖拽形变时图标才会跟球一起动。
-      if (this.symbol) {
-        SymbolGlyph(musicSymbol(this.icon)).fontSize(this.diameter >= 38 ? 20 : 18).fontColor([TEXT])
-      } else {
-        Image(this.icon).width(this.diameter >= 38 ? 20 : 18).height(this.diameter >= 38 ? 20 : 18).fillColor(TEXT)
-      }
+      Image(this.icon).width(this.diameter >= 38 ? 20 : 18).height(this.diameter >= 38 ? 20 : 18).fillColor(TEXT)
     }.width(this.diameter).height(this.diameter).margin({ left: 16, top: 16 }).padding(0)
       .backgroundColor(Color.Transparent).stateEffect(false).buttonStyle(ButtonStyleMode.NORMAL)
       .systemMaterial(musicMaterial()).accessibilityText(this.label)

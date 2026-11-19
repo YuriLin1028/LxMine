@@ -92,13 +92,11 @@ fun AppHeader(vm: AppViewModel) {
                             color = TEXT,
                             maxLines = 1,
                             modifier = Modifier.pointerInput(vm.tab) {
-                                // 双击左上角 LxMine 标题 = 刷新首页内容（与 PC 端一致）。
+                                // 双击左上角 LxMine 标题 = 刷新首页内容，并根据开关重算算法推荐。
                                 detectTapGestures(
                                     onDoubleTap = {
                                         if (vm.tab == "发现") {
-                                            vm.pendingHomeFeed = null
-                                            vm.homeFeed = null
-                                            vm.refreshHomeFeed(true)
+                                            vm.onDoubleTapHomeHeader()
                                         }
                                     },
                                 )
@@ -128,7 +126,15 @@ fun AppHeader(vm: AppViewModel) {
                     .padding(end = if (vm.wide) 32.dp else 20.dp, top = vm.statusInset.dp + 6.dp),
                 horizontalArrangement = Arrangement.spacedBy(8.dp),
             ) {
-                MaterialIconButton("ic_sparkle.svg", "智能识别手机里的音频", diameter = 38.dp, enabled = !vm.localMusicBusy, onClick = { vm.scanLocalMusic() })
+                MaterialIconButton(
+                    "ic_sparkle.svg",
+                    "智能识别手机里的音频",
+                    diameter = 38.dp,
+                    rawNoTint = true,
+                    systemSymbol = false,
+                    enabled = !vm.localMusicBusy,
+                    onClick = { vm.scanLocalMusic() },
+                )
                 MaterialIconButton("ic_import.svg", "导入本地音频", diameter = 38.dp, enabled = !vm.localMusicBusy, onClick = { vm.pickLocalAudio() })
                 MaterialIconButton("ic_search.svg", "搜索本列表", diameter = 38.dp, onClick = {
                     vm.listSearchOpen = !vm.listSearchOpen
@@ -137,15 +143,36 @@ fun AppHeader(vm: AppViewModel) {
             }
         }
         if (vm.secondaryHeader() && opened != null && opened.kind != "local") {
+            val canManage = vm.canManageOpenedPlaylist()
+            val manageMenu = rememberGlassMenuTrigger {
+                buildList {
+                    add(GlassMenuItem("编辑歌单") { vm.openEditPlaylist(opened) })
+                    add(GlassMenuItem("重命名") { vm.openRenamePlaylist(opened) })
+                    if (opened.songs.isNotEmpty()) {
+                        add(GlassMenuItem("批量下载") { vm.downloadBatch(opened.songs) })
+                    }
+                    add(GlassMenuItem("删除歌单") { vm.deleteOpenedPlaylist() })
+                }
+            }
             Row(
                 modifier = Modifier
                     .align(Alignment.TopEnd)
                     .padding(end = if (vm.wide) 32.dp else 20.dp, top = vm.statusInset.dp + 6.dp),
+                horizontalArrangement = Arrangement.spacedBy(8.dp),
             ) {
                 MaterialIconButton("ic_search.svg", "搜索本列表", diameter = 38.dp, onClick = {
                     vm.listSearchOpen = !vm.listSearchOpen
                     if (!vm.listSearchOpen) vm.listQuery = ""
                 })
+                if (canManage) {
+                    MaterialIconButton(
+                        "ic_more.svg",
+                        "歌单管理",
+                        modifier = manageMenu.modifier,
+                        diameter = 38.dp,
+                        onClick = { manageMenu.show() },
+                    )
+                }
             }
         }
     }

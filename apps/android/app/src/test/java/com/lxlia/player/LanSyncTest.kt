@@ -1,9 +1,13 @@
 package com.lxlia.player
 
+import com.lxlia.player.lx.LanSyncClient
 import com.lxlia.player.lx.LanSyncServer
 import com.lxlia.player.lx.LanDevice
 import com.lxlia.player.lx.LanPullReceiver
+import com.lxlia.player.lx.mergeSyncedPlaylists
 import com.lxlia.player.lx.readLanSyncHttpRequest
+import com.lxlia.player.model.MusicPlaylist
+import com.lxlia.player.model.Song
 import okio.Buffer
 import okio.buffer
 import okio.source
@@ -230,6 +234,79 @@ class LanSyncTest {
                 val response = socket.getInputStream().source().buffer().readUtf8().substringAfter("\r\n\r\n")
                 assertTrue(JSONObject(response).getBoolean("accepted"))
             }
+        } finally {
+            server.stop()
+        }
+    }
+
+    @Test
+    fun parseManualEndpointHandlesDefaultAndExplicitPorts() {
+        assertEquals("192.168.1.25" to 41300, LanSyncClient.parseManualEndpoint("192.168.1.25"))
+        assertEquals("192.168.1.25" to 41302, LanSyncClient.parseManualEndpoint(" 192.168.1.25:41302 "))
+        assertEquals("[::1]" to 41300, LanSyncClient.parseManualEndpoint("[::1]"))
+        assertEquals("[::1]" to 41301, LanSyncClient.parseManualEndpoint("[::1]:41301"))
+        assertNull(LanSyncClient.parseManualEndpoint(""))
+        assertNull(LanSyncClient.parseManualEndpoint("192.168.1.25:99999"))
+    }
+
+    @Test
+    fun mergeSyncedPlaylistsMatchesFavoriteAndIdByUpdatedAt() {
+        val songA = Song(source = "wy", id = "1", name = "A", singer = "S")
+        val songB = Song(source = "wy", id = "2", name = "B", singer = "S")
+        val local = listOf(
+            MusicPlaylist(id = "local-fav", name = "我喜欢的", isFavorite = true, songs = listOf(songA), updatedAt = 100L),
+            MusicPlaylist(id = "pl-1", name = "旧名字", songs = listOf(songA), updatedAt = 200L),
+            MusicPlaylist(id = "pl-keep", name = "本地更新", songs = listOf(songA, songB), updatedAt = 500L),
+        )
+        val incoming = listOf(
+            MusicPlaylist(id = "remote-fav", name = "我喜欢的", isFavorite = true, songs = listOf(songA, songB), updatedAt = 300L),
+            MusicPlaylist(id = "pl-1", name = "新名字", songs = listOf(songB), updatedAt = 400L),
+            MusicPlaylist(id = "pl-keep", name = "远端旧版", songs = emptyList(), updatedAt = 150L),
+            MusicPlaylist(id = "pl-new", name = "远端新增", songs = listOf(songB), updatedAt = 250L),
+        )
+        val merged = mergeSyncedPlaylists(local, incoming)
+        assertEquals(4, merged.size)
+        val fav = merged.first { it.isFavorite }
+        assertEquals("local-fav", fav.id)
+        assertEquals(2, fav.songs.size)
+        assertEquals("新名字", merged.first { it.id == "pl-1" }.name)
+        assertEquals("本地更新", merged.first { it.id == "pl-keep" }.name)
+        assertEquals(1, merged.first { it.id == "pl-new" }.songs.size)
+    }
+
+    @Test
+    fun autoPlaylistsEndpointHonorsLanAutoSyncSwitch() {
+        val server = LanSyncServer()
+        server.setIdentity("receiver", "Android")
+        var enabled = false
+        var receivedFrom = ""
+        var receivedCount = 0
+        server.autoSyncEnabled = { enabled }
+        server.onAutoPlaylists = { _, peerName, lists ->
+            receivedFrom = peerName
+            receivedCount = lists.size
+            true
+        }
+        try {
+            val port = server.start()
+            val peer = LanDevice("receiver", "Android", "android", "127.0.0.1", port, 0)
+            val payload = JSONObject()
+                .put("protocol", "lxlia-lansync/1")
+                .put("version", 1)
+                .put("device", JSONObject().put("id", "desktop-1").put("name", "Windows PC"))
+                .put(
+                    "playlists",
+                    org.json.JSONArray().put(
+                        MusicPlaylist(id = "pl-1", name = "通勤歌单", updatedAt = 1000L).toJson(),
+                    ),
+                )
+            assertEquals(false, LanSyncClient.pushAutoPlaylists(peer, payload))
+            assertEquals(0, receivedCount)
+
+            enabled = true
+            assertEquals(true, LanSyncClient.pushAutoPlaylists(peer, payload))
+            assertEquals("Windows PC", receivedFrom)
+            assertEquals(1, receivedCount)
         } finally {
             server.stop()
         }

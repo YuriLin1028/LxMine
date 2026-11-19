@@ -7,9 +7,9 @@
   <style>
     :root{
       --lyric-primary:#f6fdff;
-      --lyric-secondary:#a8f6ff;
-      --lyric-highlight:#fff0b8;
-      --lyric-glow:#9cffdf;
+      --lyric-secondary:#a5b4fc;
+      --lyric-highlight:#e0f7ff;
+      --lyric-glow:#64d2ff;
       --lyric-font:Inter,"Noto Sans SC","PingFang SC","Microsoft YaHei",Arial,sans-serif;
       --lyric-weight:900;
       --lyric-letter-spacing:0px;
@@ -23,12 +23,12 @@
       --lyric-mask-edge-width:92px;
       --lyric-vertical-feather:46px;
       --lyric-css-beat-glow:0px;
-      --lyric-shadow-soft:rgba(156,255,223,.34);
-      --lyric-shadow-glow:rgba(156,255,223,.26);
-      --lyric-shadow-hot:rgba(255,240,184,.22);
+      --lyric-shadow-soft:rgba(100,210,255,.34);
+      --lyric-shadow-glow:rgba(56,189,248,.26);
+      --lyric-shadow-hot:rgba(125,211,252,.24);
       --lyric-edge:rgba(4,6,12,.42);
-      --lyric-drop:rgba(156,255,223,.38);
-      --lyric-drop-paused:rgba(156,255,223,.22);
+      --lyric-drop:rgba(100,210,255,.38);
+      --lyric-drop-paused:rgba(100,210,255,.22);
     }
     html,body{margin:0;width:100%;height:100%;overflow:hidden;background:transparent;user-select:none}
     body{opacity:0;transition:opacity .22s ease;-webkit-app-region:no-drag}
@@ -270,13 +270,13 @@
     var state = {
       enabled:false,text:'LxMine',progress:0,progressSpan:4.8,progressReceivedAt:0,playing:false,
       playbackTime:0,playbackDuration:0,playbackRate:1,playbackReceivedAt:0,beatMapKey:'',
-      size:1,opacity:.92,clickThrough:true,lyricGlowParticles:false,cinema:true,highlightFollow:false,frameRate:60,
+      size:1,opacity:.92,clickThrough:true,lyricGlowParticles:false,cinema:true,highlightFollow:false,frameRate:120,
       lyricGlow:true,lyricGlowBeat:true,lyricGlowStrength:.35,highBloom:0,beatGlow:0,beatPulse:0,bass:0,feather:.055,
       fontFamily:'Inter,"Noto Sans SC","PingFang SC","Microsoft YaHei",Arial,sans-serif',
       customFont:null,
       fontWeight:900,letterSpacing:0,lineHeight:1,lyricScale:1,
-      colors:{primary:'#f6fdff',secondary:'#a8f6ff',highlight:'#fff0b8',glow:'#9cffdf'},
-      displayColors:{primary:'#f6fdff',secondary:'#a8f6ff',highlight:'#fff0b8',glow:'#9cffdf'}
+      colors:{primary:'#7dd3fc',secondary:'#a5b4fc',highlight:'#e0f7ff',glow:'#38bdf8'},
+      displayColors:{primary:'#7dd3fc',secondary:'#a5b4fc',highlight:'#e0f7ff',glow:'#38bdf8'}
     };
     var desktopBeat = {
       key:'',
@@ -838,10 +838,10 @@
       state.bass = clamp(state.bass, 0, 1.2, 0);
       state.feather = clamp(state.feather || (next && next.feather), .030, .075, .055);
       state.displayColors = {
-        primary: normalizeLyricColor(state.colors.primary || '#f6fdff', '#f6fdff'),
-        secondary: normalizeLyricColor(state.colors.secondary || '#a8f6ff', '#a8f6ff'),
-        highlight: normalizeLyricColor(state.colors.highlight || '#fff0b8', '#fff0b8'),
-        glow: normalizeLyricColor(state.colors.glow || state.colors.secondary || '#9cffdf', '#9cffdf')
+        primary: normalizeLyricColor(state.colors.primary || '#7dd3fc', '#7dd3fc'),
+        secondary: normalizeLyricColor(state.colors.secondary || '#a5b4fc', '#a5b4fc'),
+        highlight: normalizeLyricColor(state.colors.highlight || '#e0f7ff', '#e0f7ff'),
+        glow: normalizeLyricColor(state.colors.glow || state.colors.secondary || '#38bdf8', '#38bdf8')
       };
       setRootVar('--lyric-primary', state.displayColors.primary);
       setRootVar('--lyric-secondary', state.displayColors.secondary);

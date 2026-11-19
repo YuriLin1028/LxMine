@@ -2,6 +2,7 @@ package com.lxlia.player.lx
 
 import android.content.Context
 import android.net.wifi.WifiManager
+import com.lxlia.player.model.MusicPlaylist
 import com.lxlia.player.model.SyncSourcePayload
 import okhttp3.MediaType.Companion.toMediaType
 import okhttp3.OkHttpClient
@@ -36,7 +37,56 @@ data class LanDevice(
     val ssid: String = "",
     val receiveMode: String = "direct",
     val pullRequests: List<String> = emptyList(),
+    val autoSyncPlaylists: Boolean = false,
 )
+
+/**
+ * 歌单自动合并：按 isFavorite / id 匹配，保留 updatedAt 较新的歌单，不覆盖音源与设置。
+ */
+fun mergeSyncedPlaylists(local: List<MusicPlaylist>, incoming: List<MusicPlaylist>): List<MusicPlaylist> {
+    if (incoming.isEmpty()) return local
+    val result = mutableListOf<MusicPlaylist>()
+    val localFav = local.firstOrNull { it.isFavorite }
+    val incomingFav = incoming.firstOrNull { it.isFavorite }
+    when {
+        localFav != null && incomingFav != null -> {
+            if (incomingFav.updatedAt > localFav.updatedAt) {
+                result.add(
+                    incomingFav.copy(
+                        id = localFav.id,
+                        name = incomingFav.name.ifEmpty { localFav.name },
+                        isFavorite = true,
+                    ),
+                )
+            } else {
+                result.add(localFav)
+            }
+        }
+        localFav != null -> result.add(localFav)
+        incomingFav != null -> result.add(incomingFav.copy(isFavorite = true))
+    }
+
+    val incomingById = incoming.filterNot { it.isFavorite }.associateBy { it.id }
+    val handledIds = mutableSetOf<String>()
+    for (item in local) {
+        if (item.isFavorite) continue
+        val remote = incomingById[item.id]
+        if (remote != null) {
+            handledIds.add(item.id)
+            result.add(if (remote.updatedAt > item.updatedAt) remote else item)
+        } else {
+            result.add(item)
+        }
+    }
+    for (remote in incoming) {
+        if (remote.isFavorite) continue
+        if (remote.id.isNotEmpty() && remote.id !in handledIds) {
+            result.add(remote)
+            handledIds.add(remote.id)
+        }
+    }
+    return result
+}
 
 data class SyncSummary(val settings: Int = 0, val sources: Int = 0, val playlists: Int = 0)
 
@@ -78,6 +128,8 @@ class LanSyncServer(private val confirmationTimeoutMs: Long = 120000) {
     private var deviceId = ""
     private var deviceName = "Android"
     private val maxBody = 8 * 1024 * 1024
+    var autoSyncEnabled: () -> Boolean = { false }
+    var onAutoPlaylists: ((peerId: String, peerName: String, playlists: List<MusicPlaylist>) -> Boolean)? = null
 
     private class Pending(
         val incoming: SyncIncoming,
@@ -261,8 +313,13 @@ class LanSyncServer(private val confirmationTimeoutMs: Long = 120000) {
                     .put("name", deviceName)
                     .put("platform", "android")
                     .put("port", port)
+                    .put("autoSyncPlaylists", autoSyncEnabled())
                     .toString(),
             )
+            return
+        }
+        if (method == "POST" && path == "/lxlia-sync/auto-playlists") {
+            handleAutoPlaylists(socket, body)
             return
         }
         if (method != "POST" || path != "/lxlia-sync/push") {
@@ -270,6 +327,29 @@ class LanSyncServer(private val confirmationTimeoutMs: Long = 120000) {
             return
         }
         enqueueIncoming(body, { status, response -> reply(socket, status, response) }, { socket.close() })
+    }
+
+    private fun handleAutoPlaylists(socket: Socket, body: String) {
+        if (!autoSyncEnabled()) {
+            reply(socket, 200, """{"accepted":false,"message":"auto sync disabled"}""")
+            return
+        }
+        val bundle = runCatching { JSONObject(body) }.getOrNull()
+        val device = bundle?.optJSONObject("device")
+        val peerId = device?.optString("id").orEmpty()
+        val playlistsArray = bundle?.opt("playlists") as? JSONArray
+        if (bundle == null || bundle.optString("protocol") != SYNC_PROTOCOL ||
+            device == null || peerId.isEmpty() || peerId == this.deviceId || playlistsArray == null
+        ) {
+            reply(socket, 400, """{"accepted":false,"message":"invalid auto-playlists payload"}""")
+            return
+        }
+        val incoming = MusicPlaylist.listFromJson(playlistsArray.toString())
+        val peerName = device.optString("name").ifEmpty { "LxMine" }
+        val accepted = runCatching {
+            onAutoPlaylists?.invoke(peerId, peerName, incoming) ?: false
+        }.getOrDefault(false)
+        reply(socket, 200, JSONObject().put("accepted", accepted).toString())
     }
 
     private fun enqueueIncoming(body: String, sendReply: (Int, String) -> Unit, closeConnection: () -> Unit) {
@@ -334,6 +414,57 @@ object LanSyncClient {
         .readTimeout(130, TimeUnit.SECONDS)
         .build()
 
+    private val fastClient = OkHttpClient.Builder()
+        .proxy(Proxy.NO_PROXY)
+        .connectTimeout(4, TimeUnit.SECONDS)
+        .readTimeout(8, TimeUnit.SECONDS)
+        .build()
+
+    fun parseManualEndpoint(raw: String, defaultPort: Int = 41300): Pair<String, Int>? {
+        val text = raw.trim().removePrefix("http://").removePrefix("https://").substringBefore('/').trim()
+        if (text.isEmpty()) return null
+        val host: String
+        val port: Int
+        if (text.startsWith("[")) {
+            val close = text.indexOf(']')
+            if (close <= 1) return null
+            host = text.substring(0, close + 1)
+            val rest = text.substring(close + 1)
+            port = when {
+                rest.isEmpty() -> defaultPort
+                rest.startsWith(":") -> rest.substring(1).toIntOrNull() ?: return null
+                else -> return null
+            }
+        } else {
+            val colonCount = text.count { it == ':' }
+            if (colonCount == 0) {
+                host = text
+                port = defaultPort
+            } else if (colonCount == 1) {
+                host = text.substringBefore(':').trim()
+                port = text.substringAfter(':').trim().toIntOrNull() ?: return null
+            } else {
+                return null
+            }
+        }
+        if (host.isEmpty() || host.any { it.isWhitespace() } || port !in 1..65535) return null
+        return host to port
+    }
+
+    fun ping(host: String, port: Int): JSONObject? {
+        if (port !in 1..65535) return null
+        val request = Request.Builder()
+            .url("http://$host:$port/lxlia-sync/ping")
+            .get()
+            .build()
+        return runCatching {
+            fastClient.newCall(request).execute().use { response ->
+                if (!response.isSuccessful) null
+                else JSONObject(response.body?.string().orEmpty()).takeIf { it.optString("protocol") == SYNC_PROTOCOL }
+            }
+        }.getOrNull()
+    }
+
     fun push(device: LanDevice, bundle: JSONObject): Boolean {
         if (device.port <= 0) throw IllegalStateException("该设备没有可接收的端口")
         val request = Request.Builder()
@@ -347,6 +478,21 @@ object LanSyncClient {
             return runCatching { JSONObject(body).optBoolean("accepted") }.getOrDefault(false)
         }
     }
+
+    fun pushAutoPlaylists(device: LanDevice, bundle: JSONObject): Boolean {
+        if (device.port <= 0) return false
+        val request = Request.Builder()
+            .url("http://${device.address}:${device.port}/lxlia-sync/auto-playlists")
+            .header("content-type", "application/json; charset=utf-8")
+            .post(bundle.toString().toRequestBody("application/json; charset=utf-8".toMediaType()))
+            .build()
+        return runCatching {
+            fastClient.newCall(request).execute().use { response ->
+                if (!response.isSuccessful) false
+                else JSONObject(response.body?.string().orEmpty()).optBoolean("accepted")
+            }
+        }.getOrDefault(false)
+    }
 }
 
 /**
@@ -354,8 +500,29 @@ object LanSyncClient {
  * 只负责“看见谁在线”，推送与接收由 LanSyncServer / LanSyncClient 负责。
  */
 class LanDiscovery(private val deviceId: String, private val deviceName: String) {
-    private companion object {
-        const val DISCOVERY_PORT = 41234
+    companion object {
+        private const val DISCOVERY_PORT = 41234
+
+        /** 获取本机局域网 IPv4 地址，优先内网网段（192.168 / 10 / 172.16-31）。 */
+        fun localIpv4(): String {
+            val candidates = mutableListOf<String>()
+            runCatching {
+                val interfaces = java.net.NetworkInterface.getNetworkInterfaces() ?: return@runCatching
+                for (iface in interfaces) {
+                    if (!iface.isUp || iface.isLoopback || iface.isVirtual) continue
+                    for (addr in iface.inetAddresses) {
+                        if (addr is java.net.Inet4Address && !addr.isLoopbackAddress && !addr.isLinkLocalAddress) {
+                            val ip = addr.hostAddress.orEmpty()
+                            if (ip.isNotEmpty()) {
+                                if (addr.isSiteLocalAddress) candidates.add(0, ip) else candidates.add(ip)
+                            }
+                        }
+                    }
+                }
+            }
+            return candidates.firstOrNull { it.startsWith("192.168.") || it.startsWith("10.") || it.startsWith("172.") }
+                ?: candidates.firstOrNull().orEmpty()
+        }
     }
     private var socket: DatagramSocket? = null
     private var multicastLock: WifiManager.MulticastLock? = null
@@ -366,6 +533,7 @@ class LanDiscovery(private val deviceId: String, private val deviceName: String)
         private set
     var onDevices: ((List<LanDevice>) -> Unit)? = null
     var pullRequests: () -> JSONArray = { JSONArray() }
+    var autoSyncProvider: () -> Boolean = { false }
     @Volatile private var broadcasts: Set<String> = setOf("255.255.255.255")
 
     @Synchronized
@@ -459,6 +627,7 @@ class LanDiscovery(private val deviceId: String, private val deviceName: String)
             .put("platform", "android")
             .put("receiveMode", "pull")
             .put("pullRequests", pullRequests())
+            .put("autoSyncPlaylists", autoSyncProvider())
             .put("port", port)
             .put("ssid", ssid)
             .put("ts", System.currentTimeMillis())
@@ -496,6 +665,7 @@ class LanDiscovery(private val deviceId: String, private val deviceName: String)
             ssid = parsed.optString("ssid"),
             receiveMode = parsed.optString("receiveMode", "direct"),
             pullRequests = pullIds,
+            autoSyncPlaylists = parsed.optBoolean("autoSyncPlaylists", false),
         )
         devices[id] = device
         onDevices?.invoke(devices.values.sortedBy { it.name })

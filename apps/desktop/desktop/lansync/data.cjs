@@ -42,6 +42,27 @@ function portableLists(lists) {
     isFavorite: !!list.isFavorite, songs: list.tracks.map(portableSong).filter(Boolean),
     pcTracks: list.tracks.filter(track => !sourceOf(track)) }));
 }
+function incomingSongToTrack(song) {
+  if (!song || typeof song !== 'object') return null;
+  if (song.source === 'local' || song.provider === 'local') {
+    const rawId = String(song.localFileId || song.localKey || song.id || '').trim();
+    if (!rawId) return null;
+    return {
+      id: rawId,
+      provider: 'local',
+      source: 'local',
+      type: 'local',
+      localFileId: rawId.replace(/^local:/, ''),
+      localKey: rawId,
+      name: song.name || song.title || '本地歌曲',
+      artist: song.singer || song.artist || '本地文件',
+      album: song.albumName || song.album || '',
+      cover: song.coverUrl || song.cover || '',
+      durationMs: Number(song.durationMs || song.dt) || 0,
+    };
+  }
+  return toMineTrack(song);
+}
 function incomingLists(lists) {
   if (!Array.isArray(lists) || lists.length > 100) throw new Error('同步歌单数量无效');
   const seen = new Set();
@@ -50,7 +71,7 @@ function incomingLists(lists) {
     const id = /^[a-f0-9]{24}$/.test(list.id) ? list.id : crypto.createHash('sha256').update(list.id).digest('hex').slice(0, 24);
     if (seen.has(id)) throw new Error('同步歌单标识重复'); seen.add(id);
     if (list.songs !== undefined && !Array.isArray(list.songs)) throw new Error('同步歌曲列表无效');
-    const tracks = Array.isArray(list.tracks) ? list.tracks.slice() : (list.songs || []).map(song => toMineTrack(song));
+    const tracks = Array.isArray(list.tracks) ? list.tracks.slice() : (list.songs || []).map(incomingSongToTrack).filter(Boolean);
     tracks.push(...(Array.isArray(list.pcTracks) ? list.pcTracks : []));
     if (tracks.length > 5000) throw new Error('同步歌曲数量超出限制');
     const cleaned = tracks.map(sanitizeTrack);
@@ -91,9 +112,9 @@ class LanSyncData {
   }
   async apply(bundle) {
     const lists = incomingLists(bundle.playlists || []);
-    const sources = incomingSources(bundle.sources);
+    const sources = incomingSources(Array.isArray(bundle.sources) ? bundle.sources : []);
     const ids = new Set(sources.map(source => source.id));
-    const settings = bundle.settings;
+    const settings = bundle.settings == null ? {} : bundle.settings;
     if (!settings || typeof settings !== 'object' || Array.isArray(settings)) throw new Error('同步设置格式无效');
     const activeId = ids.has(bundle.activeSourceId) ? bundle.activeSourceId : null;
     const updates = { 'lx-sources.json': { sources, activeId },
@@ -118,6 +139,33 @@ class LanSyncData {
     } catch (error) { recoverSyncTransaction(this.root); throw error; }
     this.library.loadIndex(); this.sourceManager.reload();
     return { playlistsCount: lists.length, sourcesCount: sources.length, settingsCount: Object.keys(settings).length };
+  }
+  async mergePlaylists(rawLists) {
+    const incoming = incomingLists(rawLists || []);
+    await this.library.mutation;
+    const current = this.library.playlists.map(list => ({ ...list, tracks: list.tracks.slice() }));
+    const merged = current.slice();
+    let changed = false;
+    for (const item of incoming) {
+      const index = merged.findIndex(existing =>
+        (item.isFavorite && existing.isFavorite) ||
+        existing.id === item.id ||
+        (item.portableId && existing.portableId === item.portableId)
+      );
+      if (index < 0) {
+        if (merged.length < 100) { merged.push(item); changed = true; }
+        continue;
+      }
+      const existing = merged[index];
+      if ((Number(item.updatedAt) || 0) > (Number(existing.updatedAt) || 0)) {
+        merged[index] = { ...item, id: existing.id, portableId: existing.portableId || item.portableId };
+        changed = true;
+      }
+    }
+    if (!changed) return { changed: false, playlistsCount: merged.length };
+    atomic(path.join(this.root, 'built-in-playlists.json'), JSON.stringify({ version: 1, updatedAt: Date.now(), playlists: merged }));
+    this.library.loadIndex();
+    return { changed: true, playlistsCount: merged.length };
   }
 }
 module.exports = { LanSyncData, recoverSyncTransaction, incomingLists, incomingSources, portableLists, portableSong };

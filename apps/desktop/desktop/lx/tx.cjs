@@ -20,17 +20,23 @@ function mapQQItems(list) {
     if (!id) continue;
     const singers = Array.isArray(song.singer) ? song.singer.map(artist => artist?.name).filter(Boolean) : [];
     const album = song.album ?? {};
-    const albumMid = typeof album.mid === 'string' ? album.mid : '';
+    const albumMid = typeof (album.mid || album.pmid) === 'string' ? (album.mid || album.pmid).trim() : '';
+    const file = song.file ?? {};
+    const qualitys = ['128k'];
+    if (file.size_320mp3 || file.size_320 || !Object.keys(file).length) qualitys.push('320k');
+    if (file.size_flac || file.size_ape || file.size_hires) qualitys.push('flac');
     items.push({
       id: String(id),
       name: decodeEntities(song.name || song.title || ''),
       singer: singers.join('、'),
-      albumName: decodeEntities(album.name || ''),
+      albumName: decodeEntities(album.name || song.albumname || ''),
       albumId: albumMid,
       durationMs: (Number(song.interval) || 0) * 1000,
-      qualitys: ['128k', '320k'],
+      qualitys,
       source: 'tx',
-      coverUrl: albumMid ? `https://y.gtimg.cn/music/photo_new/T002R300x300M000${albumMid}.jpg` : '',
+      ...(file.media_mid ? { strMediaMid: String(file.media_mid) } : {}),
+      ...(song.id ? { songId: String(song.id) } : {}),
+      coverUrl: albumMid ? `https://y.gtimg.cn/music/photo_new/T002R500x500M000${albumMid}.jpg` : '',
     });
   }
   return items;
@@ -57,13 +63,15 @@ async function searchQQ(options) {
   try {
     const response = await fetchImpl(`https://c.y.qq.com/soso/fcgi-bin/client_search_cp?${params.toString()}`, {
       headers: {
-        'User-Agent': 'Mozilla/5.0 LxMine/0.1',
+        'User-Agent': 'Mozilla/5.0 LxMine/1.1',
         Referer: 'https://y.qq.com/',
       },
       signal: controller.signal,
     });
     if (!response.ok) throw new Error(`QQ search failed: HTTP ${response.status}`);
-    json = await response.json();
+    const text = await response.text();
+    const trimmed = text.trim().replace(/^[a-zA-Z0-9_$]+\(([\s\S]*)\)\s*;?$/, '$1');
+    json = JSON.parse(trimmed);
   } finally {
     clearTimeout(timer);
   }

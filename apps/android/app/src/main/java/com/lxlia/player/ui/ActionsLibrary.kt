@@ -9,7 +9,7 @@ import kotlinx.coroutines.delay
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
 
-// ---- 歌单库、本地音乐、下载、列表工具：对应鸿蒙 Index.ets 同名动作 ----
+// ---- 曲库、本地音乐、下载、列表工具：对应鸿蒙 Index.ets 同名动作 ----
 
 fun AppViewModel.resetListTools() {
     listSearchOpen = false
@@ -37,6 +37,24 @@ fun AppViewModel.openManualOrderFor(songs: List<Song>) {
 }
 
 fun AppViewModel.applyManualOrder(keys: List<String>) {
+    val opened = openedPlaylist
+    if (opened != null && opened.kind == "lx" && playlists.any { it.id == opened.id }) {
+        val reordered = orderSongList(opened.songs, "manual", keys)
+        val updated = opened.copy(
+            songs = reordered,
+            songIds = reordered.map { it.key },
+            updatedAt = System.currentTimeMillis(),
+        )
+        playlists = playlists.map { if (it.id == updated.id) updated else it }
+        openedPlaylist = updated
+        manualOrder = emptyList()
+        listSortMode = "added"
+        orderOpen = false
+        save()
+        scheduleAutoPlaylistSync()
+        notify("已保存歌单排列顺序", 1500)
+        return
+    }
     manualOrder = keys
     listSortMode = "manual"
     orderOpen = false
@@ -47,7 +65,7 @@ fun AppViewModel.setListSort(mode: String) {
     listSortMode = mode
 }
 
-/** 打开歌单库里的歌单：记录返回位置，切到资料库标签。 */
+/** 打开曲库里的歌单：记录返回位置，切到资料库标签。 */
 fun AppViewModel.openPlaylist(list: MusicPlaylist) {
     resetListTools()
     playlistReturnTab = "资料库"
@@ -55,6 +73,7 @@ fun AppViewModel.openPlaylist(list: MusicPlaylist) {
     openedPlaylist = list
     tab = "资料库"
     discoveryCompact = false
+    hydrateCoversFor(list.songs.take(48))
 }
 
 fun AppViewModel.openLocalPlaylist() {
@@ -74,7 +93,7 @@ fun AppViewModel.openLocalPlaylist() {
     discoveryCompact = false
 }
 
-/** 从首页/板块打开一个歌单库歌单，并记录返回来源页。 */
+/** 从首页/板块打开一个曲库歌单，并记录返回来源页。 */
 fun AppViewModel.openLibraryPlaylist(list: MusicPlaylist, returnTab: String, returnFeed: String) {
     resetListTools()
     playlistReturnTab = returnTab
@@ -85,6 +104,7 @@ fun AppViewModel.openLibraryPlaylist(list: MusicPlaylist, returnTab: String, ret
     tab = "资料库"
     feedSection = ""
     discoveryCompact = false
+    hydrateCoversFor(list.songs.take(48))
 }
 
 fun AppViewModel.closeOpenedPlaylist() {
@@ -104,11 +124,66 @@ fun AppViewModel.closeOpenedPlaylist() {
     if (returnTab.isNotEmpty()) tab = returnTab
 }
 
-/** 删除歌单只对「歌单库里真实存在的自建/导入歌单」开放。 */
-fun AppViewModel.canDeleteOpenedPlaylist(): Boolean {
+/** 单曲移除对曲库中持久化的所有 LX 歌单（含「我喜欢的」与自建/导入歌单）开放。 */
+fun AppViewModel.canEditPlaylistSongs(playlist: MusicPlaylist? = openedPlaylist): Boolean {
+    val list = playlist ?: return false
+    return list.kind == "lx" && playlists.any { it.id == list.id }
+}
+
+/** 重命名 / 编辑歌单 / 删除歌单只对「曲库里真实存在的自建/导入歌单」开放。 */
+fun AppViewModel.canManageOpenedPlaylist(): Boolean {
     val list = openedPlaylist ?: return false
     if (list.isFavorite || list.kind != "lx") return false
     return playlists.any { it.id == list.id }
+}
+
+fun AppViewModel.canDeleteOpenedPlaylist(): Boolean = canManageOpenedPlaylist()
+
+fun AppViewModel.removeSongFromPlaylist(playlistId: String, song: Song) {
+    val current = playlists.firstOrNull { it.id == playlistId && it.kind == "lx" } ?: return
+    val updated = playlistWithSong(current, song, remove = true)
+    playlists = playlists.map { if (it.id == updated.id) updated else it }
+    if (openedPlaylist?.id == updated.id) openedPlaylist = updated
+    save()
+    scheduleAutoPlaylistSync()
+    notify("已从「${current.name}」移除", 1500)
+}
+
+fun AppViewModel.openRenamePlaylist(playlist: MusicPlaylist? = openedPlaylist) {
+    val target = playlist ?: return
+    if (target.isFavorite || target.kind != "lx" || playlists.none { it.id == target.id }) return
+    renamingPlaylistId = target.id
+    draft = target.name
+    sheet = "重命名歌单"
+    error = ""
+    addToPlaylistSong = null
+    showSheet = true
+}
+
+fun AppViewModel.openEditPlaylist(playlist: MusicPlaylist? = openedPlaylist) {
+    val target = playlist ?: return
+    if (target.isFavorite || target.kind != "lx" || playlists.none { it.id == target.id }) return
+    editPlaylistTarget = playlists.firstOrNull { it.id == target.id } ?: target
+}
+
+fun AppViewModel.saveEditedPlaylist(playlistId: String, newName: String, newSongs: List<Song>) {
+    val trimmed = newName.trim()
+    if (trimmed.isEmpty()) return
+    val current = playlists.firstOrNull { it.id == playlistId && !it.isFavorite && it.kind == "lx" } ?: return
+    val updated = current.copy(
+        name = trimmed,
+        songs = newSongs,
+        songIds = newSongs.map { it.key },
+        updatedAt = System.currentTimeMillis(),
+    )
+    playlists = playlists.map { if (it.id == playlistId) updated else it }
+    if (openedPlaylist?.id == playlistId) openedPlaylist = updated
+    manualOrder = emptyList()
+    listSortMode = "added"
+    editPlaylistTarget = null
+    save()
+    scheduleAutoPlaylistSync()
+    notify("已保存歌单「$trimmed」", 1800)
 }
 
 fun AppViewModel.deleteOpenedPlaylist() {
@@ -123,6 +198,7 @@ fun AppViewModel.confirmDeletePlaylist() {
     playlists = playlists.filter { it.id != list.id }
     if (openedPlaylist?.id == list.id) closeOpenedPlaylist()
     save()
+    scheduleAutoPlaylistSync()
 }
 
 // ---- 本地音乐 ----
@@ -220,17 +296,39 @@ fun AppViewModel.closeSources() {
     }
 }
 
-fun AppViewModel.openDownloads() {
+fun AppViewModel.openDownloads(fromTab: String = tab) {
+    downloadsReturnTab = fromTab
     settingsPanel = "main"
     tab = "资料库"
     downloadsOpen = true
     openedPlaylist = null
 }
 
+fun AppViewModel.closeDownloads() {
+    downloadsOpen = false
+    tab = downloadsReturnTab.ifEmpty { "资料库" }
+}
+
 // ---- 设置项写入 ----
 
 fun AppViewModel.setResumeOnStartup(value: Boolean) {
     resumeOnStartup = value
+    save()
+}
+
+fun AppViewModel.setMixWithOthers(value: Boolean) {
+    mixWithOthers = value
+    com.lxlia.player.audio.PlaybackController.setMixWithOthers(value)
+    save()
+}
+
+fun AppViewModel.setAllowLandscapeWhenLocked(value: Boolean) {
+    allowLandscapeWhenLocked = value
+    save()
+}
+
+fun AppViewModel.setRefreshAlgoOnDoubleTap(value: Boolean) {
+    refreshAlgoOnDoubleTap = value
     save()
 }
 

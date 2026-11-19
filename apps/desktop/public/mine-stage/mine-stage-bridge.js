@@ -45,8 +45,17 @@
     shelfManager.setMode('off');
   }
   fx.lyricSize = Math.min(Number(fx.lyricSize) || 1, 1);
-  RENDER_DPR_CAP = 1.3;
-  RENDER_PIXEL_BUDGET = 2800000;
+  fx.userLyricScale = 1;
+  var isNativeMobileStage = typeof window.__lxmineNative !== 'undefined';
+  if (isNativeMobileStage) {
+    fx.foregroundFpsMode = '60';
+    fx.performanceQuality = 'eco';
+    RENDER_DPR_CAP = 0.78;
+    RENDER_PIXEL_BUDGET = 540000;
+  } else {
+    RENDER_DPR_CAP = 1.3;
+    RENDER_PIXEL_BUDGET = 2400000;
+  }
   audio = new Audio(); audio.crossOrigin = 'anonymous'; audio.preload = 'auto';
   playQueue = [{ id: 'native', name: 'LxMine', artist: '', type: 'song' }]; currentIdx = 0;
   uniforms.uAlpha.value = 1;
@@ -220,6 +229,8 @@
       if (fx.preset !== preset) setPreset(preset, { silent: true, noSave: true, skipTransition: wakingPreset });
       wakingPreset = false;
       if (data.cover !== cover) { cover = data.cover; loadCoverFromUrl(cover || '', { trackToken: trackSwitchToken }); }
+      var userScale = Math.max(0.75, Math.min(1.4, Number(data.lyricScale) || 1));
+      if (typeof fx !== 'undefined') fx.userLyricScale = userScale;
       var nextLyrics = JSON.stringify([data.id, data.lines, data.translationLines, data.lyricOffset]);
       if (nextLyrics !== lyricKey) {
         lyricKey = nextLyrics;
@@ -228,8 +239,9 @@
           return { t: line.timeMs / 1000, text: line.text, duration: Math.max(0.1, ((all[index + 1] ? all[index + 1].timeMs : data.duration || line.timeMs + 4800) - line.timeMs) / 1000) };
         }).filter(function (line) { return line.text; });
         if (typeof fx !== 'undefined') fx.lyricTranslationMode = translations.length ? 'multi' : 'off';
-        setOriginalLyricsState(lines, lines.some(function (line) { return line.words.length; }), 'native-clock', translations, 'lxmine-settings');
-        applyPreferredLyricsForCurrent(true);
+        setOriginalLyricsState(lines, lines.some(function (line) { return line.words.length; }), 'native-clock', translations, translations.length ? 'lxmine-settings' : 'none');
+        if (typeof applyOriginalLyricsState === 'function') applyOriginalLyricsState({ immediate: true, rebuild: true });
+        else applyPreferredLyricsForCurrent(false);
         if (lines.length && !stageLyrics.current) {
           var index = Math.max(0, findStageLyricIndexAtTime(position() + nativeOffset));
           var initial = buildStageLyricDisplayPayload(index, { lightweightTrack: true });

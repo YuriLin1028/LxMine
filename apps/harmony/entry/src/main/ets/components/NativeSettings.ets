@@ -95,7 +95,7 @@ export struct NativeSettings {
             Text(source.name).fontSize(16).fontColor(TEXT).maxLines(1)
             Text(this.activeId === source.id ? '当前使用' : source.version || '自定义音源').fontSize(12).fontColor(MUTED)
           }.alignItems(HorizontalAlign.Start).layoutWeight(1)
-          Image($r('app.media.ic_more')).width(22).height(22).padding(0)
+          Image($r('app.media.ic_more')).width(22).height(22).fillColor(TEXT).padding(0)
             .bindMenu(this.sourceMenu(source)).accessibilityText('音源操作')
         }.width('100%').padding(16).onClick(() => this.onActivate(source)).bindContextMenu(this.sourceMenu(source), ResponseType.LongPress)
       }, (source: SyncSourcePayload) => source.id ?? source.name)
@@ -192,7 +192,7 @@ export struct NativeSettings {
         Text('LxMine · 1.1.0\n融合 LX Music 与 MineRadio').fontSize(12).fontColor(MUTED).lineHeight(22).width('100%').padding({ top: 32, bottom: 28, left: 4 })
         }
       }.width('100%').alignItems(HorizontalAlign.Start).padding({ top: this.contentTop, bottom: 180 })
-    }.width('100%').height('100%').scrollBar(BarState.Off).edgeEffect(EdgeEffect.Spring)
+    }.width('100%').height('100%').align(Alignment.TopStart).scrollBar(BarState.Off).edgeEffect(EdgeEffect.Spring)
       .onDidScroll((x: number, y: number, state: ScrollState) => { if (state !== ScrollState.Idle) this.onScroll(this.scroller.currentOffset().yOffset); })
   }
 }

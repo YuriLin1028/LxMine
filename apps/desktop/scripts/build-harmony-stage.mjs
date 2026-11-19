@@ -32,7 +32,9 @@ html,body{width:100vw;height:100vh}
 /* Native shells own the cover and theme wash beneath the transparent effects. */
 #album-bg,#album-bg-next,#custom-bg{display:none!important}
 body>:not(#desktop-window-shell){display:none!important}
-#desktop-window-shell>:not(#canvas-container):not(#album-bg):not(#album-bg-next):not(#custom-bg):not(#wallpaper-engine-layer){display:none!important}
+#desktop-window-shell>:not(#canvas-container):not(#sonic-workshop-layer):not(#album-bg):not(#album-bg-next):not(#custom-bg):not(#wallpaper-engine-layer){display:none!important}
+#sonic-workshop-layer{position:fixed!important;inset:0!important;width:100%!important;height:100%!important;z-index:1!important;pointer-events:none!important}
+#sonic-workshop-layer iframe{width:100%!important;height:100%!important;border:0!important;display:block!important}
 #canvas-container{position:fixed!important;inset:0!important;opacity:1!important;visibility:visible!important;transform:none!important;transition:opacity .12s ease!important}
 </style></head>`);
 fs.writeFileSync(path.join(output, 'harmony-stage.html'), html);
@@ -69,16 +71,9 @@ for (const directory of [runtime, path.resolve(desktop, '../android/app/src/main
 }
 fs.copyFileSync(path.join(desktop, 'node_modules/json5/dist/index.min.js'), path.join(runtime, 'vendor/json5.min.js'));
 
-// Native launch uses the desktop's actual shader, particles, typography and timeline.
-const splashDocument = fs.readFileSync(path.join(stage, 'index.html'), 'utf8');
-const splashStart = splashDocument.indexOf('<div id="splash">');
-const splashEnd = splashDocument.indexOf('<div id="hint"', splashStart);
-if (splashStart < 0 || splashEnd <= splashStart) throw new Error('MineRadio startup markup is missing');
-const splashMarkup = splashDocument.slice(splashStart, splashEnd);
-const splashCss = fs.readFileSync(path.join(stage, 'css/index.css'), 'utf8');
-const splashScript = fs.readFileSync(path.join(stage, 'js/modules/10-shell/03-splash.js'), 'utf8');
-const startupHtml = '<!doctype html><html><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1,maximum-scale=1"><title>LxMine</title><style>' + splashCss + 'html,body{width:100%;height:100%;margin:0;background:#000;overflow:hidden}#splash{position:fixed;inset:0}</style></head><body>' + splashMarkup + '<script>var startupFastSkipPreference=false;function markAppPerf(){} function prewarmHomeWallpaperPreview(){} function revealIdleParticles(){} function shouldUseIdleWallpaperPreview(){return false}</script><script>' + splashScript + '</script><script>finishSplashReveal=function(){if(window.__lxStartup)window.__lxStartup.done()};setTimeout(function(){if(!splashReadyToEnter)markSplashReadyToEnter();dismissSplash()},5200);</script></body></html>';
-fs.writeFileSync(path.join(output, 'harmony-startup.html'), startupHtml);
+// Native launch shares the exact Glacial Prism 120fps startup scene across all platforms.
+fs.copyFileSync(path.join(stage, 'startup.html'), path.join(output, 'startup.html'));
+fs.copyFileSync(path.join(stage, 'startup.html'), path.join(output, 'harmony-startup.html'));
 const androidAssets = path.resolve(desktop, '../android/app/src/main/assets');
 if (fs.existsSync(androidAssets)) {
   fs.writeFileSync(path.resolve(desktop, '../android/app/src/main/java/com/lxlia/player/model/MineRadioModes.kt'), `package com.lxlia.player.model\n\nconst val MINE_STAGE_REVISION = "${revision}"\n\ndata class MineRadioMode(val id: String, val label: String)\n\nval MINE_RADIO_MODES: List<MineRadioMode> = listOf(\n` + modes.map(mode => `    MineRadioMode(${JSON.stringify(mode.id)}, ${JSON.stringify(mode.label)}),`).join('\n') + '\n)\n');

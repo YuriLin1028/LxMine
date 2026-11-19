@@ -465,10 +465,10 @@ private fun DockCover(
             modifier = Modifier
                 .size((size - 8).dp)
                 .clip(CircleShape)
-                .background(Color(0x18FFFFFF)),
+                .background(Brush.linearGradient(glacialGradFor(song?.name.orEmpty()))),
             contentAlignment = Alignment.Center,
         ) {
-            AssetIcon("symbol_queue.svg", size = ((size - 8) * 0.45f).dp, tint = TEXT)
+            AssetIcon("ic_music.svg", size = ((size - 8) * 0.45f).dp, tint = Color.White.copy(alpha = 0.9f), systemSymbol = false)
             if (!song?.coverUrl.isNullOrEmpty()) {
                 RemoteImage(song.coverUrl, modifier = Modifier.size((size - 8).dp).graphicsLayer { rotationZ = angle.value })
             }
@@ -504,17 +504,41 @@ private fun DockControls(
     Row(verticalAlignment = Alignment.CenterVertically) {
         // 非胶囊模式与鸿蒙一致：喜欢键固定在最左，随后是上一首/播放/下一首。
         if (!capsule) {
-            MaterialIconButton("ic_heart.svg", if (liked) "取消喜欢" else "喜欢", diameter = size - 2.dp, grouped = true, selected = liked, enabled = song != null, onClick = onLike)
+            androidx.compose.runtime.key(liked) {
+                MaterialIconButton(
+                    icon = if (liked) "ic_heart_fill.svg" else "ic_heart.svg",
+                    label = if (liked) "取消喜欢" else "喜欢",
+                    diameter = size - 2.dp,
+                    grouped = true,
+                    selected = false,
+                    rawNoTint = liked,
+                    systemSymbol = false,
+                    enabled = song != null,
+                    onClick = onLike,
+                )
+            }
         }
-        MaterialIconButton("ic_previous.svg", "上一首", diameter = size, grouped = true, enabled = song != null && !busy, onClick = { onNext(-1) })
-        MaterialIconButton(if (playing) "ic_pause.svg" else "ic_play.svg", if (playing) "暂停" else "播放", diameter = playSize, grouped = true, enabled = song != null && !busy, onClick = onToggle)
-        MaterialIconButton("ic_next.svg", "下一首", diameter = size, grouped = true, enabled = song != null && !busy, onClick = { onNext(1) })
+        MaterialIconButton("ic_previous.svg", "上一首", diameter = size, grouped = true, systemSymbol = false, enabled = song != null && !busy, onClick = { onNext(-1) })
+        MaterialIconButton(if (playing) "ic_pause.svg" else "ic_play.svg", if (playing) "暂停" else "播放", diameter = playSize, grouped = true, systemSymbol = false, enabled = song != null && !busy, onClick = onToggle)
+        MaterialIconButton("ic_next.svg", "下一首", diameter = size, grouped = true, systemSymbol = false, enabled = song != null && !busy, onClick = { onNext(1) })
         if (wide) {
             if (capsule) {
-                MaterialIconButton("ic_heart.svg", if (liked) "取消喜欢" else "喜欢", diameter = size, grouped = true, selected = liked, enabled = song != null, onClick = onLike)
+                androidx.compose.runtime.key(liked) {
+                    MaterialIconButton(
+                        icon = if (liked) "ic_heart_fill.svg" else "ic_heart.svg",
+                        label = if (liked) "取消喜欢" else "喜欢",
+                        diameter = size,
+                        grouped = true,
+                        selected = false,
+                        rawNoTint = liked,
+                        systemSymbol = false,
+                        enabled = song != null,
+                        onClick = onLike,
+                    )
+                }
             }
             val actionSize = if (capsule) size else size + 2.dp
-            MaterialIconButton(if (mode == "随机播放") "ic_shuffle.svg" else "ic_repeat.svg", "播放顺序：$mode", diameter = actionSize, grouped = true, onClick = onMode)
+            MaterialIconButton(playModeIcon(mode), "播放顺序：$mode", diameter = actionSize, grouped = true, onClick = onMode)
             MaterialIconButton("ic_download.svg", "下载歌曲", diameter = actionSize, grouped = true, enabled = song != null, onClick = onDownload)
             MaterialIconButton("ic_queue.svg", "播放队列", diameter = size + 2.dp, grouped = true, onClick = onQueue)
         } else {

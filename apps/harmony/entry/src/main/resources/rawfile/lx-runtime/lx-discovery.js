@@ -7,10 +7,11 @@ function createDiscovery(io){
  const headers=source=>({headers:{Referer:source==='tx'?'https://y.qq.com/':'https://music.163.com/'}});
  const qq=(module,method,param)=>json('https://u.y.qq.com/cgi-bin/musicu.fcg?format=json&data='+encodeURIComponent(JSON.stringify({comm:{cv:1602,ct:20},request:{module,method,param}})),headers('tx')).then(r=>{if(r.code||r.request?.code)throw Error('QQ 公开推荐暂不可用');return r.request.data;});
  const clean=v=>String(v||'').replace(/&amp;/g,'&').replace(/&quot;/g,'"').replace(/<[^>]*>/g,'');
- const art=v=>String(v||'').replace('{size}','400');
+ const art=v=>clean(v).replace('{size}','400').replace(/^\/\//,'https://').replace(/^http:/,'https:');
  function playlist(raw,source,kind='songlist'){
   const basic=raw.basic||raw.Playlist?.basic||raw;
-  return {source,kind,id:String(basic.tid||basic.specialid||basic.topId||basic.rankid||basic.id||''),name:clean(basic.title||basic.specialname||basic.name||basic.rankname),cover:art(basic.cover?.medium_url||basic.cover?.default_url||basic.coverImgUrl||basic.picUrl||basic.img||basic.imgurl||basic.frontPicUrl||basic.banner_9),count:Number(basic.song_cnt||basic.trackCount||basic.songcount||basic.total||basic.totalNum)||0,playCount:Number(basic.play_cnt||basic.playCount||basic.listencnt||basic.playcount)||0,period:basic.period||''};
+  const rawCover=basic.cover?.medium_url||basic.cover?.default_url||basic.coverImgUrl||basic.picUrl||basic.frontPicUrl||basic.headPicUrl||basic.mbFrontPicUrl||basic.listenPicUrl||basic.banner_9||basic.banner7url||basic.imgurl||basic.img||basic.pic5||basic.pic2||basic.pic||'';
+  return {source,kind,id:String(basic.tid||basic.specialid||basic.topId||basic.rankid||basic.id||''),name:clean(basic.title||basic.specialname||basic.name||basic.rankname),cover:art(rawCover),count:Number(basic.song_cnt||basic.trackCount||basic.songcount||basic.total||basic.totalNum)||0,playCount:Number(basic.play_cnt||basic.playCount||basic.listencnt||basic.playcount)||0,period:basic.period||''};
  }
  async function section({source='wy',type='hot',category='',page=1,limit=36}){
   if(!['wy','tx','kw','kg'].includes(source))throw Error('未知首页平台');

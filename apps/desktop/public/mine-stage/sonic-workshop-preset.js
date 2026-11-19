@@ -4,7 +4,7 @@
   var INDEX = 8;
   var BRIDGE_SRC = 'vendor/sonic-workshop/mineradio-bridge.html';
   var MOUNT_ID = 'sonic-workshop-layer';
-  var AUDIO_PUSH_INTERVAL_MS = 33;
+  var AUDIO_PUSH_INTERVAL_MS = global.__LXMINE_NATIVE_STAGE ? 50 : 33;
   var MEDIA_PUSH_INTERVAL_MS = 250;
   var PROPERTIES_PUSH_INTERVAL_MS = 1000;
   var WORKSHOP_THEME_TRANSITION_MS = 1280;
@@ -61,6 +61,7 @@
     lastPropertiesKey: '',
     cameraStartedAt: 0,
     cameraAngleX: 150,
+    cameraDistance: 80,
     nativeTheta: null,
     nativePhi: null,
     samples: zeroSamples.slice(),
@@ -600,22 +601,39 @@
     if (document && document.body) document.body.classList.toggle('sonic-workshop-active', !!active);
   }
 
+  function defaultWorkshopDistance() {
+    if (global.__LXMINE_NATIVE_STAGE && global.innerHeight > global.innerWidth) return 114;
+    return WORKSHOP_DEFAULT_PROPERTIES.cameraDistance;
+  }
+
   function deriveProperties(fx) {
     fx = fx || {};
     var coverHexes = workshopPaletteHexesFromCover();
     var props = Object.assign({}, WORKSHOP_DEFAULT_PROPERTIES);
+    if (global.__LXMINE_NATIVE_STAGE) {
+      props.gridSize = 96;
+      var defaultDist = (global.innerHeight > global.innerWidth) ? 114 : WORKSHOP_DEFAULT_PROPERTIES.cameraDistance;
+      if (!state.cameraDistance || state.cameraDistance === WORKSHOP_DEFAULT_PROPERTIES.cameraDistance) {
+        state.cameraDistance = defaultDist;
+      }
+    } else {
+      props.gridSize = 144;
+      props.cameraDistance = clamp(state.cameraDistance || WORKSHOP_DEFAULT_PROPERTIES.cameraDistance, 52, 155);
+    }
     if (global.__LXMINE_NATIVE_STAGE && global.orbit) {
-      var theta = Number(global.orbit.userTheta) || 0;
-      var phi = (Number(global.orbit.userPhi) || 0) - (Number(global.orbit.baselinePhi) || 0);
+      var theta = Number.isFinite(global.orbit.userTheta) ? Number(global.orbit.userTheta) : 0;
+      var hasPhi = Number.isFinite(global.orbit.userPhi) && Number.isFinite(global.orbit.baselinePhi);
+      var phi = hasPhi ? (Number(global.orbit.userPhi) - Number(global.orbit.baselinePhi)) : 0;
       if (theta !== state.nativeTheta || phi !== state.nativePhi) {
         state.nativeTheta = theta;
         state.nativePhi = phi;
         // Match the workshop's continuous auto-rotation when applying a user orbit.
-        state.cameraAngleX = props.cameraAngleX + theta * 180 / Math.PI +
+        state.cameraAngleX = WORKSHOP_DEFAULT_PROPERTIES.cameraAngleX + theta * 180 / Math.PI +
           Math.max(0, nowMs() - state.cameraStartedAt) * props.autoRotateSpeed / 1000;
       }
       props.cameraAngleX = state.cameraAngleX;
-      props.cameraAngleY = clamp(props.cameraAngleY + phi * 180 / Math.PI, -85, 85);
+      props.cameraAngleY = clamp(28 + phi * 180 / Math.PI, 12, 68);
+      props.cameraDistance = clamp(state.cameraDistance, 52, 155);
     }
     props.audioIntensity = clamp(fx.sonicWorkshopAudioIntensity == null ? props.audioIntensity : Number(fx.sonicWorkshopAudioIntensity), 0.3, 2.5);
     props.responseRange = clamp(fx.sonicWorkshopResponseRange == null ? props.responseRange : Number(fx.sonicWorkshopResponseRange), 0.3, 2);
@@ -807,6 +825,11 @@
   function onPresetChange(prev, next, opts) {
     if (Number(next) === INDEX) {
       ensureLayer();
+      state.cameraStartedAt = nowMs();
+      state.cameraAngleX = WORKSHOP_DEFAULT_PROPERTIES.cameraAngleX;
+      state.cameraDistance = defaultWorkshopDistance();
+      state.nativeTheta = null;
+      state.nativePhi = null;
       state.opacity = Math.max(state.opacity, 0.001);
       bodyClass(true);
       pushProperties(true);
@@ -851,6 +874,26 @@
       canvas.dispatchEvent(new frame.MouseEvent('click', { bubbles: true, cancelable: true,
         clientX: x / Math.max(1, global.innerWidth) * frame.innerWidth,
         clientY: y / Math.max(1, global.innerHeight) * frame.innerHeight, button: 0 }));
+      return true;
+    },
+    zoom: function (delta) {
+      if (!isActive(global.fx)) return false;
+      state.cameraDistance = clamp(state.cameraDistance + (Number(delta) || 0) * 0.14, 52, 155);
+      pushProperties(true);
+      return true;
+    },
+    resetView: function () {
+      if (!isActive(global.fx)) return false;
+      state.cameraStartedAt = nowMs();
+      state.cameraAngleX = WORKSHOP_DEFAULT_PROPERTIES.cameraAngleX;
+      state.cameraDistance = defaultWorkshopDistance();
+      state.nativeTheta = 0;
+      state.nativePhi = 0;
+      if (global.orbit) {
+        global.orbit.userTheta = 0;
+        if (Number.isFinite(global.orbit.baselinePhi)) global.orbit.userPhi = global.orbit.baselinePhi;
+      }
+      pushProperties(true);
       return true;
     },
     pushProperties: function (force) { pushProperties(force === true); },

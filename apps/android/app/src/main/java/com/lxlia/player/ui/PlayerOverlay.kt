@@ -97,7 +97,14 @@ fun PlayerOverlay(vm: AppViewModel, controlsReveal: androidx.compose.runtime.Sta
             Spacer(Modifier.weight(1f))
             QualityBall(vm)
             CastBall(vm)
-            MaterialIconButton("ic_share_official.svg", "分享歌曲", diameter = 38.dp, onClick = { vm.shareCurrent() })
+            val shareContext = androidx.compose.ui.platform.LocalContext.current
+            androidx.compose.runtime.key(vm.foreground) {
+                MaterialIconButton("ic_share_official.svg", "分享歌曲", diameter = 38.dp, onClick = {
+                    android.os.Handler(android.os.Looper.getMainLooper()).post {
+                        vm.shareCurrent(shareContext)
+                    }
+                })
+            }
             MaterialIconButton("ic_comment_official.svg", "查看评论", diameter = 38.dp, onClick = { vm.commentsOpen = true })
             StyleBall(vm)
             if (vm.landscape) {
@@ -114,9 +121,14 @@ private fun QualityBall(vm: AppViewModel) {
             GlassMenuItem(label, selected = vm.quality == value) { vm.setQuality(value) }
         }
     }
-    GlassBall(modifier = menu.modifier, diameter = 38.dp, onClick = { menu.show() }) {
-        Text("SQ", fontSize = 11.sp, fontWeight = FontWeight.Medium, color = LocalGlassInk.current, letterSpacing = 0.4.sp)
-    }
+    MaterialIconButton(
+        "ic_quality_official.svg",
+        "音质切换（当前 ${vm.quality.uppercase()}）",
+        modifier = menu.modifier,
+        diameter = 38.dp,
+        systemSymbol = false,
+        onClick = { menu.show() },
+    )
 }
 
 @Composable
@@ -126,7 +138,15 @@ private fun StyleBall(vm: AppViewModel) {
             GlassMenuItem(mode.label, selected = vm.styleName == mode.id) { vm.setStyleName(mode.id) }
         }
     }
-    MaterialIconButton("ic_style_wand.svg", "选择动效", modifier = menu.modifier, diameter = 38.dp, onClick = { menu.show() })
+    MaterialIconButton(
+        "ic_style_wand.svg",
+        "选择动效",
+        modifier = menu.modifier,
+        diameter = 38.dp,
+        rawNoTint = true,
+        systemSymbol = false,
+        onClick = { menu.show() },
+    )
 }
 
 /** 投播：安卓用系统音频路由（蓝牙/耳机等），没有可用路由时明确提示。 */

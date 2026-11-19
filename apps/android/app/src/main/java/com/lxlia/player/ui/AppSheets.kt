@@ -16,6 +16,7 @@ import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.itemsIndexed
+import androidx.compose.foundation.lazy.rememberLazyListState
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.text.BasicTextField
@@ -28,6 +29,7 @@ import androidx.compose.material3.ModalBottomSheet
 import androidx.compose.material3.Text
 import androidx.compose.material3.rememberModalBottomSheetState
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
@@ -97,6 +99,7 @@ fun AppSheets(vm: AppViewModel) {
                         PillButton(
                             if (vm.busy) "处理中…" else when (vm.sheet) {
                                 "新建歌单" -> "创建"
+                                "重命名歌单" -> "保存"
                                 "导入歌单" -> "导入"
                                 else -> "添加"
                             },
@@ -117,12 +120,13 @@ fun AppSheets(vm: AppViewModel) {
                         when (vm.sheet) {
                             "导入歌单" -> "粘贴网易云、QQ、酷我、酷狗、汽水的分享内容，或选择 .lxmc / JSON 文件。汽水歌曲播放时匹配同名同歌手版本。"
                             "添加音源" -> "粘贴 LX 音源脚本，或一次选择多个 .js / .txt 文件。"
+                            "重命名歌单" -> "输入新的歌单名称"
                             else -> "输入歌单名称"
                         },
                         fontSize = 14.sp,
                         color = MUTED,
                     )
-                    if (vm.sheet == "新建歌单") {
+                    if (vm.sheet == "新建歌单" || vm.sheet == "重命名歌单") {
                         EditBox(
                             value = vm.draft,
                             onValueChange = { vm.draft = it },
@@ -213,17 +217,30 @@ private fun EditBox(
 @Composable
 private fun SongListInputQueue(vm: AppViewModel, modifier: Modifier) {
     val songs = vm.queue
-    LazyColumn(modifier.fillMaxWidth(), verticalArrangement = Arrangement.spacedBy(2.dp)) {
-        itemsIndexed(songs, key = { index, song -> "${song.key}:$index" }) { _, song ->
+    val likedKeys = vm.likedKeys
+    val listState = rememberLazyListState()
+    LaunchedEffect(songs.size, vm.selected?.key) {
+        val activeKey = vm.selected?.key ?: return@LaunchedEffect
+        val index = songs.indexOfFirst { it.key == activeKey }
+        if (index >= 0) {
+            kotlinx.coroutines.yield()
+            val viewport = (listState.layoutInfo.viewportEndOffset - listState.layoutInfo.viewportStartOffset).coerceAtLeast(0)
+            val centerOffset = if (viewport > 180) -(viewport / 3) else -96
+            runCatching { listState.animateScrollToItem(index, centerOffset) }
+        }
+    }
+    LazyColumn(modifier.fillMaxWidth(), state = listState, verticalArrangement = Arrangement.spacedBy(2.dp)) {
+        itemsIndexed(songs, key = { index, song -> "${song.key}:$index" }) { index, song ->
             SongRow(
                 song = song,
                 active = vm.selected?.key == song.key,
-                liked = vm.liked(song),
+                liked = song.key in likedKeys,
                 wide = vm.wide,
                 onClick = { vm.playSong(song, songs) },
                 onLike = { vm.like(song) },
                 onMore = { vm.addToPlaylist(song) },
                 onDownload = { vm.downloadSong(song) },
+                onSwitchPlatform = if (song.source != "local") ({ vm.openSwitchPlatformFromQueue(index, song) }) else null,
             )
         }
     }

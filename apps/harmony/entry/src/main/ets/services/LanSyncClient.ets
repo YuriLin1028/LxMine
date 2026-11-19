@@ -80,14 +80,19 @@ export function buildBundle(deviceId: string, deviceName: string, sourceScript: 
 
 export async function pushBundle(device: LanDevice, bundle: SyncBundle): Promise<boolean> {
   if (!device.port || device.port <= 0) throw new Error('该设备没有可接收的端口');
+  return pushDirect(device.address, device.port, bundle, '/lxlia-sync/push', 130000);
+}
+
+export async function pushDirect(address: string, port: number, bundle: SyncBundle, path: string = '/lxlia-sync/push', readTimeout: number = 130000): Promise<boolean> {
+  if (!address.trim() || !port || port <= 0) throw new Error('目标地址或端口无效');
   const client = http.createHttp();
   try {
-    const response = await client.request(`http://${device.address}:${device.port}/lxlia-sync/push`, {
+    const response = await client.request(`http://${address.trim()}:${port}${path}`, {
       method: http.RequestMethod.POST,
       header: { 'content-type': 'application/json; charset=utf-8' },
       extraData: JSON.stringify(bundle),
       connectTimeout: 10000,
-      readTimeout: 130000,
+      readTimeout,
     });
     if (response.responseCode !== 200) return false;
     const result = JSON.parse(response.result as string) as PushResult;

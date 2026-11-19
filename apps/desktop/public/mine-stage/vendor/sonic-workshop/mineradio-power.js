@@ -1,5 +1,21 @@
 (function () {
   'use strict';
+  const isMobileNative = (() => {
+    try { return !!(window.parent && window.parent !== window && window.parent.__LXMINE_NATIVE_STAGE); } catch (_) { return false; }
+  })();
+  if (isMobileNative) {
+    try {
+      const realDpr = Math.max(1, Number(window.devicePixelRatio) || 1);
+      const cappedDpr = Math.min(realDpr, 0.78);
+      Object.defineProperty(window, 'devicePixelRatio', { configurable: true, get: () => cappedDpr });
+    } catch (_) {}
+  } else {
+    try {
+      const realDpr = Math.max(1, Number(window.devicePixelRatio) || 1);
+      const cappedDpr = Math.min(realDpr, 1.15);
+      Object.defineProperty(window, 'devicePixelRatio', { configurable: true, get: () => cappedDpr });
+    } catch (_) {}
+  }
   const nativeRequest = window.requestAnimationFrame.bind(window);
   const nativeCancel = window.cancelAnimationFrame.bind(window);
   const pending = new Map();
@@ -9,9 +25,16 @@
   let warmFrames = 3;
   let warmHandle = 0;
   let frames = 0;
+  let lastFrameAt = 0;
+  const minFrameGapMs = isMobileNative ? 22 : 0;
 
   function schedule(id, item) {
     item.handle = nativeRequest(time => {
+      if (minFrameGapMs > 0 && visible && lastFrameAt > 0 && time - lastFrameAt < minFrameGapMs) {
+        schedule(id, item);
+        return;
+      }
+      lastFrameAt = time;
       pending.delete(id);
       frames++;
       item.callback(time);

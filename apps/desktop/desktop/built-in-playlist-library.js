@@ -29,11 +29,11 @@ function cleanText(value, fallback = '', maxLength = 1000) {
 }
 
 function normalizeProvider(song) {
-  const source = cleanText(song && (song.provider || song.source || song.type), '', 32).toLowerCase();
+  const source = cleanText(song && (song.provider || song.source || song.lxSource || song.type), '', 32).toLowerCase();
   if (source === 'spotify' || song && (song.spotifyId || song.spotifyUri)) return 'unsupported';
   if (source === 'local' || song && (song.localFileId || song.localKey || song.localUrl)) return 'local';
-  if (source === 'qq') return 'qq';
-  if (source === 'kugou' || song && (song.hash || song.fileHash || song.audioHash)) return 'kugou';
+  if (source === 'qq' || source === 'tx') return 'qq';
+  if (source === 'kugou' || source === 'kg' || song && (song.hash || song.fileHash || song.audioHash)) return 'kugou';
   if (source === 'qishui') return 'qishui';
   if (source === 'kuwo' || source === 'kw') return 'kuwo';
   if (source === 'migu' || source === 'mg') return 'migu';
@@ -144,7 +144,7 @@ class BuiltInPlaylistLibrary {
   }
 
   summary(playlist) {
-    const first = playlist.tracks[0] || {};
+    const firstWithCover = playlist.tracks.find((item) => item && (item.cover || item.coverUrl)) || playlist.tracks[0] || {};
     return {
       id: playlist.id,
       provider: 'mineradio',
@@ -154,8 +154,8 @@ class BuiltInPlaylistLibrary {
       creator: 'LxMine',
       isFavorite: playlist.isFavorite === true,
       trackCount: playlist.tracks.length,
-      // 卡片封面以列表第一首歌的封面为准；历史数据里封面字段可能是 cover 或 coverUrl。
-      cover: cleanText(first.cover || first.coverUrl, '', 4096),
+      // 卡片封面优先取第一首带封面的歌曲（若第 0 首已有封面即为第 0 首）；历史数据里封面字段可能是 cover 或 coverUrl。
+      cover: cleanText(firstWithCover.cover || firstWithCover.coverUrl, '', 4096),
       createdAt: playlist.createdAt,
       updatedAt: playlist.updatedAt,
       shelfPane: 'mine',
@@ -288,6 +288,23 @@ class BuiltInPlaylistLibrary {
     });
   }
 
+  replaceTrackAt(id, index, source) {
+    const track = sanitizeTrack(source);
+    if (!track) return Promise.reject(Object.assign(new Error('BUILT_IN_PLAYLIST_TRACK_INVALID'), { code: 'BUILT_IN_PLAYLIST_TRACK_INVALID' }));
+    return this.mutate((next) => {
+      const playlist = next.find((item) => item.id === cleanText(id, '', 64).toLowerCase());
+      if (!playlist) throw Object.assign(new Error('BUILT_IN_PLAYLIST_NOT_FOUND'), { code: 'BUILT_IN_PLAYLIST_NOT_FOUND' });
+      const target = Math.floor(Number(index));
+      if (!Number.isFinite(target) || target < 0 || target >= playlist.tracks.length) {
+        throw Object.assign(new Error('BUILT_IN_PLAYLIST_TRACK_NOT_FOUND'), { code: 'BUILT_IN_PLAYLIST_TRACK_NOT_FOUND' });
+      }
+      playlist.tracks[target] = track;
+      playlist.tracks = playlist.tracks.filter((item, idx) => idx === target || item.builtInIdentity !== track.builtInIdentity);
+      playlist.updatedAt = Date.now();
+      return { playlist: this.summary(playlist), track };
+    });
+  }
+
   reorderTrack(id, fromIndex, toIndex) {
     return this.mutate((next) => {
       const playlist = next.find((item) => item.id === cleanText(id, '', 64).toLowerCase());
@@ -301,6 +318,70 @@ class BuiltInPlaylistLibrary {
       playlist.tracks.splice(to, 0, track);
       playlist.updatedAt = Date.now();
       return { playlist: this.summary(playlist) };
+    });
+  }
+
+  removeTracks(id, indices) {
+    return this.mutate((next) => {
+      const playlist = next.find((item) => item.id === cleanText(id, '', 64).toLowerCase());
+      if (!playlist) throw Object.assign(new Error('BUILT_IN_PLAYLIST_NOT_FOUND'), { code: 'BUILT_IN_PLAYLIST_NOT_FOUND' });
+      const removeSet = new Set(
+        (Array.isArray(indices) ? indices : [])
+          .map((value) => Math.floor(Number(value)))
+          .filter((value) => Number.isFinite(value) && value >= 0 && value < playlist.tracks.length)
+      );
+      if (!removeSet.size) return { playlist: this.summary(playlist), removedCount: 0 };
+      playlist.tracks = playlist.tracks.filter((_, index) => !removeSet.has(index));
+      playlist.updatedAt = Date.now();
+      return { playlist: this.summary(playlist), removedCount: removeSet.size };
+    });
+  }
+
+  replaceTracks(id, sources) {
+    const cleaned = [];
+    const seen = new Set();
+    for (const source of Array.isArray(sources) ? sources : []) {
+      const track = sanitizeTrack(source);
+      if (!track || seen.has(track.builtInIdentity)) continue;
+      seen.add(track.builtInIdentity);
+      cleaned.push(track);
+    }
+    return this.mutate((next) => {
+      const playlist = next.find((item) => item.id === cleanText(id, '', 64).toLowerCase());
+      if (!playlist) throw Object.assign(new Error('BUILT_IN_PLAYLIST_NOT_FOUND'), { code: 'BUILT_IN_PLAYLIST_NOT_FOUND' });
+      playlist.tracks = cleaned;
+      playlist.updatedAt = Date.now();
+      return { playlist: this.summary(playlist) };
+    });
+  }
+
+  setFavoriteTracks(sources) {
+    const cleaned = [];
+    const seen = new Set();
+    for (const source of Array.isArray(sources) ? sources : []) {
+      const track = sanitizeTrack(source);
+      if (!track || seen.has(track.builtInIdentity)) continue;
+      seen.add(track.builtInIdentity);
+      cleaned.push(track);
+    }
+    return this.mutate((next) => {
+      let favorite = next.find((item) => item.isFavorite === true);
+      if (!favorite) {
+        favorite = {
+          id: crypto.createHash('sha256').update('lxmine-favorite').digest('hex').slice(0, 24),
+          portableId: 'lxmine-favorite',
+          name: '我喜欢的',
+          isFavorite: true,
+          createdAt: Date.now(),
+          updatedAt: Date.now(),
+          tracks: cleaned,
+        };
+        next.unshift(favorite);
+      } else {
+        favorite.tracks = cleaned;
+        favorite.updatedAt = Date.now();
+      }
+      return { playlist: this.summary(favorite) };
     });
   }
 }

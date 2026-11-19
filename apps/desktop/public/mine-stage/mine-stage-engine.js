@@ -2379,6 +2379,7 @@ function renderQualityProfile() {
   var quality = normalizePerformanceQuality(fx && fx.performanceQuality);
   var profile = (typeof runtimeHardwareProfile !== 'undefined' && runtimeHardwareProfile) ? runtimeHardwareProfile : null;
   var lowSpec = profile && profile.lowSpec;
+  if (typeof window !== 'undefined' && window.__LXMINE_NATIVE_STAGE && quality === 'eco') return { cap: 0.78, min: 0.48, budget: 540000 };
   if (quality === 'eco') return { cap: lowSpec ? 0.88 : 0.95, min: 0.52, budget: lowSpec ? 1900000 : 2400000 };
   if (quality === 'balanced') return { cap: lowSpec ? 0.98 : 1.12, min: 0.62, budget: lowSpec ? 2800000 : 3800000 };
   if (quality === 'ultra') return { cap: 1.75, min: 0.85, budget: 7800000 };
@@ -5839,7 +5840,7 @@ console.log('v7 shell loaded, JS pending');
 
 ;
 // ============================================================
-var FLOAT_COUNT = 1300;
+var FLOAT_COUNT = (typeof window !== 'undefined' && window.__LXMINE_NATIVE_STAGE) ? 480 : 1300;
 var floatGroup = null;
 var floatPositionsArr = null, floatBaseArr = null, floatPhaseArr = null, floatColorArr = null;
 
@@ -6528,7 +6529,7 @@ function updateSkullParticleLayer(dt) {
 //   - 跟主粒子同步旋转 (在主循环里赋值)
 //   - 视角转到背面才能看到 — 不需要手动控制 visible
 // ============================================================
-var BACK_COVER_COUNT = 3000;
+var BACK_COVER_COUNT = (typeof window !== 'undefined' && window.__LXMINE_NATIVE_STAGE) ? 1200 : 3000;
 var backCoverGroup = null;
 var backCoverColorArr = null;
 
@@ -7067,8 +7068,10 @@ function layoutInteger(value, fallback, min, max) {
   return Math.round(layoutNumber(value, fallback, min, max));
 }
 function coverParticleGridForResolution(v) {
-  var grid = Math.round(118 * normalizeCoverResolution(v));
-  grid = Math.max(88, Math.min(183, grid));
+  var isMobileNative = typeof window !== 'undefined' && !!window.__LXMINE_NATIVE_STAGE;
+  var base = isMobileNative ? 84 : 118;
+  var grid = Math.round(base * normalizeCoverResolution(v));
+  grid = Math.max(isMobileNative ? 65 : 88, Math.min(isMobileNative ? 95 : 183, grid));
   return grid % 2 ? grid : grid + 1;
 }
 function coverParticleCountLabel(v) {
@@ -7298,7 +7301,7 @@ function readSavedLyricLayout() {
         fxDefaults.uiAccentColor || '#ffffff'
       ),
       homeAccentColor: normalizeHexColor(raw.homeAccentColor || '#00f5d4'),
-      homeIconColor: normalizeHexColor(raw.homeIconColor || fxDefaults.homeIconColor || '#f4d28a', '#f4d28a'),
+      homeIconColor: normalizeHexColor(raw.homeIconColor || fxDefaults.homeIconColor || '#64d2ff', '#64d2ff'),
       visualIconColor: normalizeHexColor(raw.visualIconColor || fxDefaults.visualIconColor || '#7fd8ff', '#7fd8ff'),
       backgroundColorMode: savedBgCustom ? 'custom' : 'cover',
       backgroundColor: savedBgColor,
@@ -7787,7 +7790,7 @@ function saveLyricLayout(opts) {
         fxDefaults.uiAccentColor || '#ffffff'
       ),
       homeAccentColor: normalizeHexColor(fx.homeAccentColor || '#00f5d4'),
-      homeIconColor: normalizeHexColor(fx.homeIconColor || '#f4d28a', '#f4d28a'),
+      homeIconColor: normalizeHexColor(fx.homeIconColor || '#64d2ff', '#64d2ff'),
       visualIconColor: normalizeHexColor(fx.visualIconColor || '#7fd8ff', '#7fd8ff'),
       backgroundColorMode: fx.backgroundColorMode === 'custom' || fx.backgroundColorCustom ? 'custom' : 'cover',
       backgroundColor: normalizeHexColor(fx.backgroundColor || '#000000', '#000000'),
@@ -11034,6 +11037,7 @@ var lyricViewportFitLeft = typeof THREE !== 'undefined' ? new THREE.Vector3() : 
 var lyricViewportFitRight = typeof THREE !== 'undefined' ? new THREE.Vector3() : null;
 
 function lyricRowLiveViewportScale(row, intendedScale) {
+  if (typeof fx !== 'undefined' && fx && fx.lyricLiveViewportFit === false) return 1;
   if (!row || !row.mesh || !row.lineMask || !lyricViewportFitLeft || !lyricViewportFitRight || typeof camera === 'undefined' || !camera) return 1;
   var documentWidth = typeof document !== 'undefined' && document.documentElement
     ? Number(document.documentElement.clientWidth) || 0
@@ -12381,7 +12385,7 @@ function updateLyricRowLayers(data, opts) {
     } else {
       if (row.isTranslation) baseScale *= 1.00 + translationFocus * 0.16;
     }
-    if ((row.isPrimary || row.isTranslation) && renderWindowActive && (!fx || fx.lyricLiveViewportFit !== false)) {
+    if ((row.isPrimary || row.isTranslation) && renderWindowActive) {
       baseScale *= lyricRowLiveViewportScale(row, baseScale);
     } else if (row.viewportFitScale !== 1) {
       row.viewportFitScale = 1;
@@ -12402,12 +12406,13 @@ function updateLyricRowLayers(data, opts) {
     }
     if (row.mat && row.mat.uniforms) {
       if (row.mat.uniforms.uOpacity) {
-        var lineOpacityTarget = data.usesTrack && (initialTextRevealPending || !lineLayerVisible || !row.renderLineUploaded) ? 0 : target * depthFade;
-        if (initialTextRevealPending) row.mat.uniforms.uOpacity.value = 0;
+        var holdInitial = initialTextRevealPending && !row.renderLineUploaded && !motionAnchor;
+        var lineOpacityTarget = data.usesTrack && (holdInitial || !lineLayerVisible || !row.renderLineUploaded) ? 0 : target * depthFade;
+        if (holdInitial) row.mat.uniforms.uOpacity.value = 0;
         else {
-          row.mat.uniforms.uOpacity.value += (lineOpacityTarget - row.mat.uniforms.uOpacity.value) * ease;
-          if (trackTargetJustCommitted && lineOpacityTarget > 0.001 && row.renderLineUploaded && row.mat.uniforms.uOpacity.value < 0.004) {
-            row.mat.uniforms.uOpacity.value = Math.min(lineOpacityTarget, 0.004);
+          row.mat.uniforms.uOpacity.value += (lineOpacityTarget - row.mat.uniforms.uOpacity.value) * (motionAnchor ? Math.max(ease, 0.35) : ease);
+          if ((trackTargetJustCommitted || motionAnchor) && lineOpacityTarget > 0.001 && row.renderLineUploaded && row.mat.uniforms.uOpacity.value < 0.02) {
+            row.mat.uniforms.uOpacity.value = Math.min(lineOpacityTarget, motionAnchor ? 0.35 : 0.02);
           }
         }
       }
@@ -15149,7 +15154,10 @@ function updateStageLyrics3D(dt) {
   stageLyrics.glowFollowX *= 0.92;
   stageLyrics.glowFollowY *= 0.92;
   stageLyrics.glowFollowRoll *= 0.90;
-  var layoutScale = clampRange(Number(fx.lyricScale) || 1, 0.35, 1.65);
+  var layoutScale = clampRange(Number(fx.lyricScale) || 1, 0.35, 1.65) * clampRange(Number(fx.userLyricScale) || 1, 0.75, 1.4);
+  if (typeof window !== 'undefined' && window.innerWidth > 0 && window.innerHeight > window.innerWidth) {
+    layoutScale *= clampRange((window.innerWidth / Math.max(1, window.innerHeight)) * 1.18, 0.48, 0.85);
+  }
   var layoutX = clampRange(Number(fx.lyricOffsetX) || 0, -4.0, 4.0);
   var layoutY = clampRange(Number(fx.lyricOffsetY) || 0, -2.4, 2.7);
   var layoutZ = clampRange(Number(fx.lyricOffsetZ) || 0, -3.2, 3.2);
@@ -17075,7 +17083,9 @@ function applyCoverCanvas(cv, thumbSrc, opts) {
   }
 
   function floatingBlockCountForFx(fx) {
-    return Math.round(sonicNumber(fx, 'sonicGroundFloatingCount', DEFAULT_FLOATING_BLOCK_COUNT, FLOATING_BLOCK_MIN_COUNT, FLOATING_BLOCK_MAX_COUNT));
+    var count = Math.round(sonicNumber(fx, 'sonicGroundFloatingCount', DEFAULT_FLOATING_BLOCK_COUNT, FLOATING_BLOCK_MIN_COUNT, FLOATING_BLOCK_MAX_COUNT));
+    if (typeof window !== 'undefined' && window.__LXMINE_NATIVE_STAGE) return Math.min(count, 36);
+    return count;
   }
 
   function deriveGroundLayoutSettings(fx) {
@@ -17110,7 +17120,9 @@ function applyCoverCanvas(cv, thumbSrc, opts) {
     var density = sonicNumber(fx, 'sonicGroundDensity', DEFAULT_TERRAIN_DENSITY, 0, 100);
     var raw = TERRAIN_MIN_GRID_SIZE + ((TERRAIN_MAX_GRID_SIZE - TERRAIN_MIN_GRID_SIZE) * density) / 100;
     var cap = QUALITY_GRID_CAP[(fx && fx.performanceQuality) || 'balanced'] || QUALITY_GRID_CAP.balanced;
-    var gridSize = clamp(Math.round(raw / 4) * 4, TERRAIN_MIN_GRID_SIZE, cap);
+    if (typeof window !== 'undefined' && window.__LXMINE_NATIVE_STAGE) cap = Math.min(cap, 76);
+    var minGrid = (typeof window !== 'undefined' && window.__LXMINE_NATIVE_STAGE) ? 64 : TERRAIN_MIN_GRID_SIZE;
+    var gridSize = clamp(Math.round(raw / 4) * 4, minGrid, cap);
     var spacing = TERRAIN_BASE_SIZE / gridSize;
     return {
       gridSize: gridSize,
@@ -17983,7 +17995,7 @@ function applyCoverCanvas(cv, thumbSrc, opts) {
   var INDEX = 8;
   var BRIDGE_SRC = 'vendor/sonic-workshop/mineradio-bridge.html';
   var MOUNT_ID = 'sonic-workshop-layer';
-  var AUDIO_PUSH_INTERVAL_MS = 33;
+  var AUDIO_PUSH_INTERVAL_MS = global.__LXMINE_NATIVE_STAGE ? 50 : 33;
   var MEDIA_PUSH_INTERVAL_MS = 250;
   var PROPERTIES_PUSH_INTERVAL_MS = 1000;
   var WORKSHOP_THEME_TRANSITION_MS = 1280;
@@ -18040,6 +18052,7 @@ function applyCoverCanvas(cv, thumbSrc, opts) {
     lastPropertiesKey: '',
     cameraStartedAt: 0,
     cameraAngleX: 150,
+    cameraDistance: 80,
     nativeTheta: null,
     nativePhi: null,
     samples: zeroSamples.slice(),
@@ -18579,22 +18592,39 @@ function applyCoverCanvas(cv, thumbSrc, opts) {
     if (document && document.body) document.body.classList.toggle('sonic-workshop-active', !!active);
   }
 
+  function defaultWorkshopDistance() {
+    if (global.__LXMINE_NATIVE_STAGE && global.innerHeight > global.innerWidth) return 114;
+    return WORKSHOP_DEFAULT_PROPERTIES.cameraDistance;
+  }
+
   function deriveProperties(fx) {
     fx = fx || {};
     var coverHexes = workshopPaletteHexesFromCover();
     var props = Object.assign({}, WORKSHOP_DEFAULT_PROPERTIES);
+    if (global.__LXMINE_NATIVE_STAGE) {
+      props.gridSize = 96;
+      var defaultDist = (global.innerHeight > global.innerWidth) ? 114 : WORKSHOP_DEFAULT_PROPERTIES.cameraDistance;
+      if (!state.cameraDistance || state.cameraDistance === WORKSHOP_DEFAULT_PROPERTIES.cameraDistance) {
+        state.cameraDistance = defaultDist;
+      }
+    } else {
+      props.gridSize = 144;
+      props.cameraDistance = clamp(state.cameraDistance || WORKSHOP_DEFAULT_PROPERTIES.cameraDistance, 52, 155);
+    }
     if (global.__LXMINE_NATIVE_STAGE && global.orbit) {
-      var theta = Number(global.orbit.userTheta) || 0;
-      var phi = (Number(global.orbit.userPhi) || 0) - (Number(global.orbit.baselinePhi) || 0);
+      var theta = Number.isFinite(global.orbit.userTheta) ? Number(global.orbit.userTheta) : 0;
+      var hasPhi = Number.isFinite(global.orbit.userPhi) && Number.isFinite(global.orbit.baselinePhi);
+      var phi = hasPhi ? (Number(global.orbit.userPhi) - Number(global.orbit.baselinePhi)) : 0;
       if (theta !== state.nativeTheta || phi !== state.nativePhi) {
         state.nativeTheta = theta;
         state.nativePhi = phi;
         // Match the workshop's continuous auto-rotation when applying a user orbit.
-        state.cameraAngleX = props.cameraAngleX + theta * 180 / Math.PI +
+        state.cameraAngleX = WORKSHOP_DEFAULT_PROPERTIES.cameraAngleX + theta * 180 / Math.PI +
           Math.max(0, nowMs() - state.cameraStartedAt) * props.autoRotateSpeed / 1000;
       }
       props.cameraAngleX = state.cameraAngleX;
-      props.cameraAngleY = clamp(props.cameraAngleY + phi * 180 / Math.PI, -85, 85);
+      props.cameraAngleY = clamp(28 + phi * 180 / Math.PI, 12, 68);
+      props.cameraDistance = clamp(state.cameraDistance, 52, 155);
     }
     props.audioIntensity = clamp(fx.sonicWorkshopAudioIntensity == null ? props.audioIntensity : Number(fx.sonicWorkshopAudioIntensity), 0.3, 2.5);
     props.responseRange = clamp(fx.sonicWorkshopResponseRange == null ? props.responseRange : Number(fx.sonicWorkshopResponseRange), 0.3, 2);
@@ -18786,6 +18816,11 @@ function applyCoverCanvas(cv, thumbSrc, opts) {
   function onPresetChange(prev, next, opts) {
     if (Number(next) === INDEX) {
       ensureLayer();
+      state.cameraStartedAt = nowMs();
+      state.cameraAngleX = WORKSHOP_DEFAULT_PROPERTIES.cameraAngleX;
+      state.cameraDistance = defaultWorkshopDistance();
+      state.nativeTheta = null;
+      state.nativePhi = null;
       state.opacity = Math.max(state.opacity, 0.001);
       bodyClass(true);
       pushProperties(true);
@@ -18830,6 +18865,26 @@ function applyCoverCanvas(cv, thumbSrc, opts) {
       canvas.dispatchEvent(new frame.MouseEvent('click', { bubbles: true, cancelable: true,
         clientX: x / Math.max(1, global.innerWidth) * frame.innerWidth,
         clientY: y / Math.max(1, global.innerHeight) * frame.innerHeight, button: 0 }));
+      return true;
+    },
+    zoom: function (delta) {
+      if (!isActive(global.fx)) return false;
+      state.cameraDistance = clamp(state.cameraDistance + (Number(delta) || 0) * 0.14, 52, 155);
+      pushProperties(true);
+      return true;
+    },
+    resetView: function () {
+      if (!isActive(global.fx)) return false;
+      state.cameraStartedAt = nowMs();
+      state.cameraAngleX = WORKSHOP_DEFAULT_PROPERTIES.cameraAngleX;
+      state.cameraDistance = defaultWorkshopDistance();
+      state.nativeTheta = 0;
+      state.nativePhi = 0;
+      if (global.orbit) {
+        global.orbit.userTheta = 0;
+        if (Number.isFinite(global.orbit.baselinePhi)) global.orbit.userPhi = global.orbit.baselinePhi;
+      }
+      pushProperties(true);
       return true;
     },
     pushProperties: function (force) { pushProperties(force === true); },
@@ -43771,7 +43826,7 @@ function resetHomeAccentColor() {
   setHomeAccentColor(fxDefaults.homeAccentColor || '#00f5d4');
 }
 function applyIconAccentColors() {
-  var homeColor = normalizeHexColor(fx.homeIconColor || fxDefaults.homeIconColor || '#f4d28a', '#f4d28a');
+  var homeColor = normalizeHexColor(fx.homeIconColor || fxDefaults.homeIconColor || '#64d2ff', '#64d2ff');
   var visualColor = normalizeHexColor(fx.visualIconColor || fxDefaults.visualIconColor || '#7fd8ff', '#7fd8ff');
   var homeRgb = hexToRgb(homeColor);
   var visualRgb = hexToRgb(visualColor);
@@ -43783,7 +43838,7 @@ function applyIconAccentColors() {
 }
 function updateIconAccentControls() {
   applyIconAccentColors();
-  var homeColor = normalizeHexColor(fx.homeIconColor || fxDefaults.homeIconColor || '#f4d28a', '#f4d28a');
+  var homeColor = normalizeHexColor(fx.homeIconColor || fxDefaults.homeIconColor || '#64d2ff', '#64d2ff');
   var visualColor = normalizeHexColor(fx.visualIconColor || fxDefaults.visualIconColor || '#7fd8ff', '#7fd8ff');
   var homePicker = document.getElementById('home-icon-picker');
   var homeValue = document.getElementById('home-icon-value');
@@ -43795,13 +43850,13 @@ function updateIconAccentControls() {
   if (visualValue) visualValue.textContent = visualColor.toUpperCase();
 }
 function setHomeIconColor(color, silent) {
-  fx.homeIconColor = normalizeHexColor(color || fxDefaults.homeIconColor || '#f4d28a', '#f4d28a');
+  fx.homeIconColor = normalizeHexColor(color || fxDefaults.homeIconColor || '#64d2ff', '#64d2ff');
   updateIconAccentControls();
   saveLyricLayout({ user: true, reason: 'homeIconColor' });
   if (!silent) showToast('主页图标: ' + fx.homeIconColor.toUpperCase());
 }
 function resetHomeIconColor() {
-  setHomeIconColor(fxDefaults.homeIconColor || '#f4d28a');
+  setHomeIconColor(fxDefaults.homeIconColor || '#64d2ff');
 }
 function setVisualIconColor(color, silent) {
   fx.visualIconColor = normalizeHexColor(color || fxDefaults.visualIconColor || '#7fd8ff', '#7fd8ff');
@@ -49247,7 +49302,7 @@ function bindFxPanel() {
   var homeIconPicker = document.getElementById('home-icon-picker');
   if (homeIconPicker) {
     homeIconPicker.addEventListener('input', function () { setHomeIconColor(homeIconPicker.value, true); });
-    homeIconPicker.addEventListener('change', function () { showToast('主页图标: ' + normalizeHexColor(homeIconPicker.value, '#f4d28a').toUpperCase()); });
+    homeIconPicker.addEventListener('change', function () { showToast('主页图标: ' + normalizeHexColor(homeIconPicker.value, '#64d2ff').toUpperCase()); });
   }
   var visualIconPicker = document.getElementById('visual-icon-picker');
   if (visualIconPicker) {
@@ -49646,7 +49701,7 @@ function setShelfAccentColor(color, silent) {
   if (!silent) showToast('歌单架颜色: ' + fx.shelfAccentColor.toUpperCase());
 }
 function resetShelfAccentColor() {
-  setShelfAccentColor(fxDefaults.shelfAccentColor || '#f4d28a');
+  setShelfAccentColor(fxDefaults.shelfAccentColor || '#64d2ff');
 }
 
 function syncControlsAutoHideButton() {
@@ -59893,9 +59948,11 @@ if (!window.__LXMINE_NATIVE_STAGE) {
     if (!rows) return -1;
     stageLyrics.group.updateMatrixWorld(true);
     if (window.__LXMINE_NATIVE_STAGE) {
-      // Claim the readable lyric column, including spaces between words/rows.
-      // Gesture ownership is chosen on down and remains fixed throughout a drag.
-      var sceneEdge = Math.max(20, Math.min(64, innerWidth * .08));
+      // Reserve top player header safe zone so tapping top-right controls never clicks lyrics.
+      if (y < 84) return -1;
+      // Leave generous side margins for 3D stage orbit even on narrow phones; horizontal drags
+      // over lyrics also hand off directly to stage orbit in pointermove.
+      var sceneEdge = Math.max(32, Math.min(68, innerWidth * .13));
       if (x < sceneEdge || x > innerWidth - sceneEdge) return -1;
       var nearest = null;
       var step = scrollStep();
@@ -59915,9 +59972,9 @@ if (!window.__LXMINE_NATIVE_STAGE) {
           left = Math.min(left, px); right = Math.max(right, px); top = Math.min(top, py); bottom = Math.max(bottom, py);
         }); });
         var centerX = (left + right) / 2, middleY = (top + bottom) / 2;
-        var halfColumn = Math.max((right - left) / 2 + 28, innerWidth * (innerWidth < 700 ? .31 : .22));
-        halfColumn = Math.min(innerWidth * .42, halfColumn);
-        var vertical = Math.max((bottom - top) / 2 + 12, step * .58);
+        var halfColumn = Math.max((right - left) / 2 + 24, innerWidth * (innerWidth < 700 ? .31 : .22));
+        halfColumn = Math.min(innerWidth * .38, halfColumn);
+        var vertical = Math.max((bottom - top) / 2 + 12, step * .56);
         var distance = Math.abs(y - middleY);
         if (Math.abs(x - centerX) <= halfColumn && distance <= vertical && (!nearest || distance < nearest.distance)) nearest = { index: row.lineIndex, distance: distance };
       });
@@ -59993,7 +60050,7 @@ if (!window.__LXMINE_NATIVE_STAGE) {
     if (index < 0) return;
     consume(event); clearTimeout(browseTimer);
     var origin = window.__LXMINE_NATIVE_STAGE ? Math.max(0, stageLyrics.currentIdx) : index;
-    drag = { id: event.pointerId, startY: event.clientY, startX: event.clientX, startIndex: origin, clickIndex: index, index: index, step: scrollStep(), moved: false,
+    drag = { id: event.pointerId, startY: event.clientY, startX: event.clientX, startIndex: origin, clickIndex: index, index: index, step: scrollStep(), moved: false, axis: 'pending',
       track: currentTrack(), media: audio, wasPlaying: playing && audio && !audio.paused };
     browseTrack = currentTrack();
     orbit.rotating = false; particlePointerSpin.active = false;
@@ -60002,8 +60059,23 @@ if (!window.__LXMINE_NATIVE_STAGE) {
   canvas.addEventListener('pointermove', function (event) {
     if (!drag || drag.id !== event.pointerId) return;
     if (event.isPrimary === false || multiTouchActive()) { cancelDrag(event); return; }
+    var dx = event.clientX - drag.startX;
+    var dy = event.clientY - drag.startY;
+    if (drag.axis === 'pending' && Math.hypot(dx, dy) > 8) {
+      if (window.__LXMINE_NATIVE_STAGE && Math.abs(dx) > Math.abs(dy) * 1.1) {
+        // Horizontal drag over lyrics hands off smoothly to 3D stage orbit on narrow phones.
+        var pid = drag.id;
+        drag = null; hud.style.display = 'none'; previewSeconds = null;
+        if (canvas.hasPointerCapture(pid)) canvas.releasePointerCapture(pid);
+        if (typeof window.lxmineStartStageOrbit === 'function') {
+          window.lxmineStartStageOrbit(pid, event.clientX, event.clientY);
+        }
+        return;
+      }
+      drag.axis = 'lyric';
+      drag.moved = true;
+    }
     consume(event);
-    if (Math.hypot(event.clientX - drag.startX, event.clientY - drag.startY) > 7) drag.moved = true;
     if (drag.moved) show(drag.startIndex + Math.round((drag.startY - event.clientY) / drag.step));
   }, true);
   function finish(event, cancel) {

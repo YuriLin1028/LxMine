@@ -70,8 +70,10 @@ function layoutInteger(value, fallback, min, max) {
   return Math.round(layoutNumber(value, fallback, min, max));
 }
 function coverParticleGridForResolution(v) {
-  var grid = Math.round(118 * normalizeCoverResolution(v));
-  grid = Math.max(88, Math.min(183, grid));
+  var isMobileNative = typeof window !== 'undefined' && !!window.__LXMINE_NATIVE_STAGE;
+  var base = isMobileNative ? 84 : 118;
+  var grid = Math.round(base * normalizeCoverResolution(v));
+  grid = Math.max(isMobileNative ? 65 : 88, Math.min(isMobileNative ? 95 : 183, grid));
   return grid % 2 ? grid : grid + 1;
 }
 function coverParticleCountLabel(v) {
@@ -301,7 +303,7 @@ function readSavedLyricLayout() {
         fxDefaults.uiAccentColor || '#ffffff'
       ),
       homeAccentColor: normalizeHexColor(raw.homeAccentColor || '#00f5d4'),
-      homeIconColor: normalizeHexColor(raw.homeIconColor || fxDefaults.homeIconColor || '#f4d28a', '#f4d28a'),
+      homeIconColor: normalizeHexColor(raw.homeIconColor || fxDefaults.homeIconColor || '#64d2ff', '#64d2ff'),
       visualIconColor: normalizeHexColor(raw.visualIconColor || fxDefaults.visualIconColor || '#7fd8ff', '#7fd8ff'),
       backgroundColorMode: savedBgCustom ? 'custom' : 'cover',
       backgroundColor: savedBgColor,
@@ -790,7 +792,7 @@ function saveLyricLayout(opts) {
         fxDefaults.uiAccentColor || '#ffffff'
       ),
       homeAccentColor: normalizeHexColor(fx.homeAccentColor || '#00f5d4'),
-      homeIconColor: normalizeHexColor(fx.homeIconColor || '#f4d28a', '#f4d28a'),
+      homeIconColor: normalizeHexColor(fx.homeIconColor || '#64d2ff', '#64d2ff'),
       visualIconColor: normalizeHexColor(fx.visualIconColor || '#7fd8ff', '#7fd8ff'),
       backgroundColorMode: fx.backgroundColorMode === 'custom' || fx.backgroundColorCustom ? 'custom' : 'cover',
       backgroundColor: normalizeHexColor(fx.backgroundColor || '#000000', '#000000'),

@@ -229,7 +229,7 @@ function bindFxPanel() {
   var homeIconPicker = document.getElementById('home-icon-picker');
   if (homeIconPicker) {
     homeIconPicker.addEventListener('input', function () { setHomeIconColor(homeIconPicker.value, true); });
-    homeIconPicker.addEventListener('change', function () { showToast('主页图标: ' + normalizeHexColor(homeIconPicker.value, '#f4d28a').toUpperCase()); });
+    homeIconPicker.addEventListener('change', function () { showToast('主页图标: ' + normalizeHexColor(homeIconPicker.value, '#64d2ff').toUpperCase()); });
   }
   var visualIconPicker = document.getElementById('visual-icon-picker');
   if (visualIconPicker) {
@@ -628,7 +628,7 @@ function setShelfAccentColor(color, silent) {
   if (!silent) showToast('歌单架颜色: ' + fx.shelfAccentColor.toUpperCase());
 }
 function resetShelfAccentColor() {
-  setShelfAccentColor(fxDefaults.shelfAccentColor || '#f4d28a');
+  setShelfAccentColor(fxDefaults.shelfAccentColor || '#64d2ff');
 }
 
 function syncControlsAutoHideButton() {

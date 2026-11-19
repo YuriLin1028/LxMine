@@ -120,6 +120,11 @@ class MusicDownloads(private val context: Context, private val http: OkHttpClien
         return if (File(item.path).exists()) item.path else ""
     }
 
+    fun isDownloadedOrActive(song: Song): Boolean {
+        if (offline(song).isNotEmpty()) return true
+        return items().any { it.song.key == song.key && it.state == "downloading" }
+    }
+
     fun items(): List<MusicDownload> = synchronized(items) { items.toList() }
 
     fun start(song: Song, quality: String, url: String) {

@@ -7,6 +7,7 @@
   var fingers = new Map();
   var primary = null;
   var pinchDistance = 0;
+  var pinchStartDistance = 0;
   var lastTap = null;
   var stats = { moves: 0, taps: 0, pinches: 0, cancelled: 0 };
   canvas.style.touchAction = 'none';
@@ -14,6 +15,13 @@
     canvas.dispatchEvent(new MouseEvent(type, { bubbles: true, cancelable: true,
       clientX: point.x, clientY: point.y, button: 0, buttons: buttons }));
   }
+  window.lxmineStartStageOrbit = function (pointerId, x, y) {
+    var pt = { x: x, y: y };
+    fingers.set(pointerId, pt);
+    primary = pointerId;
+    mouse('mousemove', pt, 0);
+    mouse('mousedown', pt, 1);
+  };
   function distance() {
     var p = Array.from(fingers.values());
     return p.length < 2 ? 0 : Math.hypot(p[0].x - p[1].x, p[0].y - p[1].y);
@@ -33,11 +41,16 @@
     canvas.setPointerCapture(event.pointerId);
     if (fingers.size === 1) {
       primary = event.pointerId;
+      window.__lxminePinchActive = false;
       if (!window.lxmineLyricGestureActive || !window.lxmineLyricGestureActive()) {
         mouse('mousemove', fingers.get(primary), 0);
         mouse('mousedown', fingers.get(primary), 1);
       }
-    } else { clear(); primary = null; pinchDistance = distance(); }
+    } else {
+      clear(); primary = null;
+      pinchDistance = distance();
+      pinchStartDistance = pinchDistance;
+    }
   }, { passive: false });
   canvas.addEventListener('pointermove', function (event) {
     if (!fingers.has(event.pointerId)) return;
@@ -46,9 +59,14 @@
     window.lxmineMultiTouchActive = fingers.size > 1;
     if (fingers.size > 1) {
       var next = distance();
-      if (pinchDistance > 0 && !window.__LXMINE_NATIVE_STAGE) {
+      if (pinchDistance > 0 && (window.__lxminePinchActive || Math.abs(next - pinchStartDistance) > 12)) {
+        window.__lxminePinchActive = true;
+        var delta = (pinchDistance - next) * 2.4;
         canvas.dispatchEvent(new WheelEvent('wheel', { bubbles: true, cancelable: true,
-          clientX: event.clientX, clientY: event.clientY, deltaY: (pinchDistance - next) * 2 }));
+          clientX: event.clientX, clientY: event.clientY, deltaY: delta }));
+        if (window.MineradioSonicWorkshop && typeof MineradioSonicWorkshop.zoom === 'function') {
+          MineradioSonicWorkshop.zoom(delta);
+        }
         stats.pinches++;
       }
       pinchDistance = next;
@@ -76,7 +94,11 @@
           rippleActiveCount = Math.max(1, rippleActiveCount);
         }
         if (lastTap && performance.now() - lastTap.at < 320 && Math.hypot(point.x - lastTap.x, point.y - lastTap.y) < 24) {
-          mouse('dblclick', point, 0); lastTap = null;
+          mouse('dblclick', point, 0);
+          if (window.MineradioSonicWorkshop && typeof MineradioSonicWorkshop.resetView === 'function') {
+            MineradioSonicWorkshop.resetView();
+          }
+          lastTap = null;
         } else lastTap = { x: point.x, y: point.y, at: performance.now() };
       }
     } else { clear(); if (cancelled) stats.cancelled++; }

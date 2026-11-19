@@ -9,10 +9,14 @@ contextBridge.exposeInMainWorld('lxMusic', {
   syncDevices: () => ipcRenderer.invoke('lansync-devices'),
   syncPending: () => ipcRenderer.invoke('lansync-pending'),
   syncSend: id => ipcRenderer.invoke('lansync-send', id),
+  syncSendDirect: target => ipcRenderer.invoke('lansync-send-direct', String(target || '')),
+  syncSetAuto: enabled => ipcRenderer.invoke('lansync-auto-sync', Boolean(enabled)),
+  syncTriggerAuto: () => ipcRenderer.invoke('lansync-trigger-auto'),
   syncRespond: (id, accepted) => ipcRenderer.invoke('lansync-respond', id, accepted),
   onSyncEvent: (name, callback) => { if (!['devices-changed','incoming','applied'].includes(name)) throw Error('Invalid sync event'); const channel='lansync-'+name; const listener=(_event,data)=>callback(data); ipcRenderer.on(channel,listener); return ()=>ipcRenderer.removeListener(channel,listener); },
   downloads: () => ipcRenderer.invoke('lxmine-downloads'),
   download: (song, quality) => ipcRenderer.invoke('lxmine-download', song, quality),
+  downloadBatch: (songs, quality) => ipcRenderer.invoke('lxmine-download-batch', songs, quality),
   cancelDownload: id => ipcRenderer.invoke('lxmine-cancel-download', id),
   revealDownload: id => ipcRenderer.invoke('lxmine-reveal-download', id),
   onDownloadsChanged: callback => { const listener = (event, jobs) => callback(jobs); ipcRenderer.on('lxmine-downloads-changed', listener); return () => ipcRenderer.removeListener('lxmine-downloads-changed', listener); },
@@ -23,11 +27,23 @@ contextBridge.exposeInMainWorld('lxMusic', {
   removeSource: id => ipcRenderer.invoke('lxmine-remove-source', id),
   search: payload => ipcRenderer.invoke('lxmine-search', payload),
   entityTracks: payload => ipcRenderer.invoke('lxmine-entity-tracks', payload),
-  resolve: (song, quality) => ipcRenderer.invoke('lxmine-resolve', song, quality),
+  resolve: (song, quality, options) => ipcRenderer.invoke('lxmine-resolve', song, quality, options),
   lyric: (song, quality) => ipcRenderer.invoke('lxmine-lyric', song, quality),
   songAssets: song => ipcRenderer.invoke('lxmine-song-assets', song),
+  songCovers: songs => ipcRenderer.invoke('lxmine-song-covers', Array.isArray(songs) ? songs : []),
+  platformCandidates: (song, sources) => ipcRenderer.invoke('lxmine-platform-candidates', song, sources),
+  replacePlaylistTrack: payload => ipcRenderer.invoke('lxmine-replace-playlist-track', payload || {}),
   importPlaylist: (input, source) => ipcRenderer.invoke('lxmine-import-playlist', input, source),
   importPlaylistFile: () => ipcRenderer.invoke('lxmine-import-playlist-file'),
+  checkUpdate: () => ipcRenderer.invoke('lxmine-check-update'),
+  startUpdate: asset => ipcRenderer.invoke('lxmine-start-update', asset),
+  cancelUpdate: () => ipcRenderer.invoke('lxmine-cancel-update'),
+  onUpdateProgress: callback => {
+    if (typeof callback !== 'function') return () => {};
+    const listener = (_event, payload) => callback(payload || {});
+    ipcRenderer.on('lxmine-update-progress', listener);
+    return () => ipcRenderer.removeListener('lxmine-update-progress', listener);
+  },
 });
 
 contextBridge.exposeInMainWorld('desktopWindow', {
@@ -90,6 +106,9 @@ contextBridge.exposeInMainWorld('desktopWindow', {
   deleteBuiltInPlaylist: (id) => ipcRenderer.invoke('mineradio-built-in-playlist-delete', String(id || '')),
   addBuiltInPlaylistTrack: (id, track) => ipcRenderer.invoke('mineradio-built-in-playlist-add-track', String(id || ''), track || {}),
   removeBuiltInPlaylistTrack: (id, index) => ipcRenderer.invoke('mineradio-built-in-playlist-remove-track', String(id || ''), Number(index)),
+  removeBuiltInPlaylistTracks: (id, indices) => ipcRenderer.invoke('mineradio-built-in-playlist-remove-tracks', String(id || ''), Array.isArray(indices) ? indices : []),
+  replaceBuiltInPlaylistTracks: (id, tracks) => ipcRenderer.invoke('mineradio-built-in-playlist-replace-tracks', String(id || ''), Array.isArray(tracks) ? tracks : []),
+  syncFavoriteTracks: (tracks) => ipcRenderer.invoke('mineradio-built-in-playlist-sync-favorites', Array.isArray(tracks) ? tracks : []),
   reorderBuiltInPlaylistTrack: (id, fromIndex, toIndex) => ipcRenderer.invoke('mineradio-built-in-playlist-reorder-track', String(id || ''), Number(fromIndex), Number(toIndex)),
   importLocalMusicFiles: async (files) => {
     const entries = [];

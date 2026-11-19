@@ -11,6 +11,7 @@
     "build:win:dir": "npm --prefix apps/desktop run build:win:dir",
     "check:harmony": "pwsh.exe -NoProfile -File scripts/build-harmony.ps1 -SkipStage",
     "build:harmony": "pwsh.exe -NoProfile -File scripts/build-harmony.ps1",
+    "build:watch": "pwsh.exe -NoProfile -File scripts/build-watch.ps1",
     "build:store": "pwsh.exe -NoProfile -File scripts/build-store.ps1",
     "build:store:check": "pwsh.exe -NoProfile -File scripts/build-store.ps1 -SkipStage"
   }

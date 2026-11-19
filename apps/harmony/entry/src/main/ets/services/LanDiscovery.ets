@@ -15,6 +15,7 @@ export interface LanDevice {
   lastSeen: number;
   ssid?: string;
   receiveMode?: string;
+  autoSyncPlaylists?: boolean;
 }
 
 export interface PullSyncRequest { id: string; receiverId: string; }
@@ -28,6 +29,7 @@ interface AnnounceMessage {
   port?: number;
   ssid?: string;
   receiveMode?: string;
+  autoSyncPlaylists?: boolean;
 }
 
 const PROTOCOL = 'lxlia-lansync/1';
@@ -46,6 +48,8 @@ export class LanDiscovery {
   private deviceName: string;
   private port: number = 0;
   private ssid: string = '';
+  private localIp: string = '';
+  private autoSyncPlaylists: boolean = false;
   private listener: ((devices: LanDevice[]) => void) | null = null;
   private broadcasts: string[] = ['255.255.255.255'];
   private lastNetworkRefresh: number = 0;
@@ -67,6 +71,12 @@ export class LanDiscovery {
 
   /** 当前 Wi-Fi 名称，用于向用户解释设备不在同一网络的情况。 */
   getSsid(): string { return this.ssid; }
+  getLocalIp(): string { return this.localIp; }
+  setAutoSync(enabled: boolean): void {
+    if (this.autoSyncPlaylists === enabled) return;
+    this.autoSyncPlaylists = enabled;
+    this.announce();
+  }
 
   async start(): Promise<void> {
     if (this.udp) return;
@@ -126,6 +136,7 @@ export class LanDiscovery {
           const parts = link.address.address.split('.').map((part: string) => Number(part));
           if (parts.length !== 4 || parts[0] === 127 || link.prefixLength < 1 || link.prefixLength > 30) continue;
           if (parts[0] === 172 && parts[1] === 17) continue;
+          if (!this.localIp) this.localIp = link.address.address;
           const ip = ((parts[0] << 24) | (parts[1] << 16) | (parts[2] << 8) | parts[3]) >>> 0;
           const mask = (0xffffffff << (32 - link.prefixLength)) >>> 0;
           const broadcast = (ip | ~mask) >>> 0;
@@ -155,6 +166,7 @@ export class LanDiscovery {
       name: this.deviceName,
       platform: 'harmony',
       port: this.port,
+      autoSyncPlaylists: this.autoSyncPlaylists,
       pullRequests: this.pendingRequests(),
       ssid: this.ssid,
       ts: Date.now(),
@@ -186,6 +198,7 @@ export class LanDiscovery {
       lastSeen: Date.now(),
       ssid: parsed.ssid ?? '',
       receiveMode: parsed.receiveMode === 'pull' ? 'pull' : 'direct',
+      autoSyncPlaylists: parsed.autoSyncPlaylists === true,
     };
     this.devices.set(device.id, device);
     if (firstSeen) {

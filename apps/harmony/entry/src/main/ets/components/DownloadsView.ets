@@ -24,14 +24,14 @@ export struct DownloadsView {
                 Text(item.state === 'complete' ? item.exportError || (item.exported ? `已保存到系统所选位置 · ${item.quality}` : `已下载 · ${item.quality} · 可另存到系统`) : item.state === 'downloading' ? `${(item.received / 1048576).toFixed(1)} MB${item.total > 0 ? ' / ' + (item.total / 1048576).toFixed(1) + ' MB' : ''}` : item.error)
                   .fontSize(12).fontColor(MUTED).maxLines(2).width('100%')
               }.layoutWeight(1).alignItems(HorizontalAlign.Start)
-              if (item.state === 'downloading') { Button('取消').attributeModifier(musicButtonPress).backgroundColor(Color.Transparent).fontColor(TEXT).buttonStyle(ButtonStyleMode.TEXTUAL).onClick(() => this.onCancel(item.id)) }
-              if (item.state === 'complete') { Button('另存为').attributeModifier(musicButtonPress).backgroundColor(Color.Transparent).fontColor(TEXT).buttonStyle(ButtonStyleMode.TEXTUAL).onClick(() => this.onExport(item)) }
+              if (item.state === 'downloading') { Button('取消').attributeModifier(musicButtonPress).buttonStyle(ButtonStyleMode.TEXTUAL).backgroundColor(Color.Transparent).fontColor(ACCENT).onClick(() => this.onCancel(item.id)) }
+              if (item.state === 'complete') { Button('另存为').attributeModifier(musicButtonPress).buttonStyle(ButtonStyleMode.TEXTUAL).backgroundColor(Color.Transparent).fontColor(ACCENT).onClick(() => this.onExport(item)) }
             }.width('100%')
             if (item.state === 'downloading') { Progress({ value: item.received, total: Math.max(1, item.total), type: ProgressType.Linear }).width('100%').color(ACCENT) }
           }.width('100%').padding(16).borderRadius(18).backgroundColor($r('app.color.card_surface')).onClick(() => { if (item.state === 'complete') this.onPlay(item.song); })
         }, (item: MusicDownload) => item.id)
       }.width('100%').padding({ top: this.contentTop + 12, bottom: 180 })
-    }.width('100%').height('100%').scrollBar(BarState.Off)
+    }.width('100%').height('100%').align(Alignment.TopStart).scrollBar(BarState.Off)
       .onDidScroll((x: number, y: number, state: ScrollState) => { if (state !== ScrollState.Idle) this.onScroll(this.scroller.currentOffset().yOffset); })
   }
 }

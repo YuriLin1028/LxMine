@@ -116,6 +116,8 @@ https://appgallery.huawei.com/link/invite-test-wap?taskId=7181c9f3cfda4854dc2f0d
 apps/desktop/                Electron 桌面端（Mineradio 基座 + LX 音源层）
 apps/android/                Android Kotlin / Compose 原生客户端
 apps/harmony/                HarmonyOS ArkTS 工程（手机 / 平板 / 车机）
+apps/watch-wearable/         华为 WATCH 手表端（ArkTS / ArkUI）
+apps/watch-lite/             华为 GT / FIT 手表端（Lite Wearable）
 packages/huawei-immersive-pc 华为式沉浸光感 PC 标准包（独立 MIT 许可）
 docs/                        构建、来源、同步、版本与验收文档
 scripts/                     打包、同步与清理脚本
@@ -135,6 +137,9 @@ npm run build:win         # 生成 NSIS 安装包
 
 鸿蒙工程用 DevEco Studio 打开 `apps/harmony`，签名与构建步骤见
 [docs/HARMONY.md](docs/HARMONY.md)。命令行打包可执行 `npm run build:harmony`。
+
+手表端可执行 `npm run build:watch` 构建首版演示包。真机调试、原生沉浸光感和联调状态见
+[手表端开发说明](docs/WATCH.md)。
 
 沉浸光感标准包可独立验证：
 

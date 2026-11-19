@@ -31,6 +31,12 @@ apps/harmony/entry/build/
 apps/harmony/oh_modules/
 apps/harmony/**/oh_modules/
 apps/harmony/local.properties
+apps/watch-*/.hvigor/
+apps/watch-*/.idea/
+apps/watch-*/**/build/
+apps/watch-*/**/oh_modules/
+apps/watch-*/build-profile.json5
+apps/watch-*/local.properties
 
 # logs / temp
 *.log

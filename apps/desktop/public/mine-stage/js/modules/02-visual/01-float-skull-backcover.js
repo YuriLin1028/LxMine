@@ -1,5 +1,5 @@
 // ============================================================
-var FLOAT_COUNT = 1300;
+var FLOAT_COUNT = (typeof window !== 'undefined' && window.__LXMINE_NATIVE_STAGE) ? 480 : 1300;
 var floatGroup = null;
 var floatPositionsArr = null, floatBaseArr = null, floatPhaseArr = null, floatColorArr = null;
 
@@ -688,7 +688,7 @@ function updateSkullParticleLayer(dt) {
 //   - 跟主粒子同步旋转 (在主循环里赋值)
 //   - 视角转到背面才能看到 — 不需要手动控制 visible
 // ============================================================
-var BACK_COVER_COUNT = 3000;
+var BACK_COVER_COUNT = (typeof window !== 'undefined' && window.__LXMINE_NATIVE_STAGE) ? 1200 : 3000;
 var backCoverGroup = null;
 var backCoverColorArr = null;
 

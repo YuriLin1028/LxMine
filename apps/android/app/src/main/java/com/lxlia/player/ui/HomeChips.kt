@@ -1,6 +1,7 @@
 package com.lxlia.player.ui
 
 import androidx.compose.foundation.background
+import androidx.compose.foundation.border
 import androidx.compose.foundation.horizontalScroll
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.layout.Arrangement
@@ -63,13 +64,14 @@ fun HomeChips(active: String, onChip: (String) -> Unit) {
                         AssetIcon(
                             if (selected) chip.iconOn else chip.icon,
                             size = 14.dp,
-                            tint = if (selected) null else LocalGlassInk.current,
+                            tint = if (selected) ON_ACCENT else LocalGlassInk.current,
+                            systemSymbol = false,
                         )
                         Text(
                             chip.label,
                             fontSize = 12.sp,
-                            color = if (selected) Color(0xFF08090B) else LocalGlassInk.current,
-                            fontWeight = if (selected) FontWeight.Medium else FontWeight.Normal,
+                            color = if (selected) ON_ACCENT else LocalGlassInk.current,
+                            fontWeight = if (selected) FontWeight.SemiBold else FontWeight.Normal,
                             maxLines = 1,
                             modifier = Modifier.padding(start = 4.dp),
                         )
@@ -81,7 +83,7 @@ fun HomeChips(active: String, onChip: (String) -> Unit) {
                     Modifier
                         .weight(1f)
                         .height(36.dp)
-                        .background(Color(0xFFF2F1F7), CircleShape)
+                        .background(ACCENT, CircleShape)
                         .tapNoRipple { onChip(chip.anchor) },
                 ) { content() }
             } else {

@@ -97,7 +97,7 @@ internal fun NavigationPill(
 private fun NavigationTabContent(target: String, icon: String, selected: Boolean) {
     AssetIcon(icon, size = 20.dp, tint = if (selected) ACCENT else TEXT)
     Text(
-        when (target) { "发现" -> "首页"; "资料库" -> "歌单库"; else -> "设置" },
+        when (target) { "发现" -> "首页"; "资料库" -> "曲库"; else -> "设置" },
         style = TextStyle(fontSize = 8.sp, lineHeight = 10.sp, platformStyle = PlatformTextStyle(includeFontPadding = false)),
         color = if (selected) ACCENT else MUTED,
     )

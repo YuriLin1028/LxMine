@@ -39,7 +39,7 @@ class PlaybackService : MediaSessionService() {
             }
         }
         val exoPlayer = ExoPlayer.Builder(this, renderers)
-            .setAudioAttributes(audioAttributes, /* handleAudioFocus = */ true)
+            .setAudioAttributes(audioAttributes, /* handleAudioFocus = */ !PlaybackController.mixWithOthers)
             .setHandleAudioBecomingNoisy(true)
             .setWakeMode(C.WAKE_MODE_NETWORK)
             .setMediaSourceFactory(androidx.media3.exoplayer.source.DefaultMediaSourceFactory(dataSourceFactory))

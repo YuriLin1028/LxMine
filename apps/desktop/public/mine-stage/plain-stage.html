@@ -12,8 +12,8 @@
     #viewport { position: fixed; inset: 0; overflow: auto; scrollbar-width: none; overscroll-behavior: contain; mask-image: linear-gradient(to bottom, transparent, #000 var(--fade-top, 100px), #000 calc(100% - var(--fade-bottom, 170px)), transparent); -webkit-mask-image: linear-gradient(to bottom, transparent, #000 var(--fade-top, 100px), #000 calc(100% - var(--fade-bottom, 170px)), transparent); }
     #viewport::-webkit-scrollbar { display: none; }
     #lyrics { padding: var(--lyric-half-height, 0px) clamp(28px, 8vw, 130px); }
-    .line { margin: 0; padding: 16px 0; width: calc(100% / 1.18); font-size: clamp(24px, 3.4vw, 38px); font-weight: 500; line-height: 1.5; text-align: left; color: var(--primary, #f4d28a); cursor: pointer; transform: scale(var(--line-scale, .78)); transform-origin: left center; transition: transform .38s cubic-bezier(.2,.8,.2,1), color .24s ease; }
-    .line.active { color: var(--primary, #f4d28a); }
+    .line { margin: 0; padding: 16px 0; width: calc(100% / 1.18); font-size: calc(clamp(22px, 3.4vw, 36px) * var(--user-lyric-scale, 1)); font-weight: 500; line-height: 1.5; text-align: left; color: var(--primary, #7dd3fc); cursor: pointer; transform: scale(var(--line-scale, .82)); transform-origin: left center; transition: transform .38s cubic-bezier(.2,.8,.2,1), color .24s ease; }
+    .line.active { color: var(--primary, #7dd3fc); }
     .main { display: block; line-height: 1.5; opacity: .78; }
     .line.active .main, .line.past .main { opacity: 1; }
     .karaoke-char { position: relative; display: inline-block; white-space: pre; line-height: 1; color: var(--primary); }
@@ -177,16 +177,18 @@
         metadata(value) {
           data = value;
           LxMineAppearance.apply(value.appearance);
-          const colors = palette = LxMineAppearance.colors({ primary: '#f4d28a', secondary: '#8fb2a6', ...(value.lyricColors || {}) });
-          palette.primary = colors.primary || '#f4d28a'; palette.secondary = colors.secondary || palette.primary;
+          const colors = palette = LxMineAppearance.colors({ primary: '#7dd3fc', secondary: '#a5b4fc', ...(value.lyricColors || {}) });
+          palette.primary = colors.primary || '#7dd3fc'; palette.secondary = colors.secondary || palette.primary;
           palette.highlight = colors.highlight || palette.primary;
-          document.body.style.setProperty('--primary', colors.primary || '#f4d28a');
-          document.body.style.setProperty('--secondary', colors.secondary || colors.primary || '#8fb2a6');
+          document.body.style.setProperty('--primary', colors.primary || '#7dd3fc');
+          document.body.style.setProperty('--secondary', colors.secondary || colors.primary || '#a5b4fc');
           document.body.classList.toggle('gradient', String(value.lyricColorMode).includes('gradient'));
           colorKaraoke();
           viewport.style.setProperty('--fade-top', (Number(value.topInset) || 100) + 'px');
           viewport.style.setProperty('--fade-bottom', (Number(value.bottomInset) || 170) + 'px');
-          const nextKey = JSON.stringify([value.id, value.lines, value.translationLines]);
+          const userScale = Math.max(0.75, Math.min(1.4, Number(value.lyricScale) || 1));
+          document.body.style.setProperty('--user-lyric-scale', String(userScale));
+          const nextKey = JSON.stringify([value.id, value.lines, value.translationLines, userScale]);
           const initial = key !== nextKey || !root.children.length || !presentation.visible || !presentation.detail;
           if (key !== nextKey) {
             cancelFollow();

@@ -14,6 +14,10 @@ export interface LxSearchResult {
   hasMore?: boolean;
 }
 
+interface KgTransParam {
+  union_cover?: string;
+}
+
 interface KgItem {
   Audioid?: number;
   FileHash?: string;
@@ -25,6 +29,7 @@ interface KgItem {
   HQFileHash?: string;
   SQFileHash?: string;
   Image?: string;
+  trans_param?: KgTransParam;
   Grp?: KgItem[];
 }
 
@@ -52,8 +57,11 @@ interface WySong {
   id?: number;
   name?: string;
   artists?: WyArtist[];
+  ar?: WyArtist[];
   album?: WyAlbum;
+  al?: WyAlbum;
   duration?: number;
+  dt?: number;
 }
 
 interface WyResult {
@@ -72,6 +80,7 @@ interface TxSinger {
 interface TxAlbum {
   name?: string;
   mid?: string;
+  pmid?: string;
 }
 
 interface TxSong {
@@ -170,8 +179,9 @@ async function searchKugou(keyword: string, page: number, limit: number): Promis
     if (seen.has(key)) return;
     seen.add(key);
     const duration = parseInt(entry.Duration ?? '0');
-    const image = entry.Image
-      ? entry.Image.replace('{size}', '400').replace(/^http:/, 'https:')
+    const rawImg = entry.Image || entry.trans_param?.union_cover || '';
+    const image = rawImg
+      ? rawImg.replace('{size}', '400').replace(/^\/\//, 'https://').replace(/^http:/, 'https:')
       : '';
     items.push({
       source: 'kg',
@@ -195,7 +205,7 @@ async function searchKugou(keyword: string, page: number, limit: number): Promis
   return { items, total: typeof total === 'number' ? total : items.length };
 }
 
-/** 网易云：公开 web 搜索接口（POST 表单）。 */
+/** 网易云：优先 cloudsearch/pc（原生带高清专辑封面 al.picUrl），异常时自动回退 web 搜索。 */
 async function searchNetease(keyword: string, page: number, limit: number): Promise<LxSearchResult> {
   const body = `s=${encodeURIComponent(keyword)}&type=1&offset=${(page - 1) * limit}&limit=${limit}&total=true`;
   const headers: HttpHeaders = {
@@ -203,25 +213,32 @@ async function searchNetease(keyword: string, page: number, limit: number): Prom
     'User-Agent': 'Mozilla/5.0 LxMine/0.1',
     Referer: 'https://music.163.com/',
   };
-  const text = await requestText('https://music.163.com/api/search/get/web', http.RequestMethod.POST, body, headers);
+  let text = '';
+  try {
+    text = await requestText('https://music.163.com/api/cloudsearch/pc', http.RequestMethod.POST, body, headers);
+  } catch (_) {
+    text = await requestText('https://music.163.com/api/search/get/web', http.RequestMethod.POST, body, headers);
+  }
   const payload = JSON.parse(text) as WyResponse;
   const items: Song[] = [];
   for (const song of payload.result?.songs ?? []) {
     if (song.id === undefined) continue;
     const singers: string[] = [];
-    for (const artist of song.artists ?? []) {
+    const artistList = song.ar ?? song.artists ?? [];
+    for (const artist of artistList) {
       if (artist.name) singers.push(artist.name);
     }
+    const album = song.al ?? song.album;
     items.push({
       source: 'wy',
       id: String(song.id),
       name: decodeName(song.name),
       singer: singers.join('、'),
-      albumName: decodeName(song.album?.name),
-      albumId: song.album && song.album.id !== undefined ? String(song.album.id) : '',
-      durationMs: song.duration ?? 0,
-      qualitys: ['128k', '320k'],
-      coverUrl: normalizeCoverUrl(song.album?.picUrl),
+      albumName: decodeName(album?.name),
+      albumId: album && album.id !== undefined ? String(album.id) : '',
+      durationMs: song.dt ?? song.duration ?? 0,
+      qualitys: ['128k', '320k', 'flac'],
+      coverUrl: normalizeCoverUrl(album?.picUrl),
     });
   }
   const total = payload.result?.songCount;
@@ -257,7 +274,7 @@ async function searchQQ(keyword: string, page: number, limit: number): Promise<L
     for (const artist of song.singer ?? []) {
       if (artist.name) singers.push(artist.name);
     }
-    const albumMid = song.album?.mid ?? '';
+    const albumMid = (song.album?.mid && song.album.mid.length > 0) ? song.album.mid : (song.album?.pmid ?? '');
     items.push({
       source: 'tx',
       id: song.mid,
@@ -267,7 +284,7 @@ async function searchQQ(keyword: string, page: number, limit: number): Promise<L
       albumId: albumMid,
       durationMs: (song.interval ?? 0) * 1000,
       qualitys: ['128k', '320k'],
-      coverUrl: albumMid.length > 0 ? `https://y.gtimg.cn/music/photo_new/T002R300x300M000${albumMid}.jpg` : '',
+      coverUrl: albumMid.length > 0 ? `https://y.gtimg.cn/music/photo_new/T002R500x500M000${albumMid}.jpg` : '',
     });
   }
   const total = payload.data?.song?.totalnum;

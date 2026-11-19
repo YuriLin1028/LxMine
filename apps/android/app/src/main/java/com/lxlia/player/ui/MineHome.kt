@@ -1,6 +1,7 @@
 package com.lxlia.player.ui
 
 import androidx.compose.foundation.background
+import androidx.compose.foundation.border
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
@@ -51,12 +52,12 @@ import com.lxlia.player.model.Song
 import java.util.Calendar
 
 private val GRADS = listOf(
-    listOf(Color(0xFF2E3A8C), Color(0xFF6C4AB6)),
-    listOf(Color(0xFF0F6F5C), Color(0xFF3FA796)),
-    listOf(Color(0xFF8C2E2E), Color(0xFFC76B4A)),
-    listOf(Color(0xFF3C5A99), Color(0xFF7FA8E0)),
-    listOf(Color(0xFF6A3A8C), Color(0xFFB84AB6)),
-    listOf(Color(0xFF8C6A1E), Color(0xFFD9B24A)),
+    listOf(Color(0xFF0B2B5B), Color(0xFF38BDF8)),
+    listOf(Color(0xFF162456), Color(0xFF64D2FF)),
+    listOf(Color(0xFF1E295E), Color(0xFF818CF8)),
+    listOf(Color(0xFF0D4A56), Color(0xFF2DD4BF)),
+    listOf(Color(0xFF1B3A73), Color(0xFF7DD3FC)),
+    listOf(Color(0xFF2B2467), Color(0xFFA5B4FC)),
 )
 
 private fun gradFor(name: String): List<Color> {
@@ -65,7 +66,13 @@ private fun gradFor(name: String): List<Color> {
     return GRADS[hash % GRADS.size]
 }
 
-/** 封面卡：有封面用封面，缺封面用名称哈希渐变 + 首字兜底。 */
+private fun cardBorderBrush(): Brush = if (AppAppearance.light) {
+    Brush.verticalGradient(listOf(Color(0x22000000), Color(0x08000000)))
+} else {
+    Brush.verticalGradient(listOf(Color(0x2EFFFFFF), Color(0x0AFFFFFF)))
+}
+
+/** 封面卡：有封面用封面，缺封面用名称哈希渐变 + 首字兜底，配细腻高光描边。 */
 @Composable
 fun CoverCard(
     cover: String,
@@ -77,12 +84,14 @@ fun CoverCard(
     fallbackText: Float = 40f,
     modifier: Modifier = Modifier,
 ) {
+    val cardShape = RoundedCornerShape(radius.dp)
     Box(modifier.aspectRatio(1f)) {
         Box(
             Modifier
                 .fillMaxSize()
-                .clip(RoundedCornerShape(radius.dp))
-                .background(Color(0xFF17191C)),
+                .clip(cardShape)
+                .background(if (AppAppearance.light) Color(0xFFD5DAE2) else Color(0xFF17191C))
+                .border(0.75.dp, cardBorderBrush(), cardShape),
         ) {
             if (cover.isNotEmpty()) {
                 RemoteImage(cover, modifier = Modifier.fillMaxSize(), contentScale = ContentScale.Crop)
@@ -131,6 +140,9 @@ fun CoverCard(
 
 private fun bannerNote(item: FeedPlaylist): String {
     if (item.id == "daily-30") {
+        if (item.period == "personalized") {
+            return "为你定制 · 融合常听歌手"
+        }
         val now = Calendar.getInstance()
         return "${now.get(Calendar.MONTH) + 1}月${now.get(Calendar.DAY_OF_MONTH)}日 · 融合推荐 ${item.count} 首"
     }
@@ -165,6 +177,7 @@ fun HomePage(
     onEdgeBottom: (Boolean) -> Unit,
 ) {
     val feed = vm.homeFeed
+    val likedKeys = vm.likedKeys
     val scroll = rememberScrollState()
     var newSongsSort by rememberSaveable { mutableStateOf("added") }
     var newSongsManual by rememberSaveable { mutableStateOf<List<String>>(emptyList()) }
@@ -240,6 +253,22 @@ fun HomePage(
                     }
                 }
             }
+            if (feed != null && feed.similar.isNotEmpty()) {
+                Column(
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .onGloballyPositioned { onAnchorOffset("similar", it.positionInParent().y) },
+                    verticalArrangement = Arrangement.spacedBy(12.dp),
+                ) {
+                    SectionTitle(
+                        title = "猜你喜欢",
+                        note = "基于你的常听与喜欢歌手",
+                        section = "similar",
+                        onMore = { vm.openFeedSection("similar") },
+                    )
+                    FeedSongCardRow(feed.similar) { vm.playSong(it, feed.similar) }
+                }
+            }
             if (feed != null && feed.newSongs.isNotEmpty()) {
                 Column(
                     modifier = Modifier
@@ -255,6 +284,7 @@ fun HomePage(
                             val list = sortedNewSongs()
                             if (list.isNotEmpty()) vm.playSong(list.first(), list)
                         },
+                        onBatchDownload = { vm.downloadBatch(sortedNewSongs()) },
                         onSort = { newSongsSort = it },
                         onManual = {
                             orderSongs = sortedNewSongs()
@@ -266,7 +296,7 @@ fun HomePage(
                             SongRow(
                                 song = song,
                                 active = vm.playing && vm.selected?.key == song.key,
-                                liked = vm.liked(song),
+                                liked = song.key in likedKeys,
                                 wide = wide,
                                 onClick = { vm.playSong(song, sortedNewSongs()) },
                                 onLike = { vm.like(song) },
@@ -305,17 +335,6 @@ fun HomePage(
                     }
                 }
             }
-            if (!feed?.similar.isNullOrEmpty()) {
-                Column(
-                    modifier = Modifier
-                        .fillMaxWidth()
-                        .onGloballyPositioned { onAnchorOffset("similar", it.positionInParent().y) },
-                    verticalArrangement = Arrangement.spacedBy(12.dp),
-                ) {
-                    SectionTitle("相似推荐", section = "similar", onMore = { vm.openFeedSection("similar") })
-                    FeedSongCardRow(feed!!.similar) { vm.playSong(it, feed.similar) }
-                }
-            }
         }
         if (orderOpen) {
             SongOrderDialog(
@@ -346,12 +365,14 @@ private fun SectionTitle(
         verticalAlignment = Alignment.CenterVertically,
         horizontalArrangement = Arrangement.spacedBy(10.dp),
     ) {
-        Text(title, fontSize = 21.sp, fontWeight = FontWeight.Medium, color = TEXT)
-        Spacer(Modifier.weight(1f))
+        Column(Modifier.weight(1f), verticalArrangement = Arrangement.spacedBy(2.dp)) {
+            Text(title, fontSize = 21.sp, fontWeight = FontWeight.SemiBold, letterSpacing = (-0.2).sp, color = TEXT)
+            if (note.isNotEmpty()) {
+                Text(note, fontSize = 11.sp, color = MUTED, maxLines = 1, overflow = TextOverflow.Ellipsis)
+            }
+        }
         if (section.isNotEmpty()) {
             MaterialIconButton("ic_more.svg", "$title，更多", diameter = 36.dp, systemSymbol = false, onClick = onMore)
-        } else if (note.isNotEmpty()) {
-            Text(note, fontSize = 11.sp, color = MUTED)
         }
     }
 }
@@ -366,27 +387,51 @@ private fun HomeBannerCard(
     onOpen: () -> Unit,
     onPlay: () -> Unit,
 ) {
+    val bannerShape = RoundedCornerShape(20.dp)
+    val borderBrush = if (isActive) {
+        Brush.verticalGradient(listOf(ACCENT.copy(alpha = 0.65f), ACCENT.copy(alpha = 0.2f)))
+    } else {
+        cardBorderBrush()
+    }
     Box(modifier.height(238.dp)) {
         Box(
             modifier = Modifier
                 .fillMaxSize()
-                .clip(RoundedCornerShape(20.dp))
+                .clip(bannerShape)
                 .background(Color(0xFF17191C))
+                .border(if (isActive) 1.dp else 0.75.dp, borderBrush, bannerShape)
                 .tapNoRipple(onOpen),
         ) {
             if (item.cover.isNotEmpty()) {
                 RemoteImage(item.cover, modifier = Modifier.fillMaxSize(), contentScale = ContentScale.Crop)
+            } else {
+                Box(Modifier.fillMaxSize().background(Brush.linearGradient(gradFor(item.name))))
             }
             Box(
                 Modifier
                     .fillMaxSize()
                     .background(
                         Brush.verticalGradient(
-                            listOf(Color(0x22000000), Color(0xCC05070A)),
-                            startY = 120f,
+                            listOf(Color(0x14000000), Color(0x8805070A), Color(0xDD05070A)),
+                            startY = 80f,
                         )
                     ),
             )
+            if (item.id == "daily-30" && item.period == "personalized") {
+                Text(
+                    "个性推荐",
+                    fontSize = 10.sp,
+                    fontWeight = FontWeight.Medium,
+                    color = ACCENT,
+                    modifier = Modifier
+                        .align(Alignment.TopStart)
+                        .padding(12.dp)
+                        .clip(RoundedCornerShape(10.dp))
+                        .background(Color(0x88090B0E))
+                        .border(0.6.dp, ACCENT.copy(alpha = 0.35f), RoundedCornerShape(10.dp))
+                        .padding(horizontal = 8.dp, vertical = 3.dp),
+                )
+            }
             Row(
                 modifier = Modifier.align(Alignment.BottomStart).fillMaxWidth().padding(14.dp),
                 horizontalArrangement = Arrangement.spacedBy(8.dp),
@@ -397,6 +442,7 @@ private fun HomeBannerCard(
                         item.name,
                         fontSize = 18.sp,
                         fontWeight = FontWeight.Bold,
+                        letterSpacing = (-0.2).sp,
                         color = Color(0xFFF4F4F4),
                         maxLines = 1,
                         overflow = TextOverflow.Ellipsis,
@@ -405,13 +451,21 @@ private fun HomeBannerCard(
                     Text(
                         bannerNote(item),
                         fontSize = 11.sp,
-                        color = Color(0xB3FFFFFF),
+                        color = Color(0xC4FFFFFF),
                         maxLines = 1,
                         overflow = TextOverflow.Ellipsis,
                     )
                 }
-                Box(Modifier.size(34.dp).tapNoRipple(onPlay), contentAlignment = Alignment.Center) {
-                    AssetIcon(if (playing && isActive) "ic_pause.svg" else "ic_play.svg", size = 26.dp, tint = ACCENT)
+                Box(
+                    Modifier
+                        .size(36.dp)
+                        .clip(CircleShape)
+                        .background(Color(0x4D000000))
+                        .border(0.75.dp, Color(0x33FFFFFF), CircleShape)
+                        .tapNoRipple(onPlay),
+                    contentAlignment = Alignment.Center,
+                ) {
+                    AssetIcon(if (playing && isActive) "ic_pause.svg" else "ic_play.svg", size = 22.dp, tint = ACCENT)
                 }
             }
         }
@@ -483,6 +537,7 @@ private fun FeedSongCardRow(items: List<Song>, onPlay: (Song) -> Unit) {
                 Text(
                     song.name,
                     fontSize = 13.sp,
+                    fontWeight = FontWeight.Medium,
                     color = TEXT,
                     maxLines = 1,
                     overflow = TextOverflow.Ellipsis,
@@ -490,29 +545,42 @@ private fun FeedSongCardRow(items: List<Song>, onPlay: (Song) -> Unit) {
                 )
                 Text(
                     song.singer,
-                    fontSize = 10.sp,
+                    fontSize = 11.sp,
                     color = MUTED,
                     maxLines = 1,
                     overflow = TextOverflow.Ellipsis,
-                    modifier = Modifier.fillMaxWidth().height(14.dp),
+                    modifier = Modifier.fillMaxWidth().height(15.dp),
                 )
             }
         }
     }
 }
 
-/** 歌单库里的本地歌单卡（横向行用）。 */
+/** 曲库里的本地歌单卡（横向行用）。 */
 @Composable
 fun LocalPlaylistCard(playlist: MusicPlaylist, onOpen: () -> Unit) {
+    val shape = RoundedCornerShape(14.dp)
     Column(
         modifier = Modifier.width(108.dp).height(132.dp).tapNoRipple(onOpen),
         verticalArrangement = Arrangement.spacedBy(8.dp),
     ) {
-        Box(Modifier.fillMaxWidth().aspectRatio(1f).clip(RoundedCornerShape(14.dp)).background(Color(0xFF17191C))) {
+        Box(
+            Modifier
+                .fillMaxWidth()
+                .aspectRatio(1f)
+                .clip(shape)
+                .background(Brush.linearGradient(gradFor(playlist.name)))
+                .border(0.75.dp, cardBorderBrush(), shape),
+        ) {
             Box(Modifier.fillMaxSize(), contentAlignment = Alignment.Center) {
-                AssetIcon(if (playlist.isFavorite) "ic_heart.svg" else "ic_queue.svg", size = 34.dp, tint = ACCENT)
+                AssetIcon(
+                    if (playlist.isFavorite) "ic_heart_fill.svg" else "ic_queue.svg",
+                    size = 34.dp,
+                    tint = if (playlist.isFavorite) null else Color(0xFFF2F8FF),
+                    systemSymbol = false,
+                )
             }
-            val cover = playlist.songs.firstOrNull()?.coverUrl.orEmpty()
+            val cover = playlist.songs.firstOrNull { it.coverUrl.isNotEmpty() }?.coverUrl.orEmpty()
             if (cover.isNotEmpty()) {
                 RemoteImage(cover, modifier = Modifier.fillMaxSize(), contentScale = ContentScale.Crop)
             }

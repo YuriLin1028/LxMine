@@ -9,7 +9,7 @@ import { uiMaterial, curves } from '@kit.ArkUI';
 @Component
 export struct LandscapeDock {
   @Prop @Watch('songChanged') song: Song | null = null;
-  @Prop @Watch('spinChanged') playing: boolean = false;
+  @Prop playing: boolean = false;
   @Prop busy: boolean = false;
   @Prop tab: string = '发现';
   @Prop availableWidth: number = 900;
@@ -22,7 +22,6 @@ export struct LandscapeDock {
   @Prop colorLast: string = '#B8B8B8';
   @Prop mode: string = '列表循环';
   @Prop liked: boolean = false;
-  @StorageLink('lxliaForeground') @Watch('spinChanged') private foreground: boolean = true;
   onTab: (tab: string) => void = () => {};
   onPlayer: () => void = () => {};
   onToggle: () => void = () => {};
@@ -32,28 +31,23 @@ export struct LandscapeDock {
   onDownload: () => void = () => {};
   onLike: () => void = () => {};
   onSeek: (time: number) => void = () => {};
-  @State private coverAngle: number = 0;
   @State private scrubbing: boolean = false;
   @State private seekValue: number = 0;
   @State private navPressed: boolean = false;
   @State private playbackPressed: boolean = false;
   private seekSong: string = '';
-  private spinTimer: number = -1;
   private navDragging: boolean = false;
   private navTap: boolean = true;
   private navStartX: number = 0;
   private navStartY: number = 0;
-  aboutToAppear(): void {
-    this.spinChanged();
+  private modeIcon(): Resource {
+    if (this.mode === '随机播放') return $r('app.media.ic_shuffle');
+    if (this.mode === '单曲循环') return $r('app.media.ic_repeat_one');
+    if (this.mode === '顺序播放') return $r('app.media.ic_order_seq');
+    return $r('app.media.ic_repeat');
   }
-  aboutToDisappear(): void { clearTimeout(this.spinTimer); }
-  private spinChanged(): void {
-    clearTimeout(this.spinTimer);
-    if (!this.playing || !this.foreground) return;
-    this.spinTimer = setTimeout(() => {
-      this.getUIContext().animateTo({ duration: 100, curve: Curve.Linear }, () => { this.coverAngle += 1.5; });
-      this.spinChanged();
-    }, 100);
+  private modeIconRaw(): boolean {
+    return this.mode === '单曲循环' || this.mode === '顺序播放';
   }
   private songChanged(): void { this.scrubbing = false; this.seekSong = ''; this.seekValue = 0; }
   private seekChanged(value: number, mode: SliderChangeMode): void {
@@ -82,7 +76,7 @@ export struct LandscapeDock {
   @Builder private navButton(target: string, label: string, icon: Resource) {
     Button({ type: ButtonType.Normal }) {
       Column({ space: 2 }) {
-        SymbolGlyph(icon).fontSize(20).fontColor([this.tab === target ? ACCENT : TEXT])
+        Image(icon).width(20).height(20).fillColor(this.tab === target ? ACCENT : TEXT)
         Text(label).fontSize(8).fontColor(this.tab === target ? ACCENT : MUTED)
       }
     }.attributeModifier(musicButtonPress).width(76).height(56).padding(0).backgroundColor(Color.Transparent).stateEffect(false).buttonStyle(ButtonStyleMode.TEXTUAL)
@@ -99,9 +93,9 @@ export struct LandscapeDock {
   @LocalBuilder private navContent() {
     Stack({ alignContent: Alignment.TopStart }) {
     Row({ space: 2 }) {
-      this.navButton('发现', '首页', $r('sys.symbol.house'))
-      this.navButton('资料库', '歌单库', $r('sys.symbol.square_grid_2x2'))
-      this.navButton('设置', '设置', $r('sys.symbol.gearshape'))
+      this.navButton('发现', '首页', $r('app.media.ic_home'))
+      this.navButton('资料库', '曲库', $r('app.media.ic_library'))
+      this.navButton('设置', '设置', $r('app.media.ic_settings'))
     }.width('100%').height(56).margin({ top: 16 }).padding({ left: 6, right: 6 }).borderRadius(28)
       .backgroundColor(Color.Transparent).systemMaterial(musicSurfaceMaterial())
       .scale({ x: this.navPressed ? MATERIAL_PRESS_SCALE : 1, y: this.navPressed ? MATERIAL_PRESS_SCALE : 1 })
@@ -138,11 +132,11 @@ export struct LandscapeDock {
     Row({ space: 4 }) {
       Stack() {
         Stack() {
-          SymbolGlyph($r('sys.symbol.music_note_list')).fontSize(16).fontColor([TEXT])
-          if (this.song?.coverUrl) { Image(this.song.coverUrl).width('100%').height('100%').objectFit(ImageFit.Cover).rotate({ angle: this.coverAngle }) }
+          Image($r('app.media.ic_music')).width(16).height(16).fillColor(TEXT)
+          if (this.song?.coverUrl) { Image(this.song.coverUrl).width('100%').height('100%').objectFit(ImageFit.Cover) }
         }.width(this.coverSize() - 8).height(this.coverSize() - 8).borderRadius(24).clip(true)
         Progress({ value: Math.min(this.positionMs, this.duration), total: Math.max(1, this.duration), type: ProgressType.Ring })
-          .width(this.coverSize()).height(this.coverSize()).color(new LinearGradient([{ color: '#F4D28A', offset: 0 }, { color: this.colorLast, offset: 1 }]))
+          .width(this.coverSize()).height(this.coverSize()).color(new LinearGradient([{ color: '#64D2FF', offset: 0 }, { color: this.colorLast, offset: 1 }]))
           .backgroundColor('#55FFFFFF').style({ strokeWidth: 3, enableSmoothEffect: true }).hitTestBehavior(HitTestMode.None)
       }.width(this.coverSize()).height(this.coverSize())
         .onClick(() => { if (this.song) this.onPlayer(); })
@@ -153,8 +147,8 @@ export struct LandscapeDock {
       MaterialIcon({ icon: $r('app.media.ic_previous'), label: '上一首', diameter: 28, grouped: true, disabled: !this.song || this.busy, action: () => this.onNext(-1) })
       MaterialIcon({ icon: this.playing ? $r('app.media.ic_pause') : $r('app.media.ic_play'), label: this.playing ? '暂停' : '播放', diameter: 34, grouped: true, disabled: this.busy || !this.song, action: () => this.onToggle() }).id('landscape-play-toggle')
       MaterialIcon({ icon: $r('app.media.ic_next'), label: '下一首', diameter: 28, grouped: true, disabled: !this.song || this.busy, action: () => this.onNext(1) })
-      MaterialIcon({ icon: $r('app.media.ic_heart'), label: this.liked ? '取消喜欢' : '喜欢', diameter: 28, grouped: true, selected: this.liked, disabled: !this.song, action: () => this.onLike() }).id('landscape-like')
-      MaterialIcon({ icon: this.mode === '随机播放' ? $r('app.media.ic_shuffle') : $r('app.media.ic_repeat'), label: '播放顺序：' + this.mode, diameter: 28, grouped: true, action: () => this.onMode() })
+      MaterialIcon({ icon: this.liked ? $r('app.media.ic_heart_fill') : $r('app.media.ic_heart'), raw: this.liked, tint: !this.liked, label: this.liked ? '取消喜欢' : '喜欢', diameter: 28, grouped: true, selected: this.liked, disabled: !this.song, action: () => this.onLike() }).id('landscape-like')
+      MaterialIcon({ icon: this.modeIcon(), raw: this.modeIconRaw(), label: '播放顺序：' + this.mode, diameter: 28, grouped: true, action: () => this.onMode() })
       MaterialIcon({ icon: $r('app.media.ic_download'), label: '下载歌曲', diameter: 28, grouped: true, disabled: !this.song, action: () => this.onDownload() })
       MaterialIcon({ icon: $r('app.media.ic_queue'), label: '播放队列', diameter: 30, grouped: true, action: () => this.onQueue() })
     }.width('100%').height(this.barHeight()).margin({ top: 16 }).padding({ left: 6, right: 6 }).borderRadius(28)

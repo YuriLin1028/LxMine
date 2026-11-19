@@ -72,11 +72,14 @@ function writeSources(filePath, sources, activeId) {
 function createLanSync(deps) {
   const identity = loadIdentity(deps.userDataPath);
   let started = false;
+  let autoSyncTimer = null;
+  let suppressAutoSyncUntil = 0;
 
   const applyBundle = async (bundle) => {
     const result = await deps.data.apply(bundle);
     const library = deps.library.listSync();
     if (!library.ok || library.count !== result.playlistsCount) throw new Error('同步后歌单数量校验失败');
+    suppressAutoSyncUntil = Date.now() + 3000;
     broadcastToWindows('lansync-applied', { settings: bundle.settings, library, ...result });
     return result;
   };
@@ -87,6 +90,15 @@ function createLanSync(deps) {
     platform: process.platform,
     onDevicesChanged: devices => broadcastToWindows('lansync-devices-changed', devices),
     onAccept: applyBundle,
+    async onAutoPlaylists(_peer, bundle) {
+      const result = await deps.data.mergePlaylists(bundle.playlists || []);
+      if (result.changed) {
+        suppressAutoSyncUntil = Date.now() + 3000;
+        const library = deps.library.listSync();
+        broadcastToWindows('lansync-applied', { autoSync: true, library, ...result });
+      }
+      return result;
+    },
     onIncoming(peer, bundle, pendingId) {
       // 只保留展示所需的摘要，完整 bundle 留在 transport 的 pending 里。
       const summary = {
@@ -121,6 +133,8 @@ function createLanSync(deps) {
     deviceName: identity.name,
     platform: process.platform,
     port: transport.getPort(),
+    addresses: transport.localAddresses(),
+    autoSync: transport.getAutoSync(),
     discovery: started,
   });
 
@@ -130,15 +144,62 @@ function createLanSync(deps) {
     ...deps.data.snapshot(),
   });
 
+  const pushAutoPlaylistsNow = async () => {
+    if (!transport.getAutoSync() || Date.now() < suppressAutoSyncUntil) return { pushed: 0 };
+    if (!started) await start();
+    const peers = transport.listDevices().filter(device => device.autoSyncPlaylists && device.receiveMode !== 'pull');
+    if (!peers.length) return { pushed: 0 };
+    const snapshot = deps.data.snapshot();
+    const payload = {
+      protocol: PROTOCOL,
+      version: 1,
+      createdAt: Date.now(),
+      device: { id: identity.id, name: identity.name, platform: process.platform },
+      playlists: snapshot.playlists,
+    };
+    let pushed = 0;
+    await Promise.allSettled(peers.map(async peer => {
+      const res = await transport.sendDirect(peer.address, peer.port, payload, '/lxlia-sync/auto-playlists', 10000);
+      if (res?.accepted) pushed += 1;
+    }));
+    return { pushed };
+  };
+
+  const triggerAutoSync = () => {
+    if (!transport.getAutoSync() || Date.now() < suppressAutoSyncUntil) return { scheduled: false };
+    clearTimeout(autoSyncTimer);
+    autoSyncTimer = setTimeout(() => { void pushAutoPlaylistsNow().catch(() => {}); }, 1800);
+    if (typeof autoSyncTimer.unref === 'function') autoSyncTimer.unref();
+    return { scheduled: true };
+  };
+
   return {
     start,
     stop,
     status,
     devices: () => transport.listDevices(),
     pending: () => transport.listPending(),
+    setAutoSync(enabled) {
+      transport.setAutoSync(Boolean(enabled));
+      if (enabled) triggerAutoSync();
+      return { ok: true, autoSync: transport.getAutoSync() };
+    },
+    triggerAutoSync,
     async send(deviceId, extra = {}) {
       if (!started) await start();
       return transport.send(String(deviceId), buildBundle(extra));
+    },
+    async sendDirect(target) {
+      if (!started) await start();
+      const raw = String(target || '').trim().replace(/^https?:\/\//i, '').replace(/\/.*$/, '');
+      if (!raw) throw new Error('请输入对端设备的局域网 IP 地址');
+      const [hostPart, portPart] = raw.split(':');
+      const address = (hostPart || '').trim();
+      const portNum = portPart ? Number(portPart) : 41300;
+      if (!address || !Number.isInteger(portNum) || portNum < 1 || portNum > 65535) {
+        throw new Error('地址格式无效，请输入如 192.168.1.10:41300');
+      }
+      return transport.sendDirect(address, portNum, buildBundle());
     },
     async respond(pendingId, accepted) {
       const entry = transport.listPending().find(item => item.pendingId === pendingId);
@@ -165,6 +226,9 @@ function registerLanSyncIpc(manager, trusted) {
   handle('lansync-devices', () => manager.devices());
   handle('lansync-pending', () => manager.pending());
   handle('lansync-send', id => manager.send(id));
+  handle('lansync-send-direct', target => manager.sendDirect(target));
+  handle('lansync-auto-sync', enabled => manager.setAutoSync(enabled));
+  handle('lansync-trigger-auto', () => manager.triggerAutoSync());
   handle('lansync-respond', (id, accepted) => manager.respond(id, accepted));
 }
 

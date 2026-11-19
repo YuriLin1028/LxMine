@@ -33,7 +33,15 @@
       albumId, durationMs: duration, qualitys: raw.qualitys || (raw.types || meta.qualitys)?.map(t => t.type) || ['128k', '320k'],
       ...(raw.strMediaMid || meta.strMediaMid ? { strMediaMid: str(raw.strMediaMid || meta.strMediaMid) } : {}),
       ...(raw.songId || meta.id ? { songId: str(raw.songId || meta.id) } : {}),
-      coverUrl: clean(raw.coverUrl || raw.img || raw.pic || raw.picUrl || raw.Image || meta.picUrl || albumInfo.picUrl || (raw.web_albumpic_short ? 'https://img1.kuwo.cn/star/albumcover/' + raw.web_albumpic_short : '') || (source === 'tx' && albumId && !/^\d+$/.test(albumId) ? 'https://y.gtimg.cn/music/photo_new/T002R300x300M000' + albumId + '.jpg' : '')).replace('{size}', '400').replace(/^\/\//, 'https://').replace(/^http:/, 'https:') };
+      coverUrl: clean(
+        raw.coverUrl || raw.img || raw.pic || raw.picUrl || raw.Image ||
+        raw.trans_param?.union_cover || raw.album_img || raw.imgUrl || raw.sizable_cover ||
+        raw.albumpic || raw.hts_MVPIC || raw.pic120 ||
+        meta.picUrl || albumInfo.picUrl ||
+        (raw.web_albumpic_short ? 'https://img1.kuwo.cn/star/albumcover/' + raw.web_albumpic_short.replace(/^120\//, '500/') : '') ||
+        (raw.web_artistpic_short ? 'https://img1.kuwo.cn/star/starheads/' + raw.web_artistpic_short.replace(/^120\//, '500/') : '') ||
+        (source === 'tx' && (albumInfo.pmid || (albumId && !/^\d+$/.test(albumId))) ? 'https://y.gtimg.cn/music/photo_new/T002R500x500M000' + (albumInfo.pmid || albumId) + '.jpg' : '')
+      ).replace('{size}', '400').replace(/^\/\//, 'https://').replace(/^http:/, 'https:') };
   }
   function playlist(name, items, source) {
     const seen = new Set();
@@ -439,7 +447,95 @@
     }
     throw new Error('该平台尚未提供歌单链接导入，请选择歌单备份文件');
   }
-  const api = { normalizeSong: song, fromJson, parseLink, importPlaylist, matchSong, findMatchingSong };
+  function coreTitle(value) {
+    return matchingText(value)
+      .replace(/\((?:live|现场|伴奏|inst\.?|instrumental|remix|dj[^)]*|国语|粤语|原版|正式版|电影[^)]*|电视剧[^)]*|动画[^)]*|游戏[^)]*)\)/gi, '')
+      .replace(/-(?:live|现场版?|伴奏)$/gi, '')
+      .replace(/[^\p{L}\p{N}]/gu, '');
+  }
+  function artistTokens(value) {
+    return matchingText(value)
+      .split(/[、,&/;，feat\.ft\.]+/)
+      .map(part => part.replace(/^[a-z.]+(?=[\u4e00-\u9fff])/i, '').replace(/[^\p{L}\p{N}]/gu, ''))
+      .filter(Boolean);
+  }
+  function candidateScore(original, candidate) {
+    const origExact = matchingText(original.name);
+    const candExact = matchingText(candidate.name);
+    const origCore = coreTitle(original.name);
+    const candCore = coreTitle(candidate.name);
+    if (!candCore || !origCore) return -1;
+    let score = 0;
+    if (candExact === origExact) score += 60;
+    else if (candCore === origCore) score += 45;
+    else if (candCore.includes(origCore) || origCore.includes(candCore)) score += 24;
+    else return -1;
+    const origLive = /live|现场/i.test(original.name || '');
+    const candLive = /live|现场/i.test(candidate.name || '');
+    if (origLive !== candLive) score -= 14;
+    if (/伴奏|inst|karaoke|卡拉ok/i.test(candidate.name || '') && !/伴奏|inst/i.test(original.name || '')) score -= 35;
+    const origArtists = artistTokens(original.singer);
+    const candArtists = artistTokens(candidate.singer);
+    if (origArtists.length && candArtists.length) {
+      const overlap = origArtists.some(a => candArtists.some(b => a === b || (a.length >= 2 && b.includes(a)) || (b.length >= 2 && a.includes(b))));
+      if (overlap) score += 35;
+      else score -= 22;
+    }
+    if (original.durationMs > 0 && candidate.durationMs > 0) {
+      const diff = Math.abs(original.durationMs - candidate.durationMs);
+      if (diff <= 3000) score += 15;
+      else if (diff <= 10000) score += 8;
+      else if (diff > 25000) score -= 15;
+    }
+    if (candidate.coverUrl) score += 5;
+    return score;
+  }
+  async function searchSourceSongs(source, query, io, limit = 15) {
+    const encoded = encodeURIComponent(query);
+    if (source === 'wy') {
+      const result = await io.json('https://music.163.com/api/cloudsearch/pc?' + new URLSearchParams({ s: query, type: '1', limit: String(limit), offset: '0' }), { headers: { Referer: 'https://music.163.com/' } })
+        .catch(() => io.json('https://music.163.com/api/search/get/web?' + new URLSearchParams({ s: query, type: '1', limit: String(limit), offset: '0' }), { headers: { Referer: 'https://music.163.com/' } }));
+      return (result.result?.songs || []).map(raw => song(raw, 'wy'));
+    }
+    if (source === 'tx') {
+      const result = await io.json('https://c.y.qq.com/soso/fcgi-bin/client_search_cp?w=' + encoded + '&format=json&n=' + limit + '&p=1&new_json=1&g_tk=5381', { headers: { Referer: 'https://y.qq.com/' } });
+      return (result.data?.song?.list || []).map(raw => song(raw, 'tx'));
+    }
+    if (source === 'kg') {
+      const result = await io.json('https://songsearch.kugou.com/song_search_v2?platform=AndroidFilter&iscorrection=1&keyword=' + encoded + '&pagesize=' + limit + '&PrivilegeFilter=0&page=1');
+      return (result.data?.lists || []).map(raw => song(raw, 'kg'));
+    }
+    if (source === 'kw') {
+      const result = await io.json('https://search.kuwo.cn/r.s?client=kt&all=' + encoded + '&pn=0&rn=' + limit + '&ft=music&encoding=utf8&rformat=json&vermerge=1&mobi=1');
+      return (result.abslist || []).map(raw => song(raw, 'kw'));
+    }
+    return [];
+  }
+  async function searchPlatformCandidates(original, io, preferred = ['wy', 'tx', 'kg', 'kw'], limitPerSource = 8) {
+    const cleanSinger = str(original.singer).replace(/未知歌手|本地文件/g, '').trim();
+    const query = [original.name, cleanSinger.split(/[、,&/;，]/)[0] || ''].filter(Boolean).join(' ').trim();
+    if (!query) return [];
+    const settled = await Promise.all(preferred.map(source => searchSourceSongs(source, query, io, 16).catch(() => [])));
+    const scored = [];
+    const seen = new Set();
+    for (let i = 0; i < settled.length; i++) {
+      let count = 0;
+      const list = settled[i]
+        .map(cand => ({ cand, score: candidateScore(original, cand) }))
+        .filter(entry => entry.score >= 20)
+        .sort((a, b) => b.score - a.score);
+      for (const entry of list) {
+        const key = entry.cand.source + ':' + entry.cand.id;
+        if (seen.has(key)) continue;
+        seen.add(key);
+        scored.push(entry);
+        if (++count >= limitPerSource) break;
+      }
+    }
+    scored.sort((a, b) => b.score - a.score);
+    return scored.map(entry => entry.cand);
+  }
+  const api = { normalizeSong: song, fromJson, parseLink, importPlaylist, matchSong, findMatchingSong, searchPlatformCandidates, coreTitle, artistTokens };
   if (typeof module !== 'undefined' && module.exports) module.exports = api;
   else root.LxPlaylists = api;
 })(typeof window !== 'undefined' ? window : globalThis);

@@ -1,4 +1,5 @@
 import { media } from '@kit.MediaKit';
+import { audio } from '@kit.AudioKit';
 import { avSession } from '@kit.AVSessionKit';
 import { common, wantAgent } from '@kit.AbilityKit';
 import { backgroundTaskManager } from '@kit.BackgroundTasksKit';
@@ -50,6 +51,32 @@ export class PlayerService {
   private lyricOffset: number = 0;
   private lyricIndex: number = -1;
   private lastSessionTick: number = 0;
+  private mixWithOthers: boolean = false;
+  setMixWithOthers(enabled: boolean): void {
+    this.mixWithOthers = enabled;
+    this.applyAudioConcurrency();
+  }
+  private applyAudioConcurrency(): void {
+    try {
+      const sessionManager = audio.getAudioManager().getSessionManager();
+      if (this.mixWithOthers) {
+        sessionManager.activateAudioSession({
+          concurrencyMode: audio.AudioConcurrencyMode.CONCURRENCY_MIX_WITH_OTHERS,
+        }).catch((e: BusinessError) => console.warn(`[AudioMix] activate ${e.message}`));
+      } else {
+        sessionManager.deactivateAudioSession().catch(() => {});
+      }
+    } catch (e) {
+      console.warn(`[AudioMix] ${(e as BusinessError).message}`);
+    }
+    if (this.player) {
+      try {
+        this.player.audioInterruptMode = this.mixWithOthers
+          ? audio.InterruptMode.INDEPENDENT_MODE
+          : audio.InterruptMode.SHARE_MODE;
+      } catch (_) {}
+    }
+  }
   onState(callback: (state: string) => void): void { this.stateCallback = callback; }
   onTime(callback: (time: number) => void): void { this.timeCallback = callback; }
   onError(callback: (message: string) => void): void { this.errorCallback = callback; }
@@ -95,6 +122,7 @@ export class PlayerService {
         this.updateMetadata();
       }
       if (state === 'playing') {
+        if (this.mixWithOthers) this.applyAudioConcurrency();
         this.session?.activate().catch((e: BusinessError) => console.warn(`[Session] activate ${e.message}`));
         this.startBackground();
       }

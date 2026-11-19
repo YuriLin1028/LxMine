@@ -49,9 +49,11 @@
     if (!rows) return -1;
     stageLyrics.group.updateMatrixWorld(true);
     if (window.__LXMINE_NATIVE_STAGE) {
-      // Claim the readable lyric column, including spaces between words/rows.
-      // Gesture ownership is chosen on down and remains fixed throughout a drag.
-      var sceneEdge = Math.max(20, Math.min(64, innerWidth * .08));
+      // Reserve top player header safe zone so tapping top-right controls never clicks lyrics.
+      if (y < 84) return -1;
+      // Leave generous side margins for 3D stage orbit even on narrow phones; horizontal drags
+      // over lyrics also hand off directly to stage orbit in pointermove.
+      var sceneEdge = Math.max(32, Math.min(68, innerWidth * .13));
       if (x < sceneEdge || x > innerWidth - sceneEdge) return -1;
       var nearest = null;
       var step = scrollStep();
@@ -71,9 +73,9 @@
           left = Math.min(left, px); right = Math.max(right, px); top = Math.min(top, py); bottom = Math.max(bottom, py);
         }); });
         var centerX = (left + right) / 2, middleY = (top + bottom) / 2;
-        var halfColumn = Math.max((right - left) / 2 + 28, innerWidth * (innerWidth < 700 ? .31 : .22));
-        halfColumn = Math.min(innerWidth * .42, halfColumn);
-        var vertical = Math.max((bottom - top) / 2 + 12, step * .58);
+        var halfColumn = Math.max((right - left) / 2 + 24, innerWidth * (innerWidth < 700 ? .31 : .22));
+        halfColumn = Math.min(innerWidth * .38, halfColumn);
+        var vertical = Math.max((bottom - top) / 2 + 12, step * .56);
         var distance = Math.abs(y - middleY);
         if (Math.abs(x - centerX) <= halfColumn && distance <= vertical && (!nearest || distance < nearest.distance)) nearest = { index: row.lineIndex, distance: distance };
       });
@@ -149,7 +151,7 @@
     if (index < 0) return;
     consume(event); clearTimeout(browseTimer);
     var origin = window.__LXMINE_NATIVE_STAGE ? Math.max(0, stageLyrics.currentIdx) : index;
-    drag = { id: event.pointerId, startY: event.clientY, startX: event.clientX, startIndex: origin, clickIndex: index, index: index, step: scrollStep(), moved: false,
+    drag = { id: event.pointerId, startY: event.clientY, startX: event.clientX, startIndex: origin, clickIndex: index, index: index, step: scrollStep(), moved: false, axis: 'pending',
       track: currentTrack(), media: audio, wasPlaying: playing && audio && !audio.paused };
     browseTrack = currentTrack();
     orbit.rotating = false; particlePointerSpin.active = false;
@@ -158,8 +160,23 @@
   canvas.addEventListener('pointermove', function (event) {
     if (!drag || drag.id !== event.pointerId) return;
     if (event.isPrimary === false || multiTouchActive()) { cancelDrag(event); return; }
+    var dx = event.clientX - drag.startX;
+    var dy = event.clientY - drag.startY;
+    if (drag.axis === 'pending' && Math.hypot(dx, dy) > 8) {
+      if (window.__LXMINE_NATIVE_STAGE && Math.abs(dx) > Math.abs(dy) * 1.1) {
+        // Horizontal drag over lyrics hands off smoothly to 3D stage orbit on narrow phones.
+        var pid = drag.id;
+        drag = null; hud.style.display = 'none'; previewSeconds = null;
+        if (canvas.hasPointerCapture(pid)) canvas.releasePointerCapture(pid);
+        if (typeof window.lxmineStartStageOrbit === 'function') {
+          window.lxmineStartStageOrbit(pid, event.clientX, event.clientY);
+        }
+        return;
+      }
+      drag.axis = 'lyric';
+      drag.moved = true;
+    }
     consume(event);
-    if (Math.hypot(event.clientX - drag.startX, event.clientY - drag.startY) > 7) drag.moved = true;
     if (drag.moved) show(drag.startIndex + Math.round((drag.startY - event.clientY) / drag.step));
   }, true);
   function finish(event, cancel) {

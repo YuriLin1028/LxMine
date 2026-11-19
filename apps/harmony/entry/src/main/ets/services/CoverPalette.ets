@@ -2,7 +2,7 @@ import { image } from '@kit.ImageKit';
 import http from '@ohos.net.http';
 
 export interface CoverColors { first: string; last: string; }
-export const EMPTY_COVER_COLORS: CoverColors = { first: '#FFFFFF', last: '#B8B8B8' };
+export const EMPTY_COVER_COLORS: CoverColors = { first: '#7DD3FC', last: '#A5B4FC' };
 
 // Small native decode: no canvas on the UI thread and no synthetic colour theme.
 export class CoverPalette {

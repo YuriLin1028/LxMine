@@ -120,7 +120,7 @@ export struct CommentsPanel {
               this.stateBlock()
             }
           }.width('100%').constraintSize({ maxWidth: 860 }).padding({ left: this.wide ? 32 : 20, right: this.wide ? 32 : 20, top: 6, bottom: this.bottomInset + 40 }).alignItems(HorizontalAlign.Start)
-        }.layoutWeight(1).scrollBar(BarState.Off).edgeEffect(EdgeEffect.Spring)
+        }.layoutWeight(1).align(Alignment.TopStart).scrollBar(BarState.Off).edgeEffect(EdgeEffect.Spring)
       }.width('100%').height('100%')
     }.width('100%').height('100%').expandSafeArea([SafeAreaType.SYSTEM], [SafeAreaEdge.TOP, SafeAreaEdge.BOTTOM])
   }

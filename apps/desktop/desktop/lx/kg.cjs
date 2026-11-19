@@ -18,6 +18,20 @@ function formatSinger(value) {
   return decodeName(value).replace(/&/g, '、');
 }
 
+function extractKugouCover(raw) {
+  const candidate = raw?.Image
+    || raw?.trans_param?.union_cover
+    || raw?.album_img
+    || raw?.imgUrl
+    || raw?.sizable_cover
+    || '';
+  if (typeof candidate !== 'string' || !candidate.trim()) return '';
+  return decodeName(candidate.trim())
+    .replace(/\{size\}/gi, '400')
+    .replace(/^\/\//, 'https://')
+    .replace(/^http:/i, 'https:');
+}
+
 /** 把酷狗原始条目（含 Grp 子项）拍平成统一结构，并去重。 */
 function mapKugouItems(lists) {
   const items = [];
@@ -42,10 +56,6 @@ function mapKugouItems(lists) {
       qualitys.push('flac');
     }
     const duration = Number.parseInt(raw.Duration, 10);
-    // 酷狗返回的图片地址带 {size} 占位符，换成 400 后统一走 https。
-    const image = typeof raw.Image === 'string'
-      ? raw.Image.replace('{size}', '400').replace(/^http:/, 'https:')
-      : '';
     items.push({
       id: String(raw.FileHash),
       name: decodeName(raw.SongName),
@@ -57,7 +67,7 @@ function mapKugouItems(lists) {
       source: 'kg',
       hash: String(raw.FileHash),
       hashes,
-      coverUrl: image,
+      coverUrl: extractKugouCover(raw),
     });
   };
   for (const raw of Array.isArray(lists) ? lists : []) {
@@ -75,11 +85,13 @@ async function searchKugou(options) {
   let payload;
   try {
     const response = await fetchImpl(url, {
-      headers: { 'User-Agent': 'Mozilla/5.0 LxMine/0.1' },
+      headers: { 'User-Agent': 'Mozilla/5.0 LxMine/1.1' },
       signal: controller.signal,
     });
     if (!response.ok) throw new Error(`Kugou search failed: HTTP ${response.status}`);
-    payload = await response.json();
+    const text = await response.text();
+    const trimmed = text.trim().replace(/^[a-zA-Z0-9_$]+\(([\s\S]*)\)\s*;?$/, '$1');
+    payload = JSON.parse(trimmed);
   } finally {
     clearTimeout(timer);
   }

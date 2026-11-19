@@ -3,7 +3,9 @@ package com.lxlia.player.ui
 import androidx.compose.animation.core.Spring
 import androidx.compose.animation.core.animateFloatAsState
 import androidx.compose.animation.core.spring
+import androidx.compose.foundation.Canvas
 import androidx.compose.foundation.background
+import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
@@ -63,7 +65,7 @@ import com.lxlia.player.model.FeedPlaylist
 import com.lxlia.player.model.MusicPlaylist
 import com.lxlia.player.model.Song
 
-// ---- 歌单库：时刻/相册式随机方块拼贴 ----
+// ---- 曲库：时刻/相册式随机方块拼贴 ----
 
 private data class LibraryTile(
     val kind: String,
@@ -79,7 +81,7 @@ private data class MosaicSlot(val tile: LibraryTile, val x: Float, val y: Float,
 
 private fun libraryTiles(vm: AppViewModel): List<LibraryTile> {
     val out = mutableListOf<LibraryTile>()
-    val favorite = vm.playlists.firstOrNull { it.isFavorite }
+    val favorite = vm.playlists.firstOrNull { it.isFavorite || it.name == "我喜欢的" }
     if (favorite != null) {
         out.add(
             LibraryTile(
@@ -88,7 +90,7 @@ private fun libraryTiles(vm: AppViewModel): List<LibraryTile> {
                 name = favorite.name,
                 count = "${favorite.songs.size} 首歌曲",
                 detail = "你收藏的歌曲",
-                cover = favorite.songs.firstOrNull()?.coverUrl.orEmpty(),
+                cover = favorite.songs.firstOrNull { it.coverUrl.isNotEmpty() }?.coverUrl.orEmpty(),
                 iconKind = "heart",
             )
         )
@@ -100,12 +102,12 @@ private fun libraryTiles(vm: AppViewModel): List<LibraryTile> {
             name = "最近播放",
             count = "${vm.recentSongs.size} 首歌曲",
             detail = "按最近播放时间排列",
-            cover = vm.recentSongs.firstOrNull()?.coverUrl.orEmpty(),
+            cover = vm.recentSongs.firstOrNull { it.coverUrl.isNotEmpty() }?.coverUrl.orEmpty(),
             iconKind = "clock",
         )
     )
     for (playlist in vm.playlists) {
-        if (playlist.isFavorite) continue
+        if (playlist.isFavorite || playlist.id == favorite?.id) continue
         out.add(
             LibraryTile(
                 kind = "playlist",
@@ -113,7 +115,7 @@ private fun libraryTiles(vm: AppViewModel): List<LibraryTile> {
                 name = playlist.name,
                 count = if (playlist.kind == "lx") "${playlist.songs.size} 首歌曲" else "本地文件歌单",
                 detail = "歌单",
-                cover = playlist.songs.firstOrNull()?.coverUrl.orEmpty(),
+                cover = playlist.songs.firstOrNull { it.coverUrl.isNotEmpty() }?.coverUrl.orEmpty(),
                 iconKind = "music",
             )
         )
@@ -125,7 +127,7 @@ private fun libraryTiles(vm: AppViewModel): List<LibraryTile> {
             name = "本地音乐",
             count = "${vm.localTracks.size} 首本地歌曲",
             detail = "智能识别手机里的音频",
-            cover = vm.localTracks.firstOrNull()?.coverUrl.orEmpty(),
+            cover = vm.localTracks.firstOrNull { it.coverUrl.isNotEmpty() }?.coverUrl.orEmpty(),
             iconKind = "music",
         )
     )
@@ -263,12 +265,19 @@ private fun buildMosaic(tiles: List<LibraryTile>, columns: Int, cell: Float, row
 
 @Composable
 private fun LibraryTileView(slot: MosaicSlot, onOpen: () -> Unit) {
+    val tileShape = RoundedCornerShape(18.dp)
+    val borderBrush = if (AppAppearance.light) {
+        Brush.verticalGradient(listOf(Color(0x22000000), Color(0x08000000)))
+    } else {
+        Brush.verticalGradient(listOf(Color(0x2EFFFFFF), Color(0x0AFFFFFF)))
+    }
     Box(
         modifier = Modifier
             .offset(x = slot.x.dp, y = slot.y.dp)
             .width(slot.w.dp)
             .height(slot.h.dp)
-            .clip(RoundedCornerShape(18.dp))
+            .clip(tileShape)
+            .border(0.75.dp, borderBrush, tileShape)
             .tapNoRipple(onOpen),
     ) {
         if (slot.tile.cover.isNotEmpty()) {
@@ -281,19 +290,20 @@ private fun LibraryTileView(slot: MosaicSlot, onOpen: () -> Unit) {
             ) {
                 AssetIcon(
                     when (slot.tile.iconKind) {
-                        "heart" -> "ic_heart.svg"
+                        "heart" -> "ic_heart_fill.svg"
                         "clock" -> "symbol_clock.svg"
                         else -> "symbol_queue.svg"
                     },
-                    size = 52.dp,
-                    tint = ACCENT,
+                    size = 50.dp,
+                    tint = if (slot.tile.iconKind == "heart") null else Color(0xFFF2F8FF),
+                    systemSymbol = false,
                 )
             }
         }
         Box(
             Modifier
                 .fillMaxSize()
-                .background(Brush.verticalGradient(listOf(Color(0x0005070A), Color(0xCC05070A)), startY = 60f)),
+                .background(Brush.verticalGradient(listOf(Color(0x0005070A), Color(0xD605070A)), startY = 54f)),
         )
         Column(Modifier.fillMaxSize().padding(12.dp)) {
             Row(Modifier.fillMaxWidth()) {
@@ -301,17 +311,26 @@ private fun LibraryTileView(slot: MosaicSlot, onOpen: () -> Unit) {
                 Text(
                     slot.tile.count,
                     fontSize = 10.sp,
-                    color = Color(0xE8FFFFFF),
+                    color = Color(0xEEFFFFFF),
                     maxLines = 1,
                     modifier = Modifier
                         .clip(RoundedCornerShape(9.dp))
-                        .background(Color(0x66000000))
+                        .background(Color(0x6B000000))
+                        .border(0.5.dp, Color(0x24FFFFFF), RoundedCornerShape(9.dp))
                         .padding(horizontal = 8.dp, vertical = 3.dp),
                 )
             }
             Spacer(Modifier.weight(1f))
             Column(verticalArrangement = Arrangement.spacedBy(3.dp)) {
-                Text(slot.tile.name, fontSize = 15.sp, fontWeight = FontWeight.Medium, color = TEXT, maxLines = 1, overflow = TextOverflow.Ellipsis)
+                Text(
+                    slot.tile.name,
+                    fontSize = 15.sp,
+                    fontWeight = FontWeight.SemiBold,
+                    letterSpacing = (-0.15).sp,
+                    color = Color(0xFFF6F6F8),
+                    maxLines = 1,
+                    overflow = TextOverflow.Ellipsis,
+                )
                 Text(slot.tile.detail, fontSize = 11.sp, color = Color(0xC9FFFFFF), maxLines = 1, overflow = TextOverflow.Ellipsis)
             }
         }
@@ -319,12 +338,12 @@ private fun LibraryTileView(slot: MosaicSlot, onOpen: () -> Unit) {
 }
 
 private val GRADS_LOCAL = listOf(
-    listOf(Color(0xFF2E3A8C), Color(0xFF6C4AB6)),
-    listOf(Color(0xFF0F6F5C), Color(0xFF3FA796)),
-    listOf(Color(0xFF8C2E2E), Color(0xFFC76B4A)),
-    listOf(Color(0xFF3C5A99), Color(0xFF7FA8E0)),
-    listOf(Color(0xFF6A3A8C), Color(0xFFB84AB6)),
-    listOf(Color(0xFF8C6A1E), Color(0xFFD9B24A)),
+    listOf(Color(0xFF0B2B5B), Color(0xFF38BDF8)),
+    listOf(Color(0xFF162456), Color(0xFF64D2FF)),
+    listOf(Color(0xFF1E295E), Color(0xFF818CF8)),
+    listOf(Color(0xFF0D4A56), Color(0xFF2DD4BF)),
+    listOf(Color(0xFF1B3A73), Color(0xFF7DD3FC)),
+    listOf(Color(0xFF2B2467), Color(0xFFA5B4FC)),
 )
 
 private fun gradFor(name: String): List<Color> {
@@ -360,16 +379,34 @@ private fun LazySongsPage(
     vm: AppViewModel,
     songs: List<Song>,
     showDownload: Boolean = true,
+    autoScrollKey: String = "",
+    onSwitchPlatform: ((Song) -> Unit)? = null,
+    onRemoveSong: ((Song) -> Unit)? = null,
+    removeLabel: String = "从歌单移除",
     header: @Composable () -> Unit,
     empty: @Composable () -> Unit = {},
 ) {
     val state = rememberLazyListState()
+    val likedKeys = vm.likedKeys
+    var autoScrolled by remember(autoScrollKey) { mutableStateOf(false) }
     val rowKeys = remember(songs) {
         val occurrences = mutableMapOf<String, Int>()
         songs.map { song ->
             val occurrence = occurrences.getOrDefault(song.key, 0)
             occurrences[song.key] = occurrence + 1
             "${song.key}:$occurrence"
+        }
+    }
+    LaunchedEffect(autoScrollKey, songs.size) {
+        if (autoScrollKey.isEmpty() || autoScrolled || songs.isEmpty()) return@LaunchedEffect
+        val activeKey = vm.selected?.key ?: return@LaunchedEffect
+        val songIndex = songs.indexOfFirst { it.key == activeKey }
+        if (songIndex >= 0) {
+            autoScrolled = true
+            kotlinx.coroutines.yield()
+            val viewport = (state.layoutInfo.viewportEndOffset - state.layoutInfo.viewportStartOffset).coerceAtLeast(0)
+            val centerOffset = if (viewport > 220) -(viewport / 3) else -110
+            runCatching { state.animateScrollToItem((songIndex + 1).coerceAtLeast(0), centerOffset) }
         }
     }
     LaunchedEffect(state) {
@@ -383,11 +420,174 @@ private fun LazySongsPage(
     ) {
         item(key = "header", contentType = "header") { Column { header() } }
         itemsIndexed(songs, key = { index, _ -> rowKeys[index] }, contentType = { _, _ -> "song" }) { _, song ->
-            SongRow(song = song, active = vm.selected?.key == song.key, liked = vm.liked(song), wide = vm.wide,
-                showDownload = showDownload, onClick = { vm.playSong(song, songs) }, onLike = { vm.like(song) },
-                onMore = { vm.addToPlaylist(song) }, onDownload = { vm.downloadSong(song) })
+            SongRow(
+                song = song,
+                active = vm.selected?.key == song.key,
+                liked = song.key in likedKeys,
+                wide = vm.wide,
+                showDownload = showDownload,
+                onClick = { vm.playSong(song, songs) },
+                onLike = { vm.like(song) },
+                onMore = { vm.addToPlaylist(song) },
+                onDownload = { vm.downloadSong(song) },
+                onSwitchPlatform = onSwitchPlatform?.let { handler -> ({ handler(song) }) },
+                onRemove = onRemoveSong?.let { handler -> ({ handler(song) }) },
+                removeLabel = removeLabel,
+            )
         }
         if (songs.isEmpty()) item(key = "empty", contentType = "empty") { empty() }
+    }
+}
+
+@Composable
+private fun PlaylistHeroHeader(
+    vm: AppViewModel,
+    playlist: MusicPlaylist,
+    songs: List<Song>,
+    canManage: Boolean,
+) {
+    val coverUrl = playlist.songs.firstOrNull { it.coverUrl.isNotEmpty() }?.coverUrl.orEmpty()
+    val fallbackColors = remember(playlist.name) { gradFor(playlist.name) }
+    val glowPrimary = if (playlist.isFavorite) HEART_RED else fallbackColors.first()
+    val glowSecondary = if (playlist.isFavorite) ACCENT else fallbackColors.last()
+    val cardShape = RoundedCornerShape(22.dp)
+    val coverShape = RoundedCornerShape(16.dp)
+    val metaLine = when {
+        playlist.isFavorite -> "红心珍藏 · ${playlist.songs.size} 首喜欢歌曲"
+        playlist.id == "daily-30" && vm.homeFeed?.daily?.period == "personalized" -> "为你定制 · 融合常听歌手"
+        playlist.id == "daily-30" -> "四平台每日融合精选"
+        playlist.kind == "recent" -> "按最近收听时间排列"
+        canManage -> "曲库歌单 · 支持重命名、批量编辑与拖动排序"
+        else -> "精选曲目 · 共 ${songs.size} 首"
+    }
+
+    Box(
+        modifier = Modifier
+            .fillMaxWidth()
+            .padding(top = 4.dp, bottom = 10.dp)
+            .clip(cardShape)
+            .background(if (AppAppearance.light) Color(0x0B000000) else Color(0x0DFFFFFF))
+            .border(
+                0.75.dp,
+                if (AppAppearance.light) Brush.verticalGradient(listOf(Color(0x1F000000), Color(0x08000000)))
+                else Brush.verticalGradient(listOf(Color(0x28FFFFFF), Color(0x0AFFFFFF))),
+                cardShape,
+            ),
+    ) {
+        // 歌单头图环境光晕（Cover Glow）
+        Canvas(Modifier.matchParentSize()) {
+            drawCircle(
+                brush = Brush.radialGradient(
+                    colors = listOf(glowPrimary.copy(alpha = if (AppAppearance.light) 0.22f else 0.34f), Color.Transparent),
+                    center = Offset(72.dp.toPx(), size.height * 0.48f),
+                    radius = 156.dp.toPx(),
+                ),
+                radius = 156.dp.toPx(),
+                center = Offset(72.dp.toPx(), size.height * 0.48f),
+            )
+            drawCircle(
+                brush = Brush.radialGradient(
+                    colors = listOf(glowSecondary.copy(alpha = if (AppAppearance.light) 0.14f else 0.20f), Color.Transparent),
+                    center = Offset(150.dp.toPx(), size.height * 0.25f),
+                    radius = 130.dp.toPx(),
+                ),
+                radius = 130.dp.toPx(),
+                center = Offset(150.dp.toPx(), size.height * 0.25f),
+            )
+        }
+
+        Column(
+            modifier = Modifier.fillMaxWidth().padding(14.dp),
+            verticalArrangement = Arrangement.spacedBy(12.dp),
+        ) {
+            Row(
+                verticalAlignment = Alignment.CenterVertically,
+                horizontalArrangement = Arrangement.spacedBy(14.dp),
+            ) {
+                Box(
+                    modifier = Modifier
+                        .size(84.dp)
+                        .clip(coverShape)
+                        .background(Brush.linearGradient(fallbackColors))
+                        .border(0.8.dp, Color(0x33FFFFFF), coverShape),
+                    contentAlignment = Alignment.Center,
+                ) {
+                    AssetIcon(
+                        when {
+                            playlist.isFavorite -> "ic_heart_fill.svg"
+                            playlist.kind == "recent" -> "symbol_clock.svg"
+                            else -> "symbol_queue.svg"
+                        },
+                        size = 34.dp,
+                        tint = if (playlist.isFavorite) null else Color(0xFFF2F8FF),
+                        systemSymbol = false,
+                    )
+                    if (coverUrl.isNotEmpty()) {
+                        RemoteImage(coverUrl, modifier = Modifier.fillMaxSize(), contentScale = ContentScale.Crop)
+                    }
+                }
+                Column(
+                    modifier = Modifier.weight(1f),
+                    verticalArrangement = Arrangement.spacedBy(5.dp),
+                ) {
+                    Text(
+                        playlist.name,
+                        fontSize = 19.sp,
+                        fontWeight = FontWeight.Bold,
+                        letterSpacing = (-0.2).sp,
+                        color = TEXT,
+                        maxLines = 2,
+                        overflow = TextOverflow.Ellipsis,
+                    )
+                    Text(
+                        metaLine,
+                        fontSize = 12.sp,
+                        color = MUTED,
+                        maxLines = 2,
+                        overflow = TextOverflow.Ellipsis,
+                    )
+                }
+            }
+            if (canManage) {
+                Row(
+                    modifier = Modifier.fillMaxWidth(),
+                    horizontalArrangement = Arrangement.spacedBy(8.dp),
+                    verticalAlignment = Alignment.CenterVertically,
+                ) {
+                    PlaylistChipAction("编辑歌单", icon = "ic_edit.svg") { vm.openEditPlaylist(playlist) }
+                    PlaylistChipAction("重命名") { vm.openRenamePlaylist(playlist) }
+                    Spacer(Modifier.weight(1f))
+                    PlaylistChipAction("删除歌单", icon = "ic_trash.svg", danger = true) { vm.deleteOpenedPlaylist() }
+                }
+            }
+        }
+    }
+}
+
+@Composable
+private fun PlaylistChipAction(
+    label: String,
+    icon: String? = null,
+    danger: Boolean = false,
+    onClick: () -> Unit,
+) {
+    val shape = RoundedCornerShape(14.dp)
+    val inkColor = if (danger) HEART_RED else TEXT
+    Row(
+        modifier = Modifier
+            .clip(shape)
+            .background(if (AppAppearance.light) Color(0x0E000000) else Color(0x16FFFFFF))
+            .border(0.6.dp, if (danger) HEART_RED.copy(alpha = 0.35f) else Color(0x22FFFFFF), shape)
+            .pressDeform()
+            .clickable(onClick = onClick)
+            .padding(horizontal = 11.dp, vertical = 6.dp),
+        verticalAlignment = Alignment.CenterVertically,
+        horizontalArrangement = Arrangement.spacedBy(5.dp),
+    ) {
+        if (icon != null) {
+            AssetIcon(icon, size = 13.dp, tint = inkColor, systemSymbol = false)
+        }
+        Text(label, fontSize = 12.sp, fontWeight = FontWeight.Medium, color = inkColor, maxLines = 1)
     }
 }
 
@@ -395,35 +595,59 @@ private fun LazySongsPage(
 fun PlaylistDetailPage(vm: AppViewModel, playlist: MusicPlaylist) {
     val songs = remember(playlist.songs, vm.listSortMode, vm.manualOrder, vm.listQuery) { vm.arrangedSongs(playlist.songs) }
     val loading = vm.openedFeedLoading && playlist.songs.isEmpty()
-    LazySongsPage(vm, songs, header = {
-        if (loading) {
-            Column(Modifier.fillMaxWidth().padding(top = 120.dp), horizontalAlignment = Alignment.CenterHorizontally,
-                verticalArrangement = Arrangement.spacedBy(12.dp)) {
-                CircularProgressIndicator(color = ACCENT, strokeWidth = 2.5.dp, modifier = Modifier.size(34.dp))
-                Text("正在载入歌单…", fontSize = 13.sp, color = MUTED)
-            }
-        } else {
-            if (vm.listSearchOpen) SearchInListBar(vm)
-            if (playlist.songs.isNotEmpty()) {
-                SongListTools(countText = "${songs.size} 首歌曲", disabled = songs.isEmpty(), showDelete = vm.canDeleteOpenedPlaylist(),
-                    onPlayAll = { if (songs.isNotEmpty()) vm.playSong(songs.first(), songs) },
-                    onSort = { vm.setListSort(it) }, onManual = { vm.openManualOrder() }, onDelete = { vm.deleteOpenedPlaylist() })
-            }
-        }
-    }, empty = {
-        if (!loading) {
-            Column(Modifier.fillMaxWidth().padding(top = 120.dp), horizontalAlignment = Alignment.CenterHorizontally,
-                verticalArrangement = Arrangement.spacedBy(14.dp)) {
-                Text(if (vm.listQuery.isNotBlank()) "没有匹配的歌曲"
-                    else if (playlist.kind == "lx") "从歌曲行内操作添加到此歌单" else "此歌单使用电脑上的本地音频文件。",
-                    fontSize = 14.sp, color = MUTED)
-                if (vm.canDeleteOpenedPlaylist()) {
-                    Text("删除歌单", fontSize = 13.sp, color = MUTED,
-                        modifier = Modifier.clip(RoundedCornerShape(12.dp)).clickable { vm.deleteOpenedPlaylist() }.padding(8.dp))
+    val canRemove = vm.canEditPlaylistSongs(playlist)
+    val canManage = vm.canManageOpenedPlaylist()
+    val canSwitchPlatform = canRemove || playlist.kind == "recent"
+    LazySongsPage(
+        vm = vm,
+        songs = songs,
+        autoScrollKey = playlist.id,
+        onSwitchPlatform = if (canSwitchPlatform) ({ song -> vm.openSwitchPlatformFromPlaylist(playlist, song) }) else null,
+        onRemoveSong = if (canRemove) ({ song -> vm.removeSongFromPlaylist(playlist.id, song) }) else null,
+        removeLabel = if (playlist.isFavorite) "从我喜欢的移除" else "从歌单移除",
+        header = {
+            if (loading) {
+                Column(Modifier.fillMaxWidth().padding(top = 120.dp), horizontalAlignment = Alignment.CenterHorizontally,
+                    verticalArrangement = Arrangement.spacedBy(12.dp)) {
+                    CircularProgressIndicator(color = ACCENT, strokeWidth = 2.5.dp, modifier = Modifier.size(34.dp))
+                    Text("正在载入歌单…", fontSize = 13.sp, color = MUTED)
+                }
+            } else {
+                PlaylistHeroHeader(vm = vm, playlist = playlist, songs = songs, canManage = canManage)
+                if (vm.listSearchOpen) SearchInListBar(vm)
+                if (playlist.songs.isNotEmpty()) {
+                    SongListTools(
+                        countText = "${songs.size} 首歌曲",
+                        disabled = songs.isEmpty(),
+                        showDelete = false,
+                        onPlayAll = { if (songs.isNotEmpty()) vm.playSong(songs.first(), songs) },
+                        onBatchDownload = { vm.downloadBatch(songs) },
+                        onSort = { vm.setListSort(it) },
+                        onManual = { vm.openManualOrder() },
+                        onDelete = { vm.deleteOpenedPlaylist() },
+                    )
                 }
             }
-        }
-    })
+        },
+        empty = {
+            if (!loading) {
+                Column(Modifier.fillMaxWidth().padding(top = 64.dp), horizontalAlignment = Alignment.CenterHorizontally,
+                    verticalArrangement = Arrangement.spacedBy(14.dp)) {
+                    Text(if (vm.listQuery.isNotBlank()) "没有匹配的歌曲"
+                        else if (playlist.kind == "lx") "从歌曲行内操作添加到此歌单" else "此歌单使用电脑上的本地音频文件。",
+                        fontSize = 14.sp, color = MUTED)
+                    if (canManage) {
+                        Row(horizontalArrangement = Arrangement.spacedBy(12.dp)) {
+                            Text("重命名", fontSize = 13.sp, color = BLUE,
+                                modifier = Modifier.clip(RoundedCornerShape(12.dp)).clickable { vm.openRenamePlaylist(playlist) }.padding(8.dp))
+                            Text("删除歌单", fontSize = 13.sp, color = MUTED,
+                                modifier = Modifier.clip(RoundedCornerShape(12.dp)).clickable { vm.deleteOpenedPlaylist() }.padding(8.dp))
+                        }
+                    }
+                }
+            }
+        },
+    )
 }
 
 @Composable
@@ -469,7 +693,7 @@ private fun SearchInListBar(vm: AppViewModel) {
 @Composable
 private fun LocalMusicPage(vm: AppViewModel) {
     val songs = remember(vm.localTracks, vm.listSortMode, vm.manualOrder, vm.listQuery) { vm.arrangedSongs(vm.localTracks) }
-    LazySongsPage(vm, songs, showDownload = false, header = {
+    LazySongsPage(vm, songs, showDownload = false, autoScrollKey = "local-android", header = {
         SongListTools(countText = "${songs.size} 首本地歌曲", disabled = songs.isEmpty(),
             onPlayAll = { if (songs.isNotEmpty()) vm.playSong(songs.first(), songs) },
             onSort = { vm.setListSort(it) }, onManual = { vm.openManualOrder() })
@@ -577,6 +801,7 @@ fun FeedOverlay(vm: AppViewModel) {
     val playlists = vm.feedSectionPlaylists()
     val songs = vm.feedSectionSongs()
     val locals = vm.feedSectionLocal()
+    val likedKeys = vm.likedKeys
     var sortMode by remember(vm.feedSection) { mutableStateOf("added") }
     var manual by remember(vm.feedSection) { mutableStateOf<List<String>>(emptyList()) }
     var orderOpen by remember { mutableStateOf(false) }
@@ -617,6 +842,7 @@ fun FeedOverlay(vm: AppViewModel) {
                 SongListTools(
                     countText = "${ordered.size} 首歌曲",
                     onPlayAll = { vm.playSong(ordered.first(), ordered) },
+                    onBatchDownload = { vm.downloadBatch(ordered) },
                     onSort = { sortMode = it },
                     onManual = {
                         orderSongs = ordered
@@ -628,7 +854,7 @@ fun FeedOverlay(vm: AppViewModel) {
                         SongRow(
                             song = song,
                             active = vm.selected?.key == song.key,
-                            liked = vm.liked(song),
+                            liked = song.key in likedKeys,
                             wide = vm.wide,
                             onClick = { vm.playSong(song, ordered) },
                             onLike = { vm.like(song) },
@@ -680,11 +906,21 @@ fun FeedOverlay(vm: AppViewModel) {
                             verticalArrangement = Arrangement.spacedBy(8.dp),
                         ) {
                             Box(
-                                Modifier.fillMaxWidth().aspectRatio(1f).clip(RoundedCornerShape(14.dp)).background(Color(0xFF17191C)),
+                                Modifier
+                                    .fillMaxWidth()
+                                    .aspectRatio(1f)
+                                    .clip(RoundedCornerShape(14.dp))
+                                    .background(Brush.linearGradient(gradFor(playlist.name)))
+                                    .border(0.75.dp, Color(0x28FFFFFF), RoundedCornerShape(14.dp)),
                                 contentAlignment = Alignment.Center,
                             ) {
-                                AssetIcon(if (playlist.isFavorite) "ic_heart.svg" else "ic_queue.svg", size = 34.dp, tint = ACCENT)
-                                playlist.songs.firstOrNull()?.coverUrl?.takeIf { it.isNotEmpty() }?.let {
+                                AssetIcon(
+                                    if (playlist.isFavorite) "ic_heart_fill.svg" else "ic_queue.svg",
+                                    size = 34.dp,
+                                    tint = if (playlist.isFavorite) null else Color(0xFFF2F8FF),
+                                    systemSymbol = false,
+                                )
+                                playlist.songs.firstOrNull { it.coverUrl.isNotEmpty() }?.coverUrl?.let {
                                     RemoteImage(it, modifier = Modifier.fillMaxSize(), contentScale = ContentScale.Crop)
                                 }
                             }
@@ -799,6 +1035,7 @@ internal fun SearchSongList(vm: AppViewModel) {
         Text("${platformName(vm.platform.id)} · ${songs.size} 首", fontSize = 12.sp, color = MUTED, modifier = Modifier.padding(top = 12.dp, bottom = 6.dp))
         SongListTools(countText = "${songs.size} 首歌曲", disabled = songs.isEmpty(),
             onPlayAll = { if (songs.isNotEmpty()) vm.playSong(songs.first(), songs) },
+            onBatchDownload = { vm.downloadBatch(songs) },
             onSort = { vm.setListSort(it) }, onManual = { vm.openManualOrderFor(vm.results) })
     })
 }
@@ -810,6 +1047,7 @@ internal fun EntitySongList(vm: AppViewModel) {
 
         SongListTools(countText = "${songs.size} 首歌曲", disabled = songs.isEmpty(),
             onPlayAll = { if (songs.isNotEmpty()) vm.playSong(songs.first(), songs) },
+            onBatchDownload = { vm.downloadBatch(songs) },
             onSort = { vm.setListSort(it) }, onManual = { vm.openManualOrderFor(vm.entitySongs) })
     })
 }
@@ -856,10 +1094,19 @@ private fun CatalogueRow(vm: AppViewModel, item: CatalogueEntity) {
         verticalAlignment = Alignment.CenterVertically,
     ) {
         Box(
-            modifier = Modifier.size(58.dp).clip(RoundedCornerShape(12.dp)).background(Color(0xFF151719)),
+            modifier = Modifier
+                .size(58.dp)
+                .clip(RoundedCornerShape(12.dp))
+                .background(Brush.linearGradient(gradFor(item.name)))
+                .border(0.6.dp, Color(0x26FFFFFF), RoundedCornerShape(12.dp)),
             contentAlignment = Alignment.Center,
         ) {
-            AssetIcon("ic_queue.svg", size = 24.dp, tint = MUTED)
+            val initial = item.name.trim().take(1)
+            if (initial.isNotEmpty()) {
+                Text(initial, fontSize = 20.sp, fontWeight = FontWeight.Bold, color = Color(0xFFF2F8FF))
+            } else {
+                AssetIcon("ic_queue.svg", size = 24.dp, tint = Color(0xFFF2F8FF), systemSymbol = false)
+            }
             if (item.cover.isNotEmpty()) {
                 RemoteImage(item.cover, modifier = Modifier.fillMaxSize(), contentScale = ContentScale.Crop)
             }

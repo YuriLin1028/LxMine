@@ -22,7 +22,7 @@ function resetHomeAccentColor() {
   setHomeAccentColor(fxDefaults.homeAccentColor || '#00f5d4');
 }
 function applyIconAccentColors() {
-  var homeColor = normalizeHexColor(fx.homeIconColor || fxDefaults.homeIconColor || '#f4d28a', '#f4d28a');
+  var homeColor = normalizeHexColor(fx.homeIconColor || fxDefaults.homeIconColor || '#64d2ff', '#64d2ff');
   var visualColor = normalizeHexColor(fx.visualIconColor || fxDefaults.visualIconColor || '#7fd8ff', '#7fd8ff');
   var homeRgb = hexToRgb(homeColor);
   var visualRgb = hexToRgb(visualColor);
@@ -34,7 +34,7 @@ function applyIconAccentColors() {
 }
 function updateIconAccentControls() {
   applyIconAccentColors();
-  var homeColor = normalizeHexColor(fx.homeIconColor || fxDefaults.homeIconColor || '#f4d28a', '#f4d28a');
+  var homeColor = normalizeHexColor(fx.homeIconColor || fxDefaults.homeIconColor || '#64d2ff', '#64d2ff');
   var visualColor = normalizeHexColor(fx.visualIconColor || fxDefaults.visualIconColor || '#7fd8ff', '#7fd8ff');
   var homePicker = document.getElementById('home-icon-picker');
   var homeValue = document.getElementById('home-icon-value');
@@ -46,13 +46,13 @@ function updateIconAccentControls() {
   if (visualValue) visualValue.textContent = visualColor.toUpperCase();
 }
 function setHomeIconColor(color, silent) {
-  fx.homeIconColor = normalizeHexColor(color || fxDefaults.homeIconColor || '#f4d28a', '#f4d28a');
+  fx.homeIconColor = normalizeHexColor(color || fxDefaults.homeIconColor || '#64d2ff', '#64d2ff');
   updateIconAccentControls();
   saveLyricLayout({ user: true, reason: 'homeIconColor' });
   if (!silent) showToast('主页图标: ' + fx.homeIconColor.toUpperCase());
 }
 function resetHomeIconColor() {
-  setHomeIconColor(fxDefaults.homeIconColor || '#f4d28a');
+  setHomeIconColor(fxDefaults.homeIconColor || '#64d2ff');
 }
 function setVisualIconColor(color, silent) {
   fx.visualIconColor = normalizeHexColor(color || fxDefaults.visualIconColor || '#7fd8ff', '#7fd8ff');

@@ -68,7 +68,7 @@ export struct NativePlayer {
       MaterialIcon({ icon: $r('app.media.ic_back'), label: '返回', diameter: 38, action: () => this.onClose() }).id('player-close')
       Blank()
       Button({ type: ButtonType.Circle }) {
-        Text('SQ').fontSize(11).fontWeight(FontWeight.Medium).fontColor(TEXT).letterSpacing(0.4)
+        Image($r('app.media.ic_quality_official')).width(20).height(20).fillColor(TEXT)
       }.attributeModifier(musicButtonPress).width(38).height(38).padding(0).backgroundColor(Color.Transparent).stateEffect(false).systemMaterial(musicMaterial())
         .bindMenu(this.qualityMenu()).accessibilityText('选择音质').id('player-quality')
       Stack() {
@@ -76,16 +76,19 @@ export struct NativePlayer {
           Image($r('sys.media.ohos_ic_public_cast_stream')).width(20).height(20).fillColor(TEXT)
         }.attributeModifier(musicButtonPress).width(38).height(38).padding(0).backgroundColor(Color.Transparent).stateEffect(false).systemMaterial(musicMaterial())
         // AVCastPicker 透明覆盖拉起系统投播；Transparent 让触点同时落到下层球体，形变才跟手。
-        AVCastPicker({ normalColor: '#F4F4F4', activeColor: '#F4D28A', pickerStyle: AVCastPickerStyle.STYLE_PANEL, colorMode: AVCastPickerColorMode.AUTO, sessionType: 'audio' })
+        AVCastPicker({ normalColor: '#F4F4F4', activeColor: '#64D2FF', pickerStyle: AVCastPickerStyle.STYLE_PANEL, colorMode: AVCastPickerColorMode.AUTO, sessionType: 'audio' })
           .width(38).height(38).opacity(0.01).hitTestBehavior(HitTestMode.Transparent)
       }.width(38).height(38).id('player-cast')
-      MaterialIcon({ icon: $r('app.media.ic_share_official'), label: '分享歌曲', diameter: 38, raw: true, action: () => this.onShare() }).id('player-share')
+      Button({ type: ButtonType.Circle }) {
+        SymbolGlyph($r('sys.symbol.share')).fontSize(20).fontColor([TEXT])
+      }.attributeModifier(musicButtonPress).width(38).height(38).padding(0).backgroundColor(Color.Transparent).stateEffect(false).systemMaterial(musicMaterial())
+        .accessibilityText('分享歌曲').onClick(() => this.onShare()).id('player-share')
       Button({ type: ButtonType.Circle }) {
         Image($r('app.media.ic_comment_official')).width(20).height(20).fillColor(TEXT)
-      }.attributeModifier(musicButtonPress).width(38).height(38).padding(0).backgroundColor(Color.Transparent).systemMaterial(musicMaterial())
+      }.attributeModifier(musicButtonPress).width(38).height(38).padding(0).backgroundColor(Color.Transparent).stateEffect(false).systemMaterial(musicMaterial())
         .accessibilityText('查看评论').onClick(() => this.onComments()).id('player-comments')
       Button({ type: ButtonType.Circle }) {
-        Image($r('app.media.ic_style_wand')).width(20).height(20).fillColor(TEXT)
+        Image($r('app.media.ic_style_wand')).width(20).height(20)
       }.attributeModifier(musicButtonPress).width(38).height(38).padding(0).backgroundColor(Color.Transparent).stateEffect(false).systemMaterial(musicMaterial())
         .bindMenu(this.styleMenu()).accessibilityText('选择动效').id('player-style')
       // 沉浸模式入口：只在横屏详情页出现；进入后连本按钮一起隐藏，退出只能双指上滑。
@@ -93,6 +96,7 @@ export struct NativePlayer {
         MaterialIcon({ icon: $r('app.media.fullscreen'), label: '沉浸模式', diameter: 38, raw: true, action: () => this.onImmersive() }).id('player-immersive')
       }
     }.width('100%').padding({ left: this.wide ? 32 : 20, right: this.wide ? 32 : 20 }).margin({ top: 16 })
+      .hitTestBehavior(HitTestMode.Default).onClick(() => {})
   }
   build() {
     Stack({ alignContent: Alignment.Bottom }) {
@@ -100,9 +104,8 @@ export struct NativePlayer {
       Navigation() { Column() {} }
         .title({ builder: this.header, height: 96 }, { barStyle: BarStyle.STACK, backgroundColor: Color.Transparent, backgroundBlurStyle: BlurStyle.NONE }).titleMode(NavigationTitleMode.Mini)
         .hideBackButton(true).hideToolBar(true).mode(NavigationMode.Stack).width('100%').height(96).clip(false)
-        // 视觉球顶必须与二级页一致（statusInset + 6）：宿主上移 16vp 供材质上伸，
-        // 再由 header 的 margin top 16 补偿；禁止再用 max(24,statusInset)+6 把整排压下。
-        .backgroundColor(Color.Transparent).position({ top: this.statusInset - 10, left: 0 }).hitTestBehavior(HitTestMode.Default)
+        // 视觉球顶必须与二级页一致（statusInset + 6）；子按钮正常响应点击，空白顶栏由 header Row 吞掉点击防止穿透歌词。
+        .backgroundColor(Color.Transparent).position({ top: this.statusInset - 10, left: 0 })
 
     }.width('100%').height('100%').backgroundColor(Color.Transparent).hitTestBehavior(HitTestMode.None).expandSafeArea([SafeAreaType.SYSTEM], [SafeAreaEdge.TOP, SafeAreaEdge.BOTTOM])
   }

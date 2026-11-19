@@ -88,3 +88,43 @@ test('Kugou missing cover uses the exact hash and survives a separate lyric outa
   assert.equal(result.coverUrl, 'https://img.test/exact.jpg?a=1&b=2');
   assert.equal(result.lyric, '');
 });
+
+test('fuzzy cross-platform candidates resolve covers and lyrics across artist alias formatting and pure instrumentals', async () => {
+  const aliasSong = { source: 'kw', id: 'kw-empty', name: '泡沫', singer: 'G.E.M.邓紫棋', durationMs: 258000 };
+  const io = {
+    json: async url => {
+      if (url.includes('m.kuwo.cn')) return { data: {} };
+      if (url.includes('cloudsearch/pc')) {
+        return {
+          code: 200,
+          result: {
+            songs: [{ id: 9988, name: '泡沫', ar: [{ name: '邓紫棋' }], al: { id: 1, name: 'Xposed', picUrl: 'http://p1.music.126.net/paomo.jpg' }, dt: 259200 }]
+          }
+        };
+      }
+      if (url.includes('/api/song/lyric')) {
+        return { lrc: { lyric: '[00:01.00]阳光下的泡沫 是彩色的' } };
+      }
+      return {};
+    }
+  };
+  const candidates = await core.searchPlatformCandidates(aliasSong, io, ['wy'], 5);
+  assert.equal(candidates.length, 1);
+  assert.equal(candidates[0].coverUrl, 'https://p1.music.126.net/paomo.jpg');
+
+  const resolved = await assets.get(aliasSong, io, core);
+  assert.equal(resolved.coverUrl, 'https://p1.music.126.net/paomo.jpg');
+  assert.match(resolved.lyric, /阳光下的泡沫/);
+
+  const coverOnly = await assets.getCover({ source: 'kg', id: 'kg-union', name: '夜曲', singer: '周杰伦' }, {
+    json: async url => url.includes('songsearch.kugou.com')
+      ? { data: { lists: [{ FileHash: 'kg-union', SongName: '夜曲', SingerName: '周杰伦', Duration: 226, trans_param: { union_cover: 'http://imge.kugou.com/stdmusic/{size}/yequ.jpg' } }] } }
+      : {}
+  }, core);
+  assert.equal(coverOnly, 'https://imge.kugou.com/stdmusic/400/yequ.jpg');
+
+  const instrumental = await assets.get({ source: 'wy', id: 'inst-1', name: 'Summer', singer: '久石让', coverUrl: 'https://img.test/summer.jpg' }, {
+    json: async () => ({ nolyric: true })
+  }, core);
+  assert.equal(instrumental.lyric, '[00:00.00]纯音乐，请欣赏');
+});

@@ -64,29 +64,20 @@ class MainActivity : ComponentActivity() {
             isAppearanceLightStatusBars = false
             isAppearanceLightNavigationBars = false
         }
+        applyHighRefreshRate()
         applyOrientation(detail = false)
         requestNotificationPermission()
         handleIntent(intent)
 
         setContent {
+            LaunchedEffect(viewModel.intro, viewModel.foreground) {
+                if (viewModel.foreground) applyHighRefreshRate()
+            }
             LaunchedEffect(viewModel.showPlayer, viewModel.styleName, viewModel.playing, viewModel.foreground, viewModel.commentsOpen, viewModel.dynamicStageFailed) {
                 val active = viewModel.showPlayer && viewModel.foreground && !viewModel.commentsOpen &&
                     viewModel.playing && viewModel.styleName != "off" && !viewModel.dynamicStageFailed
                 PlaybackController.setSpectrumEnabled(active)
-                if (Build.VERSION.SDK_INT < 35) {
-                    @Suppress("DEPRECATION")
-                    val screen = if (Build.VERSION.SDK_INT >= 30) display else windowManager.defaultDisplay
-                    val refresh = if (active && screen != null) {
-                        val current = screen.mode
-                        screen.supportedModes.filter { mode -> mode.physicalWidth == current.physicalWidth && mode.physicalHeight == current.physicalHeight }
-                            .maxOfOrNull { mode -> mode.refreshRate } ?: screen.refreshRate
-                    } else 0f
-                    val attributes = window.attributes
-                    if (attributes.preferredRefreshRate != refresh) {
-                        attributes.preferredRefreshRate = refresh
-                        window.attributes = attributes
-                    }
-                }
+                if (viewModel.foreground) applyHighRefreshRate()
             }
             AppScreen(
                 viewModel = viewModel,
@@ -150,6 +141,7 @@ class MainActivity : ComponentActivity() {
 
     override fun onResume() {
         super.onResume()
+        applyHighRefreshRate()
         // 文件选择期间空闲服务可能被系统停止，回到前台时重新连接播放器。
         runCatching { startService(Intent(this, PlaybackService::class.java)) }
             .onFailure { viewModel.error = "播放器服务启动失败：${it.message}" }
@@ -183,11 +175,44 @@ class MainActivity : ComponentActivity() {
         super.onDestroy()
     }
 
-    /** 只有播放详情页允许旋转；其余页面锁竖屏。平板与小窗自由旋转。 */
+    /** 解锁窗口最高物理分辨率刷新率（90Hz / 120Hz+），保障启动动画与液态交互满帧运行。 */
+    private fun applyHighRefreshRate() {
+        runCatching {
+            @Suppress("DEPRECATION")
+            val screen = if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.R) display else windowManager.defaultDisplay
+            if (screen == null) return
+            val current = screen.mode
+            val bestMode = screen.supportedModes
+                .filter { it.physicalWidth == current.physicalWidth && it.physicalHeight == current.physicalHeight }
+                .maxByOrNull { it.refreshRate }
+            if (bestMode != null && bestMode.refreshRate >= 90f) {
+                val params = window.attributes
+                var changed = false
+                if (params.preferredDisplayModeId != bestMode.modeId) {
+                    params.preferredDisplayModeId = bestMode.modeId
+                    changed = true
+                }
+                if (Build.VERSION.SDK_INT < 35 && params.preferredRefreshRate != bestMode.refreshRate) {
+                    params.preferredRefreshRate = bestMode.refreshRate
+                    changed = true
+                }
+                if (changed) {
+                    window.attributes = params
+                }
+            }
+        }
+    }
+
+    /** 手机端：非播放详情页锁竖屏；播放详情页依据设置决定是否突破系统竖屏锁定进入横屏。平板自由旋转。 */
     private fun applyOrientation(detail: Boolean) {
         val smallestWidth = resources.configuration.smallestScreenWidthDp
-        val tablet = smallestWidth >= 600
-        val target = if (detail || tablet) ActivityInfo.SCREEN_ORIENTATION_FULL_SENSOR else ActivityInfo.SCREEN_ORIENTATION_PORTRAIT
+        val tablet = smallestWidth >= 600 || viewModel.wide
+        val target = when {
+            tablet -> ActivityInfo.SCREEN_ORIENTATION_FULL_SENSOR
+            !detail -> ActivityInfo.SCREEN_ORIENTATION_PORTRAIT
+            viewModel.allowLandscapeWhenLocked -> ActivityInfo.SCREEN_ORIENTATION_FULL_SENSOR
+            else -> ActivityInfo.SCREEN_ORIENTATION_FULL_USER
+        }
         if (requestedOrientation != target) {
             runCatching { requestedOrientation = target }
         }

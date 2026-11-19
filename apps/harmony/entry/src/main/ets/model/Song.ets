@@ -30,6 +30,9 @@ export interface KuwoRawItem {
   DURATION?: string;
   N_MINFO?: string;
   web_albumpic_short?: string;
+  web_artistpic_short?: string;
+  albumpic?: string;
+  hts_MVPIC?: string;
 }
 
 export interface KuwoRawResponse {

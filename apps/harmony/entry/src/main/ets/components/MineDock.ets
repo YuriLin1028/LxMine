@@ -42,16 +42,16 @@ class DockModel {
 @Component
 struct DockPlayback {
   @ObjectLink model: DockModel;
-  @StorageLink('lxliaForeground') private foreground: boolean = true;
-  @State private coverAngle: number = 0;
   @State private pressed: boolean = false;
-  private spinTimer: number = -1;
-  aboutToAppear(): void {
-    this.spinTimer = setInterval(() => {
-      if (this.model.playing && this.foreground) this.getUIContext().animateTo({ duration: 100, curve: Curve.Linear }, () => { this.coverAngle += 1.5; });
-    }, 100);
+  private modeIcon(): Resource {
+    if (this.model.mode === '随机播放') return $r('app.media.ic_shuffle');
+    if (this.model.mode === '单曲循环') return $r('app.media.ic_repeat_one');
+    if (this.model.mode === '顺序播放') return $r('app.media.ic_order_seq');
+    return $r('app.media.ic_repeat');
   }
-  aboutToDisappear(): void { clearInterval(this.spinTimer); }
+  private modeIconRaw(): boolean {
+    return this.model.mode === '单曲循环' || this.model.mode === '顺序播放';
+  }
   @Builder private options() {
     Menu() {
       MenuItem({ content: '播放顺序 · ' + this.model.mode }).onClick(() => this.model.onMode())
@@ -63,12 +63,12 @@ struct DockPlayback {
     Row({ space: 3 }) {
       Stack() {
         Stack() {
-          SymbolGlyph($r('sys.symbol.music_note_list')).fontSize(18).fontColor([TEXT])
-          if (this.model.song?.coverUrl) { Image(this.model.song.coverUrl).width('100%').height('100%').objectFit(ImageFit.Cover).rotate({ angle: this.coverAngle }) }
+          Image($r('app.media.ic_music')).width(18).height(18).fillColor(TEXT)
+          if (this.model.song?.coverUrl) { Image(this.model.song.coverUrl).width('100%').height('100%').objectFit(ImageFit.Cover) }
         }.width(this.model.coverSize() - 8).height(this.model.coverSize() - 8).borderRadius(20).clip(true)
           .animation({ curve: curves.springMotion(0.44, 0.83) })
         Progress({ value: Math.min(this.model.positionMs, this.model.duration), total: Math.max(1, this.model.duration), type: ProgressType.Ring })
-          .width(this.model.coverSize()).height(this.model.coverSize()).color(new LinearGradient([{ color: '#F4D28A', offset: 0 }, { color: this.model.colorLast, offset: 1 }]))
+          .width(this.model.coverSize()).height(this.model.coverSize()).color(new LinearGradient([{ color: '#64D2FF', offset: 0 }, { color: this.model.colorLast, offset: 1 }]))
           .opacity(1 - this.model.reveal).backgroundColor('#55FFFFFF').style({ strokeWidth: 3, enableSmoothEffect: true }).hitTestBehavior(HitTestMode.None)
           .animation({ curve: curves.springMotion(0.44, 0.83) })
       }.width(this.model.coverSize()).height(this.model.coverSize()).id('dock-cover').onClick(() => this.model.onPlayer()).accessibilityText('打开歌曲详情')
@@ -77,16 +77,16 @@ struct DockPlayback {
         Text(this.model.song?.name ?? '尚未播放').fontSize(13).fontColor(TEXT).fontWeight(FontWeight.Medium).maxLines(1).textOverflow({ overflow: TextOverflow.Ellipsis }).width('100%')
         Text(this.model.busy ? '正在准备…' : this.model.song?.singer ?? '选择歌曲，开始聆听').fontSize(10).fontColor(MUTED).maxLines(1).textOverflow({ overflow: TextOverflow.Ellipsis }).width('100%')
       }.layoutWeight(1).alignItems(HorizontalAlign.Start).onClick(() => this.model.onPlayer())
-      MaterialIcon({ icon: $r('app.media.ic_heart'), label: this.model.liked ? '取消喜欢' : '喜欢', diameter: 26, grouped: true, selected: this.model.liked, disabled: !this.model.song, action: () => this.model.onLike() }).id('dock-like')
+      MaterialIcon({ icon: this.model.liked ? $r('app.media.ic_heart_fill') : $r('app.media.ic_heart'), tint: !this.model.liked, label: this.model.liked ? '取消喜欢' : '喜欢', diameter: 26, grouped: true, selected: this.model.liked, disabled: !this.model.song, action: () => this.model.onLike() }).id('dock-like')
       MaterialIcon({ icon: $r('app.media.ic_previous'), label: '上一首', diameter: 28, grouped: true, disabled: !this.model.song || this.model.busy, action: () => this.model.onNext(-1) }).id('dock-previous')
       MaterialIcon({ icon: this.model.playing ? $r('app.media.ic_pause') : $r('app.media.ic_play'), label: this.model.playing ? '暂停' : '播放', diameter: 34, grouped: true, disabled: this.model.busy || !this.model.song, action: () => this.model.onToggle() }).id('dock-play-toggle')
       MaterialIcon({ icon: $r('app.media.ic_next'), label: '下一首', diameter: 28, grouped: true, disabled: !this.model.song || this.model.busy, action: () => this.model.onNext(1) }).id('dock-next')
       if (this.model.availableWidth >= 620) {
-        MaterialIcon({ icon: this.model.mode === '随机播放' ? $r('app.media.ic_shuffle') : $r('app.media.ic_repeat'), label: '播放顺序：' + this.model.mode, diameter: 30, grouped: true, action: () => this.model.onMode() })
+        MaterialIcon({ icon: this.modeIcon(), label: '播放顺序：' + this.model.mode, diameter: 30, grouped: true, action: () => this.model.onMode() })
         MaterialIcon({ icon: $r('app.media.ic_download'), label: '下载歌曲', diameter: 30, grouped: true, disabled: !this.model.song, action: () => this.model.onDownload() })
         MaterialIcon({ icon: $r('app.media.ic_queue'), label: '播放队列', diameter: 30, grouped: true, action: () => this.model.onQueue() })
       } else {
-        Button({ type: ButtonType.Circle }) { SymbolGlyph($r('sys.symbol.ellipsis_circle')).fontSize(20).fontColor([TEXT]) }.attributeModifier(musicButtonPress)
+        Button({ type: ButtonType.Circle }) { Image($r('app.media.ic_more')).width(20).height(20).fillColor(TEXT) }.attributeModifier(musicButtonPress)
           .width(28).height(34).padding(0).backgroundColor(Color.Transparent).stateEffect(false).buttonStyle(ButtonStyleMode.TEXTUAL)
           .systemMaterial(uiMaterial.Material.empty).accessibilityText('更多播放操作').bindMenu(this.options()).id('dock-more')
       }
@@ -111,12 +111,12 @@ struct DockNavigation {
     Button({ type: ButtonType.Normal }) {
       if (this.model.collapsed()) {
         Stack({ alignContent: Alignment.Center }) {
-          SymbolGlyph(this.model.tab === '发现' ? $r('sys.symbol.house') : this.model.tab === '资料库' ? $r('sys.symbol.square_grid_2x2') : $r('sys.symbol.gearshape'))
-            .fontSize(24).fontColor([ACCENT])
+          Image(this.model.tab === '发现' ? $r('app.media.ic_home') : this.model.tab === '资料库' ? $r('app.media.ic_library') : $r('app.media.ic_settings'))
+            .width(24).height(24).fillColor(ACCENT)
         }.width(56).height(56)
       } else {
         Column({ space: 2 }) {
-          SymbolGlyph(icon).fontSize(20).fontColor([this.model.tab === tab ? ACCENT : TEXT])
+          Image(icon).width(20).height(20).fillColor(this.model.tab === tab ? ACCENT : TEXT)
           Text(label).fontSize(8).fontColor(this.model.tab === tab ? ACCENT : MUTED)
         }
       }
@@ -131,9 +131,9 @@ struct DockNavigation {
   build() {
     Stack({ alignContent: Alignment.TopStart }) {
     Stack({ alignContent: Alignment.TopStart }) {
-      this.tabButton('发现', '首页', $r('sys.symbol.house'), 0)
-      this.tabButton('资料库', '歌单库', $r('sys.symbol.square_grid_2x2'), 1)
-      this.tabButton('设置', '设置', $r('sys.symbol.gearshape'), 2)
+      this.tabButton('发现', '首页', $r('app.media.ic_home'), 0)
+      this.tabButton('资料库', '曲库', $r('app.media.ic_library'), 1)
+      this.tabButton('设置', '设置', $r('app.media.ic_settings'), 2)
     }.onTouch((event: TouchEvent) => {
       if (event.type === TouchType.Down) this.navPressed = true;
       else if (event.type === TouchType.Up || event.type === TouchType.Cancel) this.navPressed = false;
@@ -153,7 +153,7 @@ struct DockNavigation {
       .scale({ x: this.navPressed ? MATERIAL_PRESS_SCALE : 1, y: this.navPressed ? MATERIAL_PRESS_SCALE : 1 })
       .animation({ curve: curves.springMotion(0.36, 0.9) })
       .position({ x: 16 + this.model.navigationX(), y: 16 }).animation({ curve: curves.springMotion(0.44, 0.83) })
-    }.width('100%').height(96).clip(false).hitTestBehavior(HitTestMode.Transparent)
+    }.width('100%').height(96).clip(false).hitTestBehavior(HitTestMode.Default)
   }
 }
 // Keep the Navigation title configuration independent of animation inputs. Only the
@@ -165,7 +165,7 @@ struct DockPlaybackSurface {
   build() {
     Navigation() { Column() {} }.title({ builder: this.content, height: 96 }, { barStyle: BarStyle.STACK, backgroundColor: Color.Transparent, backgroundBlurStyle: BlurStyle.NONE })
       .titleMode(NavigationTitleMode.Mini).hideBackButton(true).hideToolBar(true).mode(NavigationMode.Stack)
-      .width('100%').height(96).backgroundColor(Color.Transparent).clip(false).hitTestBehavior(HitTestMode.Transparent)
+      .width('100%').height(96).backgroundColor(Color.Transparent).clip(false).hitTestBehavior(HitTestMode.Default)
   }
 }
 @Component

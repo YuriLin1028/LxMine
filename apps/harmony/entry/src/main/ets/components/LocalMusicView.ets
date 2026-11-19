@@ -12,9 +12,11 @@ export struct LocalMusicView {
   private source: ArrayDataSource<Song> = new ArrayDataSource<Song>();
   aboutToAppear(): void { this.songsChanged(); }
   private songsChanged(): void { this.source.reset(this.songs); }
+  private metaChanged(): void { this.source.reload(); }
   @Prop wide: boolean = false;
   @Prop contentTop: number = 82;
-  @Prop selectedKey: string = '';
+  @Prop @Watch('metaChanged') selectedKey: string = '';
+  @Prop likedSignature: string = '';
   @Prop searchOpen: boolean = false;
   @Prop searchQuery: string = '';
   scroller: Scroller = new Scroller();
@@ -64,7 +66,7 @@ export struct LocalMusicView {
             active: this.selectedKey === songKey(song), liked: this.likedSong(song),
             onPlay: () => this.onPlay(song), onLike: () => this.onLike(song), onMore: () => this.onMore(song) })
         }
-      }, (song: Song) => songKey(song))
+      }, (song: Song) => `${songKey(song)}|${song.coverUrl ?? ''}`)
       if (!this.songs.length) {
         ListItem() {
           Column({ space: 8 }) {

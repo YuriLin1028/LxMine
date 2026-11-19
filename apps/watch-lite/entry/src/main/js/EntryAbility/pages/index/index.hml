@@ -1,0 +1,23 @@
+<div class="screen">
+  <div if="{{!demo}}" class="content idle-content" style="width: {{contentWidth}};">
+    <image class="brand" src="/common/lxmine.png"></image>
+    <text class="title">等待手机</text>
+    <text class="secondary">在运动健康中配对手表</text>
+    <input class="main-action idle-action" type="button" value="演示" onclick="toggleDemo" />
+  </div>
+  <div if="{{demo}}" class="content demo-content" style="width: {{contentWidth}};">
+    <text class="eyebrow">演示 · 无音频</text>
+    <text class="title">{{title}}</text>
+    <text class="secondary">LxMine 演示曲目</text>
+    <div class="progress">
+      <div class="progress-fill" style="width: {{progressWidth}};"></div>
+    </div>
+    <text class="secondary">{{timeLabel}}</text>
+    <div class="actions">
+      <input class="side-action" type="button" value="上一首" onclick="previous" />
+      <input class="main-action" type="button" value="{{playbackLabel}}" onclick="togglePlayback" />
+      <input class="side-action" type="button" value="下一首" onclick="next" />
+    </div>
+    <input class="exit-action" type="button" value="退出演示" onclick="toggleDemo" />
+  </div>
+</div>

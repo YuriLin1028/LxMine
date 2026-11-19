@@ -4,6 +4,7 @@ import com.lxlia.player.model.FeedPlaylist
 import com.lxlia.player.model.FeedRequest
 import com.lxlia.player.model.FeedSection
 import com.lxlia.player.model.HomeFeed
+import com.lxlia.player.model.MusicPlaylist
 import com.lxlia.player.model.Song
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.async
@@ -134,7 +135,7 @@ object HomeFeedApi {
     }
 
     /** 以日期为种子的确定性洗牌：同一天内顺序稳定，跨天变化，即"每日"推荐。 */
-    private fun dailyShuffle(songs: List<Song>, dayNumber: Long): List<Song> {
+    private fun dailyShuffle(songs: List<Song>, dayNumber: Long, limit: Int = 30): List<Song> {
         var state = (dayNumber xor 0x9E3779B9L).toInt()
         fun next(): Double {
             state += 0x6D2B79F5
@@ -149,20 +150,152 @@ object HomeFeedApi {
             pool[index] = pool[target]
             pool[target] = temp
         }
-        return pool.take(30)
+        return pool.take(limit)
     }
 
-    suspend fun loadMergedHome(host: LxHost): HomeFeed = withContext(Dispatchers.IO) {
+    private val artistSplitRegex = Regex("[、/,，;&]+")
+    private val ignoredArtists = setOf("未知", "未知歌手", "未知艺术家", "群星", "unknown", "various artists")
+
+    /** 从歌单（尤其「我喜欢的」）与最近播放提取常听歌手池，支持按种子偏移采样。 */
+    fun extractTopTasteArtists(
+        playlists: List<MusicPlaylist>,
+        recentSongs: List<Song>,
+        currentSong: Song? = null,
+        maxArtists: Int = 3,
+        seedOffset: Int = 0,
+    ): List<String> {
+        val scores = linkedMapOf<String, Int>()
+        val displayNames = linkedMapOf<String, String>()
+        fun addSong(song: Song, weight: Int) {
+            if (song.singer.isBlank()) return
+            for (raw in song.singer.split(artistSplitRegex)) {
+                val name = raw.trim()
+                if (name.length < 2 && name.all { it.code < 128 }) continue
+                val norm = name.lowercase()
+                if (norm.isEmpty() || norm in ignoredArtists) continue
+                displayNames.putIfAbsent(norm, name)
+                scores[norm] = (scores[norm] ?: 0) + weight
+            }
+        }
+        currentSong?.let { addSong(it, 2) }
+        recentSongs.forEachIndexed { index, song ->
+            addSong(song, if (index < 12) 3 else 2)
+        }
+        for (playlist in playlists) {
+            if (playlist.isFavorite || playlist.name == "我喜欢的") {
+                playlist.songs.forEach { addSong(it, 4) }
+            } else if (playlist.kind == "lx") {
+                playlist.songs.take(40).forEach { addSong(it, 1) }
+            }
+        }
+        val ranked = scores.entries
+            .sortedByDescending { it.value }
+            .mapNotNull { displayNames[it.key] }
+        if (ranked.isEmpty()) return emptyList()
+        val count = maxArtists.coerceAtLeast(1)
+        if (seedOffset <= 0 || ranked.size <= count) {
+            return ranked.take(count)
+        }
+        val pool = ranked.take(minOf(ranked.size, 9))
+        val shift = (seedOffset % pool.size + pool.size) % pool.size
+        return (0 until count).map { idx -> pool[(shift + idx) % pool.size] }
+    }
+
+    /** 将常听歌手新鲜曲目与平台新歌按天确定性交错融合为每日三十首。 */
+    fun blendPersonalizedDaily(
+        baseSongs: List<Song>,
+        personalizedSongs: List<Song>,
+        dayNumber: Long,
+        targetCount: Int = 30,
+    ): List<Song> {
+        if (personalizedSongs.isEmpty()) return dailyShuffle(baseSongs, dayNumber, targetCount)
+        val shuffledPersonal = dailyShuffle(personalizedSongs, dayNumber xor 0x517CC1B7L, targetCount)
+        val shuffledBase = dailyShuffle(baseSongs, dayNumber, targetCount)
+        val out = mutableListOf<Song>()
+        val seenKeys = mutableSetOf<String>()
+        val seenNames = mutableSetOf<String>()
+        fun tryAdd(song: Song): Boolean {
+            val nameSig = "${song.name.trim().lowercase()}|${song.singer.trim().lowercase()}"
+            if (!seenKeys.add(song.key) || !seenNames.add(nameSig)) return false
+            out.add(song)
+            return true
+        }
+        var pIdx = 0
+        var bIdx = 0
+        val personalQuota = minOf(15, (targetCount + 1) / 2)
+        var personalAdded = 0
+        while (out.size < targetCount && (pIdx < shuffledPersonal.size || bIdx < shuffledBase.size)) {
+            if (personalAdded < personalQuota && pIdx < shuffledPersonal.size) {
+                if (tryAdd(shuffledPersonal[pIdx++])) personalAdded++
+            }
+            if (out.size < targetCount && bIdx < shuffledBase.size) {
+                tryAdd(shuffledBase[bIdx++])
+            }
+            if (personalAdded >= personalQuota && bIdx >= shuffledBase.size && pIdx < shuffledPersonal.size) {
+                tryAdd(shuffledPersonal[pIdx++])
+            }
+        }
+        return out
+    }
+
+    suspend fun fetchPersonalizedSongs(
+        artists: List<String>,
+        excludeKeys: Set<String> = emptySet(),
+        algoSeed: Int = 0,
+    ): List<Song> = withContext(Dispatchers.IO) {
+        val targets = artists.map { it.trim() }.filter { it.isNotEmpty() }.distinct().take(3)
+        if (targets.isEmpty()) return@withContext emptyList()
+        val page = if (algoSeed <= 0) 1 else (algoSeed % 3) + 1
+        val perArtist = supervisorScope {
+            targets.map { artist ->
+                async {
+                    val primary = runCatching { SearchApi.search(SearchSource.ALL, artist, page = page, limit = 10).items }
+                        .getOrDefault(emptyList())
+                    if (primary.isNotEmpty() || page == 1) primary
+                    else runCatching { SearchApi.search(SearchSource.ALL, artist, page = 1, limit = 10).items }
+                        .getOrDefault(emptyList())
+                }
+            }.awaitAll()
+        }
+        val merged = roundRobinSongs(perArtist)
+        if (merged.isEmpty()) return@withContext emptyList()
+        val deduped = mutableListOf<Song>()
+        val seenNames = mutableSetOf<String>()
+        for (song in merged) {
+            val sig = "${song.name.trim().lowercase()}|${song.singer.trim().lowercase()}"
+            if (seenNames.add(sig)) deduped.add(song)
+        }
+        val orderedPool = if (algoSeed > 0) {
+            dailyShuffle(deduped, algoSeed.toLong() * 2654435761L, deduped.size.coerceAtLeast(1))
+        } else {
+            deduped
+        }
+        val freshWithCover = orderedPool.filter { it.key !in excludeKeys && it.coverUrl.isNotEmpty() }
+        val freshRest = orderedPool.filter { it.key !in excludeKeys && it.coverUrl.isEmpty() }
+        val knownFallback = orderedPool.filter { it.key in excludeKeys }
+        (freshWithCover + freshRest + knownFallback).take(24)
+    }
+
+    suspend fun loadMergedHome(
+        host: LxHost,
+        tasteArtists: List<String> = emptyList(),
+        knownKeys: Set<String> = emptySet(),
+        algoSeed: Int = 0,
+    ): HomeFeed = withContext(Dispatchers.IO) {
         val platforms = listOf("wy", "tx", "kw", "kg")
         val reasons = java.util.Collections.synchronizedList(mutableListOf<String>())
-        val parts = supervisorScope {
-            platforms.map { platform ->
+        val (parts, personalizedSongs) = supervisorScope {
+            val platformJobs = platforms.map { platform ->
                 async {
                     runCatching { parsePlatformLite(host.catalogue("home-lite", JSONObject().put("source", platform).toString())) }
                         .onFailure { reasons.add("$platform: ${it.message}") }
                         .getOrNull()
                 }
-            }.awaitAll()
+            }
+            val personalJob = async {
+                runCatching { fetchPersonalizedSongs(tasteArtists, knownKeys, algoSeed) }.getOrDefault(emptyList())
+            }
+            platformJobs.awaitAll() to personalJob.await()
         }
         val ok = parts.filterNotNull()
         if (ok.isEmpty()) throw IllegalStateException("所有平台的首页都暂不可用 ${reasons.joinToString(" | ")}")
@@ -199,21 +332,78 @@ object HomeFeedApi {
                 }
             }
         }
-        // 合并项在 charts 里是旧对象引用，替换成累计后的新对象。
+        // 合并项在 charts 里是旧对象引用，替换成累计后的新对象（concepts 以 concept 名称为键）。
         for (index in charts.indices) {
             val current = charts[index]
-            concepts[current.id]?.let { charts[index] = it }
+            concepts[current.name]?.let { charts[index] = it }
         }
-        val newSongs = roundRobin(ok.map { it.newSongs }) { "${it.source}:${it.id}" }
+        val rawNewSongs = roundRobin(ok.map { it.newSongs }) { "${it.source}:${it.id}" }
+        // 跨平台新歌按规范化歌名+主歌手去重，避免四平台同一热歌重复出现。
+        val seenCanonicalNew = mutableSetOf<String>()
+        val dedupedNewSongs = mutableListOf<Song>()
+        for (song in rawNewSongs) {
+            val cleanTitle = song.name.lowercase()
+                .replace(Regex("""[(\（\[\【][^)\）\]\】]*[)\）\]\】]"""), "")
+                .replace(Regex("""[\s\-_·.,，。!?！？'"]+"""), "")
+                .trim()
+            val cleanSinger = song.singer.lowercase()
+                .split(artistSplitRegex).firstOrNull().orEmpty()
+                .replace(Regex("""[\s\-_·.,，。'"]+"""), "")
+                .trim()
+            val ck = "${cleanTitle.ifEmpty { song.id }}|$cleanSinger"
+            if (seenCanonicalNew.add(ck)) dedupedNewSongs.add(song)
+        }
+        // 兜底补齐所有榜单封面：优先融合子榜封面，其次取歌单/新歌不重复真实封面，杜绝榜单无封面。
+        val chartFallbackPool = (recommend + hot).map { it.cover.trim() }.filter { it.isNotEmpty() } +
+            dedupedNewSongs.map { it.coverUrl.trim() }.filter { it.isNotEmpty() }
+        val usedChartCovers = charts.map { it.cover.trim() }.filter { it.isNotEmpty() }.toMutableSet()
+        var fallbackCursor = 0
+        for (index in charts.indices) {
+            val current = charts[index]
+            var cover = current.cover.trim()
+            if (cover.isEmpty() && current.parts.isNotEmpty()) {
+                cover = current.parts.firstOrNull { it.cover.isNotBlank() }?.cover?.trim().orEmpty()
+            }
+            if (cover.isEmpty() && chartFallbackPool.isNotEmpty()) {
+                cover = chartFallbackPool.firstOrNull { it !in usedChartCovers }
+                    ?: chartFallbackPool[fallbackCursor++ % chartFallbackPool.size]
+            }
+            if (cover.isNotEmpty() && cover != current.cover) {
+                charts[index] = current.copy(cover = cover)
+                usedChartCovers.add(cover)
+            }
+        }
+        val daySeed = (System.currentTimeMillis() / 86400000L) + algoSeed.toLong() * 1315423911L
+        // 首页第一行榜单按日期 + 刷新种子随机推荐（带封面优先）。
+        val shuffledCharts = if (charts.size > 1) {
+            val copy = charts.toMutableList()
+            var st = (daySeed xor 0x5BD1E995L)
+            for (i in copy.lastIndex downTo 1) {
+                st = (st * 1664525L + 1013904223L) and 0xFFFFFFFFL
+                val j = (st % (i + 1)).toInt()
+                val tmp = copy[i]; copy[i] = copy[j]; copy[j] = tmp
+            }
+            copy
+        } else charts
+        val categoryCoverPool = (recommend + hot + shuffledCharts)
+            .map { it.cover.trim() }
+            .filter { it.isNotEmpty() }
+            .distinct()
         val categoryItems = mutableListOf<FeedPlaylist>()
         val categorySeen = mutableSetOf<String>()
         for (part in ok) {
-            for ((id, name) in part.categories) {
+            for ((_, name) in part.categories) {
                 if (name.isEmpty() || !categorySeen.add(name)) continue
+                val matchedCover = (recommend + hot).firstOrNull {
+                    it.cover.isNotEmpty() && it.name.contains(name, ignoreCase = true)
+                }?.cover ?: if (categoryCoverPool.isNotEmpty()) {
+                    categoryCoverPool[categoryItems.size % categoryCoverPool.size]
+                } else ""
                 categoryItems.add(
                     FeedPlaylist(
                         id = "category-$name",
                         name = name,
+                        cover = matchedCover,
                         request = FeedRequest(part.source.ifEmpty { "wy" }, "hot", name),
                     )
                 )
@@ -221,25 +411,38 @@ object HomeFeedApi {
         }
         val sections = listOf(
             FeedSection("playlists", "推荐歌单", "playlist", recommend),
-            FeedSection("charts", "排行榜", "playlist", charts),
+            FeedSection("charts", "排行榜", "playlist", shuffledCharts),
             FeedSection("hot", "热门歌单", "playlist", hot),
             FeedSection("category", "歌单分类", "playlist", categoryItems),
         )
-        val dayNumber = System.currentTimeMillis() / 86400000L
-        val dailySongs = dailyShuffle(newSongs, dayNumber)
+        val isPersonalized = personalizedSongs.isNotEmpty()
+        // 每日三十首避开新歌速递前 20 首，减少板块重复。
+        val tailFirstNew = if (dedupedNewSongs.size > 22) {
+            dedupedNewSongs.drop(20) + dedupedNewSongs.take(20)
+        } else dedupedNewSongs
+        val dailySongs = if (isPersonalized) {
+            blendPersonalizedDaily(tailFirstNew, personalizedSongs, daySeed, 30)
+        } else {
+            dailyShuffle(tailFirstNew, daySeed)
+        }
+        val dailyCanonical = dailySongs.map { "${it.name.trim().lowercase()}|${it.singer.trim().lowercase()}" }.toSet()
+        val newSongs = dedupedNewSongs.filter { "${it.name.trim().lowercase()}|${it.singer.trim().lowercase()}" !in dailyCanonical } +
+            dedupedNewSongs.filter { "${it.name.trim().lowercase()}|${it.singer.trim().lowercase()}" in dailyCanonical }
         val daily = FeedPlaylist(
             id = "daily-30",
             name = "每日三十首",
-            cover = dailySongs.firstOrNull()?.coverUrl.orEmpty(),
+            cover = dailySongs.firstOrNull { it.coverUrl.isNotEmpty() }?.coverUrl
+                ?: dailySongs.firstOrNull()?.coverUrl.orEmpty(),
             count = dailySongs.size,
+            period = if (isPersonalized) "personalized" else null,
         )
         HomeFeed(
             source = "all",
             sections = sections,
             playlists = recommend,
             newSongs = newSongs,
-            charts = charts,
-            similar = emptyList(),
+            charts = shuffledCharts,
+            similar = personalizedSongs,
             daily = daily,
             dailySongs = dailySongs,
         )

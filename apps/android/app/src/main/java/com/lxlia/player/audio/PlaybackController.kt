@@ -5,6 +5,8 @@ package com.lxlia.player.audio
 import android.net.Uri
 import android.os.Handler
 import android.os.Looper
+import androidx.media3.common.AudioAttributes
+import androidx.media3.common.C
 import androidx.media3.common.MediaItem
 import androidx.media3.common.MediaMetadata
 import androidx.media3.common.Player
@@ -34,6 +36,22 @@ object PlaybackController {
 
     fun setSpectrumEnabled(enabled: Boolean) = spectrum.setEnabled(enabled)
 
+    @Volatile
+    var mixWithOthers: Boolean = false
+        private set
+
+    internal fun musicAudioAttributes(): AudioAttributes = AudioAttributes.Builder()
+        .setUsage(C.USAGE_MEDIA)
+        .setContentType(C.AUDIO_CONTENT_TYPE_MUSIC)
+        .build()
+
+    fun setMixWithOthers(enabled: Boolean) {
+        mixWithOthers = enabled
+        main.post {
+            player?.setAudioAttributes(musicAudioAttributes(), /* handleAudioFocus = */ !enabled)
+        }
+    }
+
     internal fun spectrumFrame(): PcmSpectrum.Frame? =
         player?.takeIf { it.isPlaying }?.let { spectrum.frameAt(it.currentPosition * 1000) }
 
@@ -55,10 +73,13 @@ object PlaybackController {
     var currentUrl: String = ""
         private set
 
-    /** 解析播放地址；由引擎注入，包含音源回退。 */
+    /** 解析播放地址；由引擎注入，包含全源并行竞速与跨平台兜底。 */
     var urlResolver: (suspend (Song) -> String)? = null
+    /** 运行时检测到 30s VIP 试听时的无感全源重解析器。 */
+    var previewFallbackResolver: (suspend (Song) -> String)? = null
     /** 本地/离线文件路径解析：命中则跳过在线解析。 */
     var localResolver: ((Song) -> String?)? = null
+    private var previewRetryKey: String = ""
 
     var onSongChanged: ((Song) -> Unit)? = null
     var onSourceReady: ((Song, String) -> Unit)? = null
@@ -85,13 +106,86 @@ object PlaybackController {
         active.replaceMediaItem(active.currentMediaItemIndex, item.buildUpon().setMediaMetadata(metadata).build())
     }
 
+    /** 原位替换队列中的歌曲（如切换平台或批量补全封面）。 */
+    fun replaceQueueSong(index: Int, oldKey: String, newSong: Song) {
+        if (queue.isEmpty()) return
+        val mutable = queue.toMutableList()
+        if (index in mutable.indices && mutable[index].key == oldKey) {
+            mutable[index] = newSong
+        } else {
+            val found = mutable.indexOfFirst { it.key == oldKey }
+            if (found in mutable.indices) mutable[found] = newSong
+        }
+        queue = mutable
+    }
+
+    fun applyCoverMap(covers: Map<String, String>) {
+        if (covers.isEmpty() || queue.isEmpty()) return
+        var changed = false
+        queue = queue.map { song ->
+            val url = covers[song.key]
+            if (!url.isNullOrEmpty() && song.coverUrl.isEmpty()) {
+                changed = true
+                song.copy(coverUrl = url)
+            } else song
+        }
+        val active = current
+        if (active != null) {
+            val url = covers[active.key]
+            if (!url.isNullOrEmpty() && active.coverUrl.isEmpty()) {
+                updateArtwork(active.copy(coverUrl = url))
+            }
+        }
+        if (changed) onState?.invoke(if (playing) "playing" else "paused")
+    }
+
     fun onPlayerReady(exoPlayer: ExoPlayer) {
         player = exoPlayer
+        exoPlayer.setAudioAttributes(musicAudioAttributes(), /* handleAudioFocus = */ !mixWithOthers)
         exoPlayer.addListener(object : Player.Listener {
             override fun onPlaybackStateChanged(playbackState: Int) {
                 when (playbackState) {
                     Player.STATE_READY -> {
                         resolvedDuration()
+                        val activeSong = current
+                        val realDur = exoPlayer.duration
+                        if (
+                            activeSong != null &&
+                            activeSong.source != "local" &&
+                            localPath.isNullOrEmpty() &&
+                            activeSong.durationMs >= 75_000L &&
+                            realDur in 5_001L..45_000L &&
+                            realDur < (activeSong.durationMs * 0.45).toLong() &&
+                            previewRetryKey != activeSong.key
+                        ) {
+                            previewRetryKey = activeSong.key
+                            val fallback = previewFallbackResolver
+                            val token = playToken
+                            if (fallback != null) {
+                                scope.launch {
+                                    val altUrl = runCatching { withContext(Dispatchers.IO) { fallback(activeSong) } }.getOrNull()
+                                    if (token == playToken && !altUrl.isNullOrEmpty() && altUrl != currentUrl) {
+                                        currentUrl = altUrl
+                                        val item = MediaItem.Builder()
+                                            .setMediaId(activeSong.key)
+                                            .setUri(altUrl)
+                                            .setMediaMetadata(
+                                                MediaMetadata.Builder()
+                                                    .setTitle(activeSong.name)
+                                                    .setArtist(activeSong.singer)
+                                                    .setAlbumTitle(activeSong.albumName)
+                                                    .setArtworkUri(activeSong.coverUrl.takeIf { it.isNotEmpty() }?.let(Uri::parse))
+                                                    .build()
+                                            )
+                                            .build()
+                                        exoPlayer.setMediaItem(item)
+                                        exoPlayer.prepare()
+                                        exoPlayer.playWhenReady = true
+                                    }
+                                }
+                                return
+                            }
+                        }
                         if (startPosition > 0) {
                             exoPlayer.seekTo(startPosition.coerceAtMost((durationMs - 250).coerceAtLeast(0)))
                             startPosition = 0

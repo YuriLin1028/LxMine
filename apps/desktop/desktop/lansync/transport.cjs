@@ -75,11 +75,26 @@ function createLanSyncTransport(options) {
   const devices = new Map();
   const pending = new Map();
   const outgoingPull = new Map();
+  let autoSyncPlaylists = Boolean(options.autoSyncPlaylists);
   let udp = null;
   let server = null;
   let announceTimer = null;
   let cleanupTimer = null;
   let port = null;
+
+  const localAddresses = () => {
+    const list = [];
+    try {
+      for (const entries of Object.values(os.networkInterfaces())) {
+        for (const entry of entries || []) {
+          if (entry.internal || entry.family !== 'IPv4' || !entry.address) continue;
+          if (entry.address.startsWith('169.254.')) continue;
+          list.push(entry.address);
+        }
+      }
+    } catch {}
+    return list;
+  };
 
   const snapshotDevices = () => Array.from(devices.values())
     .sort((left, right) => left.name.localeCompare(right.name));
@@ -101,6 +116,7 @@ function createLanSyncTransport(options) {
       name: deviceName,
       platform,
       port,
+      autoSyncPlaylists,
       pullRequests: Array.from(outgoingPull, ([id, entry]) => ({ id, receiverId: entry.receiverId })),
       ts: Date.now(),
     }));
@@ -111,7 +127,7 @@ function createLanSyncTransport(options) {
         const address = entry.address.split('.').map(Number), mask = entry.netmask.split('.').map(Number);
         addresses.add(address.map((part, index) => part | (255 ^ mask[index])).join('.'));
       }
-      for (const address of addresses) udp.send(message, discoveryPort, address);
+      for (const address of addresses) udp.send(message, discoveryPort, address, () => {});
     } catch {
       // 广播失败（例如未联网）时等待下一轮。
     }
@@ -128,13 +144,15 @@ function createLanSyncTransport(options) {
       address: rinfo.address,
       port: Number(message.port),
       receiveMode: message.receiveMode === 'pull' ? 'pull' : 'direct',
+      autoSyncPlaylists: message.autoSyncPlaylists === true,
       lastSeen: Date.now(),
     };
     if (firstSeen) announce(rinfo.address);
     const previous = devices.get(next.id);
     devices.set(next.id, next);
     if (!previous || previous.name !== next.name || previous.address !== next.address ||
-        previous.port !== next.port || previous.receiveMode !== next.receiveMode) emitDevices();
+        previous.port !== next.port || previous.receiveMode !== next.receiveMode ||
+        previous.autoSyncPlaylists !== next.autoSyncPlaylists) emitDevices();
   };
 
   const pruneDevices = () => {
@@ -217,6 +235,22 @@ function createLanSyncTransport(options) {
       }
       if (req.method === 'POST' && url === '/lxlia-sync/push') {
         void handlePush(req, res);
+        return;
+      }
+      if (req.method === 'POST' && url === '/lxlia-sync/auto-playlists') {
+        if (!autoSyncPlaylists || typeof options.onAutoPlaylists !== 'function') {
+          jsonResponse(res, 403, { accepted: false, message: 'auto sync disabled' });
+          return;
+        }
+        void readBody(req).then(async raw => {
+          const bundle = JSON.parse(raw);
+          if (!bundle || bundle.protocol !== PROTOCOL || bundle.version !== 1 || !bundle.device?.id || bundle.device.id === deviceId || !Array.isArray(bundle.playlists)) {
+            jsonResponse(res, 400, { accepted: false, message: 'invalid auto-sync payload' });
+            return;
+          }
+          const result = await options.onAutoPlaylists(bundle.device, bundle);
+          jsonResponse(res, 200, { accepted: true, changed: Boolean(result?.changed) });
+        }).catch(error => jsonResponse(res, 500, { accepted: false, message: error?.message || 'failed' }));
         return;
       }
       const parts = url.split('?')[0].split('/');
@@ -327,7 +361,15 @@ function createLanSyncTransport(options) {
       port = null;
     },
     listDevices: snapshotDevices,
+    localAddresses,
     getPort: () => port,
+    getAutoSync: () => autoSyncPlaylists,
+    setAutoSync(enabled) {
+      const next = Boolean(enabled);
+      if (autoSyncPlaylists === next) return;
+      autoSyncPlaylists = next;
+      announce();
+    },
     listPending: () => Array.from(pending.entries()).map(([pendingId, entry]) => ({
       pendingId,
       peer: entry.peer,
@@ -386,6 +428,35 @@ function createLanSyncTransport(options) {
             'content-length': Buffer.byteLength(payload),
           },
           timeout: PENDING_TTL_MS + 5000,
+        }, response => {
+          const chunks = [];
+          response.on('data', chunk => chunks.push(chunk));
+          response.on('end', () => {
+            try {
+              resolve(JSON.parse(Buffer.concat(chunks).toString('utf8')));
+            } catch (error) {
+              reject(new Error(`invalid response: ${error.message}`));
+            }
+          });
+        });
+        request.on('timeout', () => request.destroy(new Error('sync request timeout')));
+        request.on('error', reject);
+        request.end(payload);
+      });
+    },
+    sendDirect(address, targetPort, bundle, reqPath = '/lxlia-sync/push', timeoutMs = PENDING_TTL_MS + 5000) {
+      const payload = JSON.stringify(bundle);
+      return new Promise((resolve, reject) => {
+        const request = http.request({
+          host: String(address).trim(),
+          port: Number(targetPort),
+          path: reqPath,
+          method: 'POST',
+          headers: {
+            'content-type': 'application/json; charset=utf-8',
+            'content-length': Buffer.byteLength(payload),
+          },
+          timeout: timeoutMs,
         }, response => {
           const chunks = [];
           response.on('data', chunk => chunks.push(chunk));

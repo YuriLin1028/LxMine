@@ -49,6 +49,14 @@ export struct LibraryView {
   private cell(): number { return (this.contentWidth() - (this.columns() - 1) * this.gap) / this.columns(); }
   private baseRow(): number { return this.cell() * 0.78; }
 
+  private firstCover(songs: Song[] | undefined): string {
+    if (!songs) return '';
+    for (const s of songs) {
+      if (s && s.coverUrl && s.coverUrl.length > 0) return s.coverUrl;
+    }
+    return '';
+  }
+
   private tiles(): LibraryTile[] {
     const out: LibraryTile[] = [];
     let favorite: MusicPlaylist | null = null;
@@ -58,17 +66,17 @@ export struct LibraryView {
     if (favorite) {
       out.push({ kind: 'playlist', id: favorite.id, name: favorite.name,
         count: `${favorite.songs?.length ?? favorite.songIds?.length ?? 0} 首歌曲`,
-        detail: '你收藏的歌曲', cover: favorite.songs?.[0]?.coverUrl ?? '', iconKind: 'heart' });
+        detail: '你收藏的歌曲', cover: this.firstCover(favorite.songs), iconKind: 'heart' });
     }
     out.push({ kind: 'recent', id: 'recent-local', name: '最近播放',
       count: `${this.recentSongs.length} 首歌曲`, detail: '按最近播放时间排列',
-      cover: this.recentSongs[0]?.coverUrl ?? '', iconKind: 'clock' });
+      cover: this.firstCover(this.recentSongs), iconKind: 'clock' });
     for (const playlist of this.playlists) {
       if (playlist.isFavorite) continue;
       const count = playlist.songs?.length ?? playlist.songIds?.length ?? 0;
       out.push({ kind: 'playlist', id: playlist.id, name: playlist.name,
         count: playlist.kind === 'lx' ? `${count} 首歌曲` : '本地文件歌单',
-        detail: '歌单', cover: playlist.songs?.[0]?.coverUrl ?? '', iconKind: 'music' });
+        detail: '歌单', cover: this.firstCover(playlist.songs), iconKind: 'music' });
     }
     out.push({ kind: 'local', id: 'local-hm', name: '本地音乐',
       count: `${this.localCount} 首本地歌曲`, detail: '智能识别手机里的音频',
@@ -164,15 +172,15 @@ export struct LibraryView {
   }
 
   private tileIcon(kind: string): Resource {
-    if (kind === 'heart') return $r('sys.symbol.heart');
-    if (kind === 'clock') return $r('sys.symbol.clock');
-    return $r('sys.symbol.music_note_list');
+    if (kind === 'heart') return $r('app.media.ic_heart');
+    if (kind === 'clock') return $r('app.media.symbol_clock');
+    return $r('app.media.ic_music');
   }
 
   private gradFor(name: string): string[] {
     const grads: string[][] = [
-      ['#2E3A8C', '#6C4AB6'], ['#0F6F5C', '#3FA796'], ['#8C2E2E', '#C76B4A'],
-      ['#3C5A99', '#7FA8E0'], ['#6A3A8C', '#B84AB6'], ['#8C6A1E', '#D9B24A']
+      ['#1E3A8A', '#38BDF8'], ['#0F6F5C', '#3FA796'], ['#312E81', '#818CF8'],
+      ['#164E63', '#22D3EE'], ['#4C1D95', '#A78BFA'], ['#0C4A6E', '#60A5FA']
     ];
     let hash = 0;
     for (let i = 0; i < name.length; i += 1) hash = (hash * 31 + name.charCodeAt(i)) >>> 0;
@@ -184,28 +192,34 @@ export struct LibraryView {
       if (slot.tile.cover) {
         Image(slot.tile.cover).width('100%').height('100%').objectFit(ImageFit.Cover)
       } else {
-        Column() { SymbolGlyph(this.tileIcon(slot.tile.iconKind)).fontSize(52).fontColor([ACCENT]) }
-          .width('100%').height('100%').justifyContent(FlexAlign.Center)
-          .linearGradient({ angle: 135, colors: [[this.gradFor(slot.tile.name)[0], 0], [this.gradFor(slot.tile.name)[1], 1]] })
+        if (slot.tile.iconKind === 'heart') {
+          Column() { Image($r('app.media.ic_heart_fill')).width(52).height(52) }
+            .width('100%').height('100%').justifyContent(FlexAlign.Center)
+            .linearGradient({ angle: 135, colors: [['#5E1D28', 0], ['#B8334A', 1]] })
+        } else {
+          Column() { Image(this.tileIcon(slot.tile.iconKind)).width(50).height(50).fillColor(ACCENT) }
+            .width('100%').height('100%').justifyContent(FlexAlign.Center)
+            .linearGradient({ angle: 135, colors: [[this.gradFor(slot.tile.name)[0], 0], [this.gradFor(slot.tile.name)[1], 1]] })
+        }
       }
       Column().width('100%').height('100%')
-        .linearGradient({ angle: 180, colors: [['#05070A00', 0.35], ['#CC05070A', 1]] })
+        .linearGradient({ angle: 180, colors: [['#05070A00', 0.3], ['#D805070A', 1]] })
       Column() {
         Row() {
           Blank()
-          Text(slot.tile.count).fontSize(10).fontColor('#E8FFFFFF')
+          Text(slot.tile.count).fontSize(10).fontColor('#F0FFFFFF')
             .padding({ left: 8, right: 8, top: 3, bottom: 3 })
-            .backgroundColor('#66000000').borderRadius(9).maxLines(1)
+            .backgroundColor('#73000000').borderRadius(9).maxLines(1)
         }.width('100%')
         Blank()
         Column({ space: 3 }) {
-          Text(slot.tile.name).fontSize(15).fontWeight(FontWeight.Medium).fontColor('#F4F4F4')
+          Text(slot.tile.name).fontSize(15).fontWeight(FontWeight.Bold).fontColor('#F6F6F8')
             .maxLines(1).textOverflow({ overflow: TextOverflow.Ellipsis }).width('100%')
           Text(slot.tile.detail).fontSize(11).fontColor('#C9FFFFFF')
             .maxLines(1).textOverflow({ overflow: TextOverflow.Ellipsis }).width('100%')
         }.alignItems(HorizontalAlign.Start).width('100%')
       }.width('100%').height('100%').padding(12)
-    }.width(slot.w).height(slot.h).borderRadius(18).clip(true)
+    }.width(slot.w).height(slot.h).borderRadius(18).border({ width: 0.8, color: '#1AFFFFFF' }).clip(true)
       .position({ x: slot.x, y: slot.y })
       .onClick(() => this.openTile(slot.tile))
   }
@@ -219,7 +233,7 @@ export struct LibraryView {
           }, (slot: MosaicSlot) => slot.tile.kind + ':' + slot.tile.id + ':' + slot.x + ':' + slot.y)
         }.width('100%').height(this.mosaicHeight)
       }.width('100%').padding({ top: this.contentTop + 12, bottom: 180 })
-    }.width('100%').height('100%').scrollBar(BarState.Off)
+    }.width('100%').height('100%').align(Alignment.TopStart).scrollBar(BarState.Off)
       .onDidScroll((x: number, y: number, state: ScrollState) => { if (state !== ScrollState.Idle) this.onScroll(this.scroller.currentOffset().yOffset); })
   }
 }

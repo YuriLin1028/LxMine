@@ -40,4 +40,9 @@ export class ArrayDataSource<T> implements IDataSource {
       }
     }
   }
+  reload(): void {
+    for (const listener of this.listeners) {
+      listener.onDataReloaded();
+    }
+  }
 }

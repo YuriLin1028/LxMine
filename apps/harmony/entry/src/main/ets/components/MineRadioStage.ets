@@ -10,7 +10,7 @@ import { displaySync } from '@kit.ArkGraphics2D';
 import { display } from '@kit.ArkUI';
 
 interface StageLyricColors { primary: string; secondary: string; highlight: string; glow: string; }
-interface MineRadioMetadata { translationLines: LyricLine[]; lyricColorMode: string; lyricColors: StageLyricColors; id: string; audioUrl: string; mode: string; appearance: string; lines: LyricLine[]; name: string; singer: string; cover: string; duration: number; lyricOffset: number; topInset: number; bottomInset: number; }
+interface MineRadioMetadata { translationLines: LyricLine[]; lyricColorMode: string; lyricColors: StageLyricColors; id: string; audioUrl: string; mode: string; appearance: string; lines: LyricLine[]; name: string; singer: string; cover: string; duration: number; lyricOffset: number; lyricScale: number; topInset: number; bottomInset: number; }
 class StageInputHost {
   onSeek: (time: number) => void = () => {};
   onReady: () => void = () => {};
@@ -30,12 +30,13 @@ export struct MineRadioStage {
   @Prop @Watch('metadataChanged') lines: LyricLine[] = [];
   @Prop @Watch('metadataChanged') translationLines: LyricLine[] = [];
   @Prop @Watch('metadataChanged') lyricColorMode: string = 'custom-gradient';
-  @Prop @Watch('metadataChanged') lyricPrimary: string = '#F4D28A';
-  @Prop @Watch('metadataChanged') lyricSecondary: string = '#8FB2A6';
+  @Prop @Watch('metadataChanged') lyricPrimary: string = '#7DD3FC';
+  @Prop @Watch('metadataChanged') lyricSecondary: string = '#A5B4FC';
   @Prop @Watch('metadataChanged') light: boolean = false;
   @Prop @Watch('modeChanged') mode: string = 'mine-0';
   @Prop @Watch('metadataChanged') duration: number = 0;
   @Prop @Watch('metadataChanged') lyricOffset: number = 0;
+  @Prop @Watch('metadataChanged') lyricScale: number = 1;
   @Prop @Watch('metadataChanged') topInset: number = 0;
   @Prop @Watch('metadataChanged') bottomInset: number = 0;
   @Prop @Watch('clockChanged') positionMs: number = 0;
@@ -110,8 +111,8 @@ export struct MineRadioStage {
         this.frameSync = displaySync.create();
         this.frameSync.on('frame', () => {});
       }
-      const refresh = Math.max(60, Math.min(144, Math.round(display.getDefaultDisplaySync().refreshRate)));
-      this.frameSync.setExpectedFrameRateRange({ min: 60, max: refresh, expected: refresh });
+      // WebGL 3D 动效锁在均衡 60fps，避免在 120Hz/144Hz 屏幕满跑着色器导致机身发热与掉帧。
+      this.frameSync.setExpectedFrameRateRange({ min: 30, max: 60, expected: 60 });
       this.frameSync.start();
     } catch (error) { console.warn(`[MineRadioStage] frame rate request: ${(error as Error).message}`); }
   }
@@ -130,7 +131,7 @@ export struct MineRadioStage {
     clearTimeout(this.metadataTimer);
     if (!this.ready) return;
     const data: MineRadioMetadata = { translationLines: this.translationLines, lyricColorMode: this.lyricColorMode, lyricColors: { primary: this.lyricPrimary, secondary: this.lyricSecondary, highlight: this.lyricSecondary, glow: this.lyricSecondary }, id: `${this.song.source}:${this.song.id}`, audioUrl: this.plain ? '' : this.audioProxy.source(this.audioUrl), mode: this.mode, lines: this.lines, name: this.song.name, singer: this.song.singer,
-      cover: this.song.coverUrl, appearance: this.light ? 'light' : 'dark', duration: this.duration, lyricOffset: this.lyricOffset, topInset: this.topInset, bottomInset: this.bottomInset };
+      cover: this.song.coverUrl, appearance: this.light ? 'light' : 'dark', duration: this.duration, lyricOffset: this.lyricOffset, lyricScale: this.lyricScale, topInset: this.topInset, bottomInset: this.bottomInset };
       const metadataJson = JSON.stringify(data);
       const metadataCall = metadataJson !== this.lastMetadataJson ? `window.lxmineStage?.metadata(${metadataJson});` : '';
       this.lastMetadataJson = metadataJson;

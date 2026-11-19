@@ -31,7 +31,7 @@ object ShareService {
             addFlags(Intent.FLAG_ACTIVITY_NEW_DOCUMENT)
         }
         val chooser = Intent.createChooser(intent, "分享歌曲").apply {
-            addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
+            if (context !is android.app.Activity) addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
         }
         context.startActivity(chooser)
     }
@@ -57,13 +57,13 @@ object AudioRoutes {
     }
 }
 
-fun AppViewModel.shareCurrent() {
+fun AppViewModel.shareCurrent(hostContext: Context = app) {
     val song = selected
     if (song == null) {
         message = "当前没有正在播放的歌曲"
         return
     }
-    runCatching { ShareService.share(app, song) }.onFailure {
+    runCatching { ShareService.share(hostContext, song) }.onFailure {
         message = "分享失败：${it.message}"
     }
 }

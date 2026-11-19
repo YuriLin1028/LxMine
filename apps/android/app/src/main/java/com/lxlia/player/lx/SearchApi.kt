@@ -140,9 +140,13 @@ object SearchApi {
             val key = "${entry.optString("Audioid")}$hash"
             if (!seen.add(key)) return
             val duration = entry.optString("Duration").toLongOrNull() ?: 0
-            val rawImage = entry.optString("Image")
+            val rawImage = entry.optString("Image").ifEmpty {
+                entry.optJSONObject("trans_param")?.optString("union_cover").orEmpty()
+            }
             val image = if (rawImage.isNotEmpty()) {
-                rawImage.replace("{size}", "400").replace("http:", "https:")
+                rawImage.replace("{size}", "400")
+                    .replace(Regex("^//"), "https://")
+                    .replace(Regex("^http:"), "https:")
             } else ""
             items.add(
                 Song(
@@ -183,22 +187,30 @@ object SearchApi {
         return SearchResult(items, total)
     }
 
-    /** 网易云：公开 web 搜索接口（POST 表单）。 */
+    /** 网易云：优先请求 cloudsearch/pc（原生自带高清专辑封面 al.picUrl），失败回退 search/get/web。 */
     private fun searchNetease(keyword: String, page: Int, limit: Int): SearchResult {
-        val body = "s=${java.net.URLEncoder.encode(keyword, "UTF-8")}&type=1&offset=${(page - 1) * limit}&limit=$limit&total=true"
-        val payload = JSONObject(Http.postForm("https://music.163.com/api/search/get/web", body, "https://music.163.com/"))
+        val offset = (page - 1).coerceAtLeast(0) * limit
+        val body = "s=${java.net.URLEncoder.encode(keyword, "UTF-8")}&type=1&offset=$offset&limit=$limit&total=true"
+        val payload = runCatching {
+            val pc = JSONObject(Http.postForm("https://music.163.com/api/cloudsearch/pc", body, "https://music.163.com/"))
+            if (pc.optJSONObject("result")?.optJSONArray("songs") != null) pc
+            else JSONObject(Http.postForm("https://music.163.com/api/search/get/web", body, "https://music.163.com/"))
+        }.getOrElse {
+            JSONObject(Http.postForm("https://music.163.com/api/search/get/web", body, "https://music.163.com/"))
+        }
         val songs = payload.optJSONObject("result")?.optJSONArray("songs") ?: return SearchResult()
         val items = mutableListOf<Song>()
         for (index in 0 until songs.length()) {
             val song = songs.optJSONObject(index) ?: continue
             val id = song.optString("id")
             if (id.isEmpty()) continue
-            val artists = song.optJSONArray("artists")
+            val artists = song.optJSONArray("ar") ?: song.optJSONArray("artists")
             val singers = mutableListOf<String>()
             if (artists != null) for (artistIndex in 0 until artists.length()) {
                 artists.optJSONObject(artistIndex)?.optString("name")?.takeIf { it.isNotEmpty() }?.let(singers::add)
             }
-            val album = song.optJSONObject("album")
+            val album = song.optJSONObject("al") ?: song.optJSONObject("album")
+            val durationMs = song.optLong("dt").takeIf { it > 0 } ?: song.optLong("duration")
             items.add(
                 Song(
                     source = "wy",
@@ -207,8 +219,8 @@ object SearchApi {
                     singer = singers.joinToString("、"),
                     albumName = decodeName(album?.optString("name")),
                     albumId = album?.optString("id").orEmpty(),
-                    durationMs = song.optLong("duration"),
-                    qualitys = listOf("128k", "320k"),
+                    durationMs = durationMs,
+                    qualitys = listOf("128k", "320k", "flac"),
                     coverUrl = normalizeCoverUrl(album?.optString("picUrl")),
                 )
             )
@@ -217,7 +229,7 @@ object SearchApi {
         return SearchResult(items, total)
     }
 
-    /** QQ 音乐：client_search_cp（new_json）。 */
+    /** QQ 音乐：client_search_cp（new_json），album.mid 为空时回退 album.pmid。 */
     private fun searchQQ(keyword: String, page: Int, limit: Int): SearchResult {
         val params = listOf(
             "w=" + java.net.URLEncoder.encode(keyword, "UTF-8"),
@@ -246,18 +258,19 @@ object SearchApi {
             if (singersJson != null) for (singerIndex in 0 until singersJson.length()) {
                 singersJson.optJSONObject(singerIndex)?.optString("name")?.takeIf { it.isNotEmpty() }?.let(singers::add)
             }
-            val albumMid = song.optJSONObject("album")?.optString("mid").orEmpty()
+            val albumObj = song.optJSONObject("album")
+            val albumMid = albumObj?.optString("mid").orEmpty().ifEmpty { albumObj?.optString("pmid").orEmpty() }
             items.add(
                 Song(
                     source = "tx",
                     id = mid,
                     name = decodeName(song.optString("name")),
                     singer = singers.joinToString("、"),
-                    albumName = decodeName(song.optJSONObject("album")?.optString("name")),
+                    albumName = decodeName(albumObj?.optString("name")),
                     albumId = albumMid,
                     durationMs = song.optLong("interval") * 1000,
                     qualitys = listOf("128k", "320k"),
-                    coverUrl = if (albumMid.isNotEmpty()) "https://y.gtimg.cn/music/photo_new/T002R300x300M000$albumMid.jpg" else "",
+                    coverUrl = if (albumMid.isNotEmpty()) "https://y.gtimg.cn/music/photo_new/T002R500x500M000$albumMid.jpg" else "",
                 )
             )
         }
@@ -299,7 +312,15 @@ object SearchApi {
             val id = musicRid.replace("MUSIC_", "")
             if (id.isEmpty()) continue
             val duration = entry.optString("DURATION").toLongOrNull() ?: 0
-            val coverPath = entry.optString("web_albumpic_short")
+            val coverPath = entry.optString("web_albumpic_short").trim()
+            val albumPic = entry.optString("albumpic").trim()
+            val artistPath = entry.optString("web_artistpic_short").trim()
+            val resolvedCover = when {
+                coverPath.isNotEmpty() -> "https://img1.kuwo.cn/star/albumcover/${coverPath.replace(Regex("^120/"), "500/")}"
+                albumPic.startsWith("http", ignoreCase = true) -> albumPic.replace(Regex("^http:"), "https:")
+                artistPath.isNotEmpty() -> "https://img1.kuwo.cn/star/starheads/${artistPath.replace(Regex("^120/"), "500/")}"
+                else -> ""
+            }
             items.add(
                 Song(
                     source = "kw",
@@ -310,7 +331,7 @@ object SearchApi {
                     albumId = entry.optString("ALBUMID"),
                     durationMs = duration * 1000,
                     qualitys = parseKuwoQualitys(entry.optString("N_MINFO")),
-                    coverUrl = if (coverPath.isNotEmpty()) "https://img1.kuwo.cn/star/albumcover/$coverPath" else "",
+                    coverUrl = resolvedCover,
                 )
             )
         }

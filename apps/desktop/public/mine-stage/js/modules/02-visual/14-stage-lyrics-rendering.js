@@ -2100,7 +2100,10 @@ function updateStageLyrics3D(dt) {
   stageLyrics.glowFollowX *= 0.92;
   stageLyrics.glowFollowY *= 0.92;
   stageLyrics.glowFollowRoll *= 0.90;
-  var layoutScale = clampRange(Number(fx.lyricScale) || 1, 0.35, 1.65);
+  var layoutScale = clampRange(Number(fx.lyricScale) || 1, 0.35, 1.65) * clampRange(Number(fx.userLyricScale) || 1, 0.75, 1.4);
+  if (typeof window !== 'undefined' && window.innerWidth > 0 && window.innerHeight > window.innerWidth) {
+    layoutScale *= clampRange((window.innerWidth / Math.max(1, window.innerHeight)) * 1.18, 0.48, 0.85);
+  }
   var layoutX = clampRange(Number(fx.lyricOffsetX) || 0, -4.0, 4.0);
   var layoutY = clampRange(Number(fx.lyricOffsetY) || 0, -2.4, 2.7);
   var layoutZ = clampRange(Number(fx.lyricOffsetZ) || 0, -3.2, 3.2);

@@ -36,6 +36,7 @@ import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
+import androidx.compose.ui.draw.rotate
 import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
@@ -53,6 +54,8 @@ import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import com.lxlia.player.model.MINE_RADIO_MODES
 import com.lxlia.player.model.SyncSourcePayload
+import kotlin.math.abs
+import kotlin.math.roundToInt
 
 /** 设置页：分组顺序（音乐源、播放、歌词、系统与互联、关于）与鸿蒙 AlignedSettings 一致。 */
 @Composable
@@ -61,17 +64,19 @@ fun SettingsTab(vm: AppViewModel) {
         SourcesPage(vm)
         return
     }
-    val scroll = rememberScrollState()
+    val scroll = rememberScrollState(initial = if (vm.settingsPanel == "main") vm.settingsScrollOffset else 0)
     var previousPanel by rememberSaveable { mutableStateOf(vm.settingsPanel) }
     LaunchedEffect(vm.settingsPanel) {
         if (previousPanel != vm.settingsPanel) {
-            scroll.scrollTo(0)
+            if (previousPanel == "main") vm.settingsScrollOffset = scroll.value
+            scroll.scrollTo(if (vm.settingsPanel == "main") vm.settingsScrollOffset else 0)
             previousPanel = vm.settingsPanel
         }
     }
     LaunchedEffect(scroll) {
         snapshotFlow { scroll.value to scroll.isScrollInProgress }.collect { (offset, moving) ->
             if (vm.tab == "设置" && !vm.showPlayer && !vm.sourcesOpen) {
+                if (vm.settingsPanel == "main") vm.settingsScrollOffset = offset
                 vm.homeScroll(offset.toFloat(), canTrackDock = moving)
             }
         }
@@ -129,7 +134,11 @@ private fun LinkRow(title: String, detail: String, label: String = "›", onClic
         horizontalArrangement = Arrangement.spacedBy(12.dp),
     ) {
         RowCopy(title, detail, Modifier.weight(1f))
-        Text(label, fontSize = 14.sp, color = MUTED, maxLines = 1)
+        if (label == "›") {
+            AssetIcon("ic_back.svg", size = 16.dp, tint = MUTED, systemSymbol = false, modifier = Modifier.rotate(180f))
+        } else {
+            Text(label, fontSize = 14.sp, color = MUTED, maxLines = 1)
+        }
     }
 }
 
@@ -225,12 +234,24 @@ private fun SettingsMainPanel(vm: AppViewModel) {
             current = vm.styleName,
             onSelect = { vm.setStyleName(it) },
         )
+        ToggleRow(
+            title = "旋转锁定时允许播放页横屏",
+            detail = "开启后即使系统开启竖屏锁定，横置手机仍可进入横屏沉浸播放；关闭则跟随系统方向锁定",
+            value = vm.allowLandscapeWhenLocked,
+            onChange = { vm.setAllowLandscapeWhenLocked(it) },
+        )
+        ToggleRow(
+            title = "允许与其他应用同时播放",
+            detail = "开启后与其他视频、游戏或导航等应用混音播放，互不打断",
+            value = vm.mixWithOthers,
+            onChange = { vm.setMixWithOthers(it) },
+        )
     }
     SectionLabel("歌词")
     SettingsCard {
         LinkRow(
             title = "歌词设置",
-            detail = "详情页颜色、翻译／罗马音与时间偏移",
+            detail = "详情页颜色、字号、翻译／罗马音与时间偏移",
             onClick = { vm.openSettingsPanel("lyrics") },
         )
     }
@@ -251,10 +272,10 @@ private fun SettingsMainPanel(vm: AppViewModel) {
             onChange = { vm.setResumeOnStartup(it) },
         )
         ToggleRow(
-            title = "启动动画",
-            detail = "关闭后直接进入首页",
-            value = vm.startupAnimation,
-            onChange = { vm.setStartupAnimation(it) },
+            title = "双击刷新同步重算推荐",
+            detail = "双击首页左上角标题刷新时，同时重洗猜你喜欢与每日推荐内容",
+            value = vm.refreshAlgoOnDoubleTap,
+            onChange = { vm.setRefreshAlgoOnDoubleTap(it) },
         )
         LinkRow(
             title = "局域网同步",
@@ -274,8 +295,14 @@ private fun SettingsMainPanel(vm: AppViewModel) {
         LinkRow(
             title = "LxMine",
             detail = "LX 音源 · MineRadio 视觉 · 手机和平板同源界面",
-            label = "1.1.0",
+            label = vm.currentAppVersion(),
             onClick = { },
+        )
+        LinkRow(
+            title = "检查更新",
+            detail = "自动通过国内加速镜像获取 GitHub 最新版并覆盖安装",
+            label = if (vm.updateChecking) "检测中…" else "检查",
+            onClick = { vm.checkAppUpdate(silent = false) },
         )
     }
     Text(
@@ -290,6 +317,7 @@ private fun SettingsMainPanel(vm: AppViewModel) {
 @Composable
 private fun LyricSettingsPanel(vm: AppViewModel) {
     val previewText = vm.lyrics.lastOrNull { it.timeMs <= vm.positionMs }?.text ?: "音乐在这里，与你相遇"
+    val scalePercent = (vm.lyricPrefs.lyricScale * 100f).roundToInt().coerceIn(75, 140)
     Box(
         modifier = Modifier
             .fillMaxWidth()
@@ -300,7 +328,7 @@ private fun LyricSettingsPanel(vm: AppViewModel) {
         Column(Modifier.fillMaxWidth(), horizontalAlignment = Alignment.CenterHorizontally, verticalArrangement = Arrangement.spacedBy(14.dp)) {
             Text(
                 previewText,
-                fontSize = 22.sp,
+                fontSize = (22f * vm.lyricPrefs.lyricScale).sp,
                 fontWeight = FontWeight.Medium,
                 color = parseColor(vm.previewPrimary()),
                 maxLines = 2,
@@ -326,20 +354,40 @@ private fun LyricSettingsPanel(vm: AppViewModel) {
             onSelect = { vm.setLyricColorMode(it) },
         )
         if (vm.lyricPrefs.colorMode.startsWith("custom")) {
-            ColorInputRow("主色", vm.lyricPrefs.primary, "#F4D28A") { vm.setLyricPrimary(it) }
+            ColorInputRow("主色", vm.lyricPrefs.primary, "#7DD3FC") { vm.setLyricPrimary(it) }
             if (vm.lyricPrefs.colorMode.endsWith("gradient")) {
-                ColorInputRow("辅色", vm.lyricPrefs.secondary, "#8FB2A6") { vm.setLyricSecondary(it) }
+                ColorInputRow("辅色", vm.lyricPrefs.secondary, "#A5B4FC") { vm.setLyricSecondary(it) }
             }
         }
+        Column(Modifier.fillMaxWidth().padding(18.dp), verticalArrangement = Arrangement.spacedBy(12.dp)) {
+            Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                RowCopy("歌词字体大小", "调整播放详情页歌词字号比例（75%–140%）", Modifier.weight(1f))
+                Text("$scalePercent%", fontSize = 15.sp, fontWeight = FontWeight.Medium, color = TEXT)
+                if (abs(vm.lyricPrefs.lyricScale - 1f) >= 0.01f) {
+                    Box(
+                        Modifier.height(36.dp).padding(start = 4.dp).tapNoRipple { vm.setLyricScale(1f) },
+                        contentAlignment = Alignment.Center,
+                    ) {
+                        Text("重置", fontSize = 14.sp, color = BLUE)
+                    }
+                }
+            }
+            GlassSlider(
+                value = scalePercent.toFloat(),
+                onValueChange = { percent -> vm.setLyricScale(percent / 100f) },
+                valueRange = 75f..140f,
+                step = 1f,
+            )
+        }
         ToggleRow(
-            title = "显示翻译 / 音译",
-            detail = "在主歌词下方显示音源提供的翻译或音译",
+            title = "显示翻译",
+            detail = "在主歌词下方显示中文等翻译歌词（数据源提供时）",
             value = vm.lyricPrefs.showTranslation,
             onChange = { vm.setShowTranslation(it) },
         )
         ToggleRow(
-            title = "显示罗马音",
-            detail = "日文等歌词显示罗马音（数据源提供时）",
+            title = "显示音译 / 罗马音",
+            detail = "外语歌词显示音译或罗马音（数据源提供时）",
             value = vm.lyricPrefs.showRomaji,
             onChange = { vm.setShowRomaji(it) },
         )
@@ -429,18 +477,86 @@ private fun ColorInputRow(label: String, value: String, placeholder: String, onC
 
 @Composable
 private fun SyncPanel(vm: AppViewModel) {
-    SectionLabel("局域网同步")
+    var manualInput by rememberSaveable(vm.lanManualTarget) { mutableStateOf(vm.lanManualTarget) }
+    val localEndpoint = when {
+        vm.localLanIp.isNotEmpty() && vm.lanPort > 0 -> "${vm.localLanIp}:${vm.lanPort}"
+        vm.lanPort > 0 -> "0.0.0.0:${vm.lanPort}"
+        else -> "正在初始化…"
+    }
+    SectionLabel("本机信息与自动同步")
+    SettingsCard {
+        Row(
+            modifier = Modifier.fillMaxWidth().padding(18.dp),
+            verticalAlignment = Alignment.CenterVertically,
+            horizontalArrangement = Arrangement.spacedBy(12.dp),
+        ) {
+            RowCopy(
+                title = "本机局域网地址",
+                detail = if (vm.lanSsid.isNotEmpty()) "Wi‑Fi：${vm.lanSsid} · 其他设备可直连此地址" else "请确保设备连接同一局域网",
+                modifier = Modifier.weight(1f),
+            )
+            Text(localEndpoint, fontSize = 13.sp, fontWeight = FontWeight.Medium, color = ACCENT, maxLines = 1)
+        }
+        ToggleRow(
+            title = "同局域网自动同步歌单",
+            detail = "开启后与同样开启此项的设备自动合并歌单与喜欢列表（保留最新修改，不覆盖音源与设置）",
+            value = vm.lanAutoSync,
+            onChange = { vm.setLanAutoSync(it) },
+        )
+    }
+
+    SectionLabel("手动直连发送")
+    SettingsCard {
+        Column(
+            modifier = Modifier.fillMaxWidth().padding(18.dp),
+            verticalArrangement = Arrangement.spacedBy(12.dp),
+        ) {
+            RowCopy(
+                title = "输入目标 IP:端口",
+                detail = "广播被路由器隔离时，可直接填写接收端 IP（默认端口 41300）发送整份同步",
+            )
+            Row(
+                modifier = Modifier.fillMaxWidth(),
+                verticalAlignment = Alignment.CenterVertically,
+                horizontalArrangement = Arrangement.spacedBy(10.dp),
+            ) {
+                Box(
+                    Modifier
+                        .weight(1f)
+                        .height(42.dp)
+                        .clip(RoundedCornerShape(14.dp))
+                        .background(if (AppAppearance.light) Color(0x0D000000) else Color(0x14FFFFFF))
+                        .padding(horizontal = 14.dp),
+                    contentAlignment = Alignment.CenterStart,
+                ) {
+                    if (manualInput.isEmpty()) {
+                        Text("例如 192.168.1.20:41300", fontSize = 14.sp, color = MUTED, maxLines = 1)
+                    }
+                    BasicTextField(
+                        value = manualInput,
+                        cursorBrush = SolidColor(CONTROL_BLUE),
+                        onValueChange = { manualInput = it },
+                        singleLine = true,
+                        textStyle = TextStyle(color = TEXT, fontSize = 14.sp),
+                        modifier = Modifier.fillMaxWidth(),
+                    )
+                }
+                PillButton(
+                    label = if (vm.busy) "发送中…" else "发送",
+                    filled = true,
+                    enabled = !vm.busy && manualInput.trim().isNotEmpty(),
+                    onClick = { vm.sendDirect(manualInput) },
+                )
+            }
+        }
+    }
+
+    SectionLabel("附近设备")
     Text(
-        if (vm.lanSsid.isNotEmpty()) "本机 Wi‑Fi：${vm.lanSsid}" else "设备需连接同一局域网",
-        fontSize = 13.sp,
+        "发送后由对方确认接收，支持手机、平板与电脑之间双向同步。",
+        fontSize = 12.sp,
         color = MUTED,
-        modifier = Modifier.fillMaxWidth(),
-    )
-    Text(
-        "发送后由对方确认接收，支持任意设备之间双向同步。",
-        fontSize = 13.sp,
-        color = MUTED,
-        modifier = Modifier.fillMaxWidth().padding(top = 8.dp, bottom = 12.dp),
+        modifier = Modifier.fillMaxWidth().padding(start = 4.dp, bottom = 10.dp),
     )
     SettingsCard {
         if (vm.devices.isEmpty()) {
@@ -454,14 +570,21 @@ private fun SyncPanel(vm: AppViewModel) {
             }
         }
         vm.devices.forEach { device ->
+            val platformLabel = when (device.platform) {
+                "harmony" -> "HarmonyOS"
+                "android" -> "Android"
+                "win32", "windows" -> "Windows"
+                else -> device.platform
+            }
+            val meta = buildList {
+                add(platformLabel)
+                add("${device.address}:${device.port}")
+                if (device.ssid.isNotEmpty()) add(device.ssid)
+                if (device.autoSyncPlaylists) add("自动同步已开启")
+            }.joinToString(" · ")
             LinkRow(
                 title = device.name,
-                detail = when (device.platform) {
-                    "harmony" -> "HarmonyOS"
-                    "android" -> "Android"
-                    "win32", "windows" -> "Windows"
-                    else -> device.platform
-                } + if (device.ssid.isNotEmpty()) " · ${device.ssid}" else "",
+                detail = meta,
                 label = "发送",
                 onClick = { vm.send(device) },
             )
