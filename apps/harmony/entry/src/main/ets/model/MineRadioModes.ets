@@ -1,5 +1,5 @@
 // Generated from MineRadio's actual preset registry.
-export const MINE_STAGE_REVISION: string = 'bda16fac1607a042';
+export const MINE_STAGE_REVISION: string = '9606447e442e60b1';
 export interface MineRadioMode { id: string; label: string; }
 export const MINE_RADIO_MODES: MineRadioMode[] = [
   {

@@ -249,7 +249,7 @@
             stopThemeTransition();
             displayedTheme = null;
             defaultProperties.mineradioCustomTheme = null;
-            if (propertyReady) applyDefaultProperties();
+            if (propertyReady) applyPropertyPatch(['mineradioCustomTheme', 'schemecolor']);
             return;
           }
           var targetKey = mineradioThemeSignature(targetTheme);
@@ -259,7 +259,7 @@
             displayedTheme = targetTheme;
             defaultProperties.mineradioCustomTheme = targetTheme;
             defaultProperties.schemecolor = schemeColorFromHex(targetTheme.__primaryColor);
-            if (propertyReady) applyDefaultProperties();
+            if (propertyReady) applyPropertyPatch(['mineradioCustomTheme', 'schemecolor']);
             return;
           }
           var fromTheme = cloneMineradioTheme(displayedTheme || defaultProperties.mineradioCustomTheme) || targetTheme;
@@ -271,7 +271,7 @@
             displayedTheme = shown;
             defaultProperties.mineradioCustomTheme = shown;
             defaultProperties.schemecolor = schemeColorFromHex(shown.__primaryColor);
-            if (propertyReady) applyDefaultProperties();
+            if (propertyReady) applyPropertyPatch(['mineradioCustomTheme', 'schemecolor']);
             if (raw >= 1) stopThemeTransition();
           }
           stepThemeTransition();
@@ -311,16 +311,41 @@
           notifyMediaChange();
         };
 
+        function applyPropertyPatch(keys) {
+          if (!window.wallpaperPropertyListener || typeof window.wallpaperPropertyListener.applyUserProperties !== 'function') return false;
+          if (!keys || !keys.length) return true;
+          var out = {};
+          keys.forEach(function (key) {
+            out[key] = valueBox(defaultProperties[key]);
+          });
+          window.wallpaperPropertyListener.applyUserProperties(out);
+          return true;
+        }
+
         window.__mineradioApplyProperties = function (patch) {
           patch = patch || {};
           var hasThemePatch = Object.prototype.hasOwnProperty.call(patch, 'mineradioCustomTheme');
+          var changedKeys = [];
           Object.keys(patch).forEach(function (key) {
             if (key === 'mineradioCustomTheme') return;
             if (hasThemePatch && key === 'schemecolor') return;
-            if (Object.prototype.hasOwnProperty.call(defaultProperties, key)) defaultProperties[key] = patch[key];
+            if (Object.prototype.hasOwnProperty.call(defaultProperties, key) && defaultProperties[key] !== patch[key]) {
+              defaultProperties[key] = patch[key];
+              changedKeys.push(key);
+            }
           });
-          if (hasThemePatch) applyThemeTransition(patch.mineradioCustomTheme);
-          else if (propertyReady) applyDefaultProperties();
+          var themeChanged = false;
+          if (hasThemePatch) {
+            var nextSig = mineradioThemeSignature(patch.mineradioCustomTheme);
+            var curSig = mineradioThemeSignature(displayedTheme || defaultProperties.mineradioCustomTheme);
+            themeChanged = !displayedTheme || nextSig !== curSig;
+          }
+          if (themeChanged) {
+            if (propertyReady && changedKeys.length) applyPropertyPatch(changedKeys);
+            applyThemeTransition(patch.mineradioCustomTheme);
+          } else if (propertyReady && changedKeys.length) {
+            applyPropertyPatch(changedKeys);
+          }
         };
 
         window.addEventListener('message', function (event) {

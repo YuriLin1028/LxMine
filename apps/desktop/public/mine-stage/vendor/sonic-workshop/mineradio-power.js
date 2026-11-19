@@ -43,14 +43,32 @@
   }
 
   function resizeBuffers(active) {
-    // Do NOT mutate canvas.width/height to 1x1 behind React Three Fiber's back:
-    // mutating the WebGL drawing buffer corrupts R3F's camera/viewport on the 2nd visit.
-    // Pausing rAF when visible===false already drops GPU/CPU work to 0%.
+    document.querySelectorAll('canvas').forEach(canvas => {
+      if (active) {
+        const saved = sizes.get(canvas);
+        if (saved) {
+          canvas.width = saved.width;
+          canvas.height = saved.height;
+        }
+      } else {
+        if (canvas.width > 1 && canvas.height > 1) {
+          sizes.set(canvas, { width: canvas.width, height: canvas.height });
+        }
+        canvas.width = 1;
+        canvas.height = 1;
+      }
+    });
     if (active) {
       try { window.dispatchEvent(new Event('resize')); } catch (_) {}
-      nativeRequest(() => {
-        try { window.dispatchEvent(new Event('resize')); } catch (_) {}
-      });
+      const root = document.getElementById('root');
+      if (root) {
+        root.style.width = 'calc(100% - 1px)';
+        void root.offsetWidth;
+        nativeRequest(() => {
+          root.style.width = '100%';
+          try { window.dispatchEvent(new Event('resize')); } catch (_) {}
+        });
+      }
     }
   }
 

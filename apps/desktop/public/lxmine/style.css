@@ -879,15 +879,15 @@ body.phone-layout.detail-open #dock-controls [data-action="more"] { display: non
 /* #view 已全局全宽，首页不再需要单独的 :has 覆盖。 */
 .home-chips { position: sticky; top: 92px; z-index: 46; display: flex; gap: 10px; padding: 0 0 10px; }
 #app-header { z-index: 12; }
-/* 激活白底：隐藏玻璃表面层，否则深色玻璃会盖掉白色填充 */
+/* 激活天蓝底：隐藏玻璃表面层，否则深色玻璃会盖掉天蓝填充 */
 .home-chip.active .glass-surface { display: none; }
 .home-chip { flex: 1; display: inline-flex; align-items: center; justify-content: center; gap: 6px; height: 40px; border-radius: 20px; font-size: 14px; color: var(--text); background: transparent; border: none; cursor: pointer; padding: 0 6px; }
 .home-chip svg { width: 16px; height: 16px; }
 .home-chip.active { background: var(--accent); color: var(--on-accent, #081018); }
 .home-chip.active svg { color: var(--on-accent, #081018); }
-/* .glass:not(...) 的 transparent 背景特异性 (0,3,0) 会盖掉 (0,2,0) 的激活白底，提权覆盖 */
-.home-chip.glass.light.active { background: #F2F1F7 !important; color: #08090B !important; }
-.home-chip.glass.light.active svg { color: #08090B !important; }
+/* .glass:not(...) 的 transparent 背景特异性 (0,3,0) 会盖掉 (0,2,0) 的激活底色，提权覆盖 */
+.home-chip.glass.light.active { background: var(--accent) !important; color: var(--on-accent, #081018) !important; }
+.home-chip.glass.light.active svg { color: var(--on-accent, #081018) !important; }
 .home-chips-space { height: 8px; }
 .banner-section { margin-bottom: 34px; }
 /* 横幅卡不上浮：只抵消 .row-scroll 的 -6px margin，静止位置保持原样。 */

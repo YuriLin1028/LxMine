@@ -621,7 +621,7 @@
         const copy = $('#dock-copy');
         copy.classList.remove('swap'); void copy.offsetWidth; copy.classList.add('swap');
       }
-      $$('.for-you-card[data-song-key]').forEach(el => el.classList.toggle('playing', !!key && el.dataset.songKey === key));
+      $$('.for-you-card[data-song-key], .song-row[data-song-key], .queue-row[data-song-key]').forEach(el => el.classList.toggle('playing', !!key && el.dataset.songKey === key));
     }
     updateDock.lastKey = key;
     $('#dock-title').textContent = song ? song.name : '尚未播放';
@@ -2558,6 +2558,7 @@
     const isOnline = song && song.source !== 'local' && song.provider !== 'local';
     const item = h('div', 'song-item');
     const row = h('div', 'song-row');
+    if (songKey) row.dataset.songKey = songKey;
     const art = h('div', 'row-art');
     applyArtSurface(art, rawCoverOf(song), song.name || song.artist || '', 'music', songKey);
     const badge = srcBadge(song.source);
@@ -4791,6 +4792,7 @@
         const songKey = identity(song);
         const isOnline = song && song.source !== 'local' && song.provider !== 'local';
         const row = h('div', 'queue-row' + (index === S.queueIndex ? ' playing' : ''));
+        if (songKey) row.dataset.songKey = songKey;
         const art = h('div', 'art');
         applyArtSurface(art, rawCoverOf(song), song.name || song.artist || '', 'music', songKey);
         const badge = srcBadge(songSource(song) || song.source);
