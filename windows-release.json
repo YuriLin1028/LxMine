@@ -9,17 +9,17 @@
   "assets": [
     {
       "name": "LxMine-1.2.1-Portable.exe",
-      "size": 118949905,
+      "size": 118950841,
       "browser_download_url": "https://github.com/YuriLin1028/LxMine/releases/download/v1.2.1/LxMine-1.2.1-Portable.exe",
-      "digest": "sha256:6407012e8a8525412409dc75917b67119972ec4d8b77ccb75f83f06fb5b0018c",
-      "updated_at": "2026-11-20T05:51:22Z"
+      "digest": "sha256:026c4071941cb0aa4ea3c4a55b3a061121daac169a2b6932369e573b38384b6c",
+      "updated_at": "2026-11-20T07:17:00Z"
     },
     {
       "name": "LxMine-1.2.1-Setup.exe",
-      "size": 119526477,
+      "size": 119527489,
       "browser_download_url": "https://github.com/YuriLin1028/LxMine/releases/download/v1.2.1/LxMine-1.2.1-Setup.exe",
-      "digest": "sha256:9ee880e6146f4631c8fbe18a496cdd892e68f97a249c3a53742e60819db62de8",
-      "updated_at": "2026-11-20T05:51:20Z"
+      "digest": "sha256:35a447981644987fccf3684e94aeba7a3db641edaba1054097d85a4d888c7ca8",
+      "updated_at": "2026-11-20T07:17:03Z"
     }
   ]
 }
