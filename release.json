@@ -18,10 +18,22 @@
       "digest": "sha256:7ae473eb93b2fa0e66756d62066caec26da610b50e3b87d527640cf7ff2378f3"
     },
     {
+      "name": "LxMine-1.2.1-Portable.exe",
+      "size": 118947173,
+      "browser_download_url": "https://github.com/YuriLin1028/LxMine/releases/download/v1.2.1/LxMine-1.2.1-Portable.exe",
+      "digest": "sha256:f8d96c9d3c5e5901f44ce887d0e19f63fa04f53408de273fbae1a02994df6b14"
+    },
+    {
+      "name": "LxMine-1.2.1-Setup.exe",
+      "size": 119523615,
+      "browser_download_url": "https://github.com/YuriLin1028/LxMine/releases/download/v1.2.1/LxMine-1.2.1-Setup.exe",
+      "digest": "sha256:ede19f36bf4c66a1bf75855b3f4b03c9e56c3e59aaaea7cb4b4ec280b2d6e219"
+    },
+    {
       "name": "SHA256SUMS.txt",
-      "size": 189,
+      "size": 370,
       "browser_download_url": "https://github.com/YuriLin1028/LxMine/releases/download/v1.2.1/SHA256SUMS.txt",
-      "digest": "sha256:ea21e7fc4d24cb757e8654d3fed07aad7b64c91c9aa955d13cae50cb65964fbb"
+      "digest": "sha256:e86e7c41f0866bdae3dd697a7a9d33826b407522e552f7848a5dee78aea31c0b"
     }
   ]
 }
