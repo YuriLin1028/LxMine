@@ -1,0 +1,18 @@
+{
+  "platform": "harmony-hap",
+  "tag_name": "v1.2.1",
+  "html_url": "https://github.com/YuriLin1028/LxMine/releases/tag/v1.2.1",
+  "published_at": "2026-11-20T01:44:06Z",
+  "body": "## LxMine v1.2.1 更新日志\n\n### 新增与优化\n- **播放页背景自定义（三端同步）**：设置 → 播放新增「播放页背景透明度（0%–100% 实时滑动 + 一键恢复默认）」与「播放页自定义背景图（选择本地图片 / 一键恢复默认专辑封面）」，所有动效模式（含音乐回响工坊）及关闭动效模式均实时生效。\n- **自定义背景图实时取色**：切换自定义背景图后，音乐回响工坊、地形、粒子、星云及取色歌词均自动提取自定义图主色板；恢复默认后切回专辑封面取色。\n- **音乐回响工坊稳定性彻底修复**：修复二次进入画布错位/歪斜与旋转卡顿，支持 WebGL 视口与 ResizeObserver 双重重建恢复。\n- **Windows 细节修复**：首页置顶栏激活态统一天蓝色、切歌列表高亮实时同步、浅色模式提示条高对比度适配、搜索图标恢复显示。",
+  "draft": false,
+  "prerelease": false,
+  "assets": [
+    {
+      "name": "LxMine-1.2.1-HiCar-unsigned.hap",
+      "size": 15161608,
+      "browser_download_url": "https://github.com/YuriLin1028/LxMine/releases/download/v1.2.1/LxMine-1.2.1-HiCar-unsigned.hap",
+      "digest": "sha256:7ae473eb93b2fa0e66756d62066caec26da610b50e3b87d527640cf7ff2378f3",
+      "updated_at": "2026-11-20T01:56:45Z"
+    }
+  ]
+}
