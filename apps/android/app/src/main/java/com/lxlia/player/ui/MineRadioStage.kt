@@ -52,6 +52,8 @@ fun MineRadioStage(
     lyricScale: Float = 1f,
     mode: String,
     light: Boolean,
+    bgImage: String = "",
+    bgOpacity: Float = 0.78f,
     duration: Long,
     lyricOffset: Long,
     playing: Boolean,
@@ -151,6 +153,8 @@ fun MineRadioStage(
             data.put("name", song.name)
             data.put("singer", song.singer)
             data.put("cover", app.server.coverProxy(song.coverUrl))
+            data.put("bgImage", bgImage)
+            data.put("bgOpacity", bgOpacity.coerceIn(0f, 1f).toDouble())
             data.put("duration", duration)
             data.put("lyricOffset", lyricOffset)
             data.put("lyricScale", lyricScale.coerceIn(0.75f, 1.40f).toDouble())
@@ -169,7 +173,7 @@ fun MineRadioStage(
     val latestPush = rememberUpdatedState<(WebView?, Boolean, Boolean) -> Unit> { target, metadata, clock -> push(target, metadata, clock) }
 
     // 元数据变化（换歌/换词/换配色/字号）时整体下发；时钟按播放状态与进度跳变下发。
-    LaunchedEffect(ready, song.key, audioUrl, lines, translationLines, lyricColorMode, lyricPrimary, lyricSecondary, lyricScale, mode, light, duration, lyricOffset, topInset, bottomInset) {
+    LaunchedEffect(ready, song.key, audioUrl, lines, translationLines, lyricColorMode, lyricPrimary, lyricSecondary, lyricScale, mode, light, bgImage, bgOpacity, duration, lyricOffset, topInset, bottomInset) {
         if (!ready) return@LaunchedEffect
         push(webView, metadata = true, clock = true)
     }

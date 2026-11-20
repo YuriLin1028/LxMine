@@ -234,6 +234,71 @@ private fun SettingsMainPanel(vm: AppViewModel) {
             current = vm.styleName,
             onSelect = { vm.setStyleName(it) },
         )
+        val pickBgLauncher = androidx.activity.compose.rememberLauncherForActivityResult(
+            contract = androidx.activity.result.contract.ActivityResultContracts.GetContent(),
+        ) { uri -> if (uri != null) vm.importStageBgImage(uri) }
+        Column(
+            modifier = Modifier.fillMaxWidth().padding(horizontal = 18.dp, vertical = 14.dp),
+            verticalArrangement = Arrangement.spacedBy(6.dp),
+        ) {
+            Row(
+                modifier = Modifier.fillMaxWidth(),
+                horizontalArrangement = Arrangement.SpaceBetween,
+                verticalAlignment = Alignment.CenterVertically,
+            ) {
+                RowCopy(
+                    title = "播放页背景透明度",
+                    detail = "实时调节封面或自定义背景图的透明程度，所有动效模式生效",
+                    modifier = Modifier.weight(1f),
+                )
+                Text(
+                    "${(vm.stageBgOpacity * 100).roundToInt()}%",
+                    fontSize = 13.sp,
+                    fontWeight = FontWeight.Medium,
+                    color = ACCENT,
+                )
+            }
+            androidx.compose.material3.Slider(
+                value = vm.stageBgOpacity,
+                onValueChange = { vm.updateStageBgOpacity(it) },
+                valueRange = 0f..1f,
+                colors = androidx.compose.material3.SliderDefaults.colors(
+                    thumbColor = Color.White,
+                    activeTrackColor = ACCENT,
+                ),
+            )
+        }
+        Row(
+            modifier = Modifier.fillMaxWidth().padding(horizontal = 18.dp, vertical = 14.dp),
+            horizontalArrangement = Arrangement.spacedBy(8.dp),
+            verticalAlignment = Alignment.CenterVertically,
+        ) {
+            RowCopy(
+                title = "播放页自定义背景图",
+                detail = if (vm.stageBgImagePath.isNotEmpty()) "已启用自定义背景图（所有播放页模式生效）" else "默认跟随当前歌曲专辑封面",
+                modifier = Modifier.weight(1f),
+            )
+            Box(
+                modifier = Modifier
+                    .clip(RoundedCornerShape(16.dp))
+                    .background(ACCENT)
+                    .clickable { pickBgLauncher.launch("image/*") }
+                    .padding(horizontal = 12.dp, vertical = 7.dp),
+            ) {
+                Text("选择图片", fontSize = 12.sp, fontWeight = FontWeight.Medium, color = Color(0xFF081018))
+            }
+            if (vm.stageBgImagePath.isNotEmpty()) {
+                Box(
+                    modifier = Modifier
+                        .clip(RoundedCornerShape(16.dp))
+                        .background(if (AppAppearance.light) Color(0x14000000) else Color(0x18FFFFFF))
+                        .clickable { vm.clearStageBgImage() }
+                        .padding(horizontal = 12.dp, vertical = 7.dp),
+                ) {
+                    Text("恢复默认", fontSize = 12.sp, color = TEXT)
+                }
+            }
+        }
         ToggleRow(
             title = "旋转锁定时允许播放页横屏",
             detail = "开启后即使系统开启竖屏锁定，横置手机仍可进入横屏沉浸播放；关闭则跟随系统方向锁定",

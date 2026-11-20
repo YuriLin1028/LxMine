@@ -24,6 +24,7 @@
 
   const defaults = {
     tab: 'home', homePlatform:'wy', quality: '128k', mode: '列表循环', styleName: 'mine-7', appearance: 'system', lyricOffset: 0,
+    stageBgOpacity: 0.78,
     resumeOnStartup: false, startupAnimation: false, refreshAlgoOnDoubleTap: true, algoRefreshSeed: 0,
     desktopLyrics: false, desktopLyricsLocked:false, wallpaperMode: false, closeToTray: false, launchAtStartup: false, lanAutoSync: false, favorites: [], recentlyPlayed: [], searchHistory: [], volume: 1,
     lyricShowTranslation: true, lyricShowRomaji: false, lyricFontSize: 1,
@@ -50,6 +51,9 @@
   });
   S.recentlyPlayed = Array.isArray(S.recentlyPlayed) ? S.recentlyPlayed.filter(song => song && song.id && song.name) : [];
   S.lyricOffset = Number(S.lyricOffset) || 0;
+  S.stageBgOpacity = Number.isFinite(Number(S.stageBgOpacity)) ? Math.max(0, Math.min(1, Number(S.stageBgOpacity))) : 0.78;
+  S.stageBgImage = '';
+  try { S.stageBgImage = localStorage.getItem(STORE_KEY + '.stageBgImage') || ''; } catch (_) {}
   S.refreshAlgoOnDoubleTap = S.refreshAlgoOnDoubleTap !== false;
   S.algoRefreshSeed = Math.max(0, Math.floor(Number(S.algoRefreshSeed) || 0));
   S.volume = Number(S.volume);
@@ -82,6 +86,7 @@
     try {
       localStorage.setItem(STORE_KEY, JSON.stringify({
         tab: S.tab, homePlatform:S.homePlatform, quality: S.quality, mode: S.mode, styleName: S.styleName,
+        stageBgOpacity: S.stageBgOpacity,
         lyricOffset: S.lyricOffset, appearance: S.appearance, resumeOnStartup: S.resumeOnStartup === true, startupAnimation: S.startupAnimation,
         refreshAlgoOnDoubleTap: S.refreshAlgoOnDoubleTap !== false, algoRefreshSeed: S.algoRefreshSeed,
         desktopLyrics: S.desktopLyrics, desktopLyricsLocked:S.desktopLyricsLocked, wallpaperMode: S.wallpaperMode, closeToTray: S.closeToTray, launchAtStartup: S.launchAtStartup, lanAutoSync: S.lanAutoSync === true,
@@ -346,6 +351,8 @@
       lyricOffset: Number(S.lyricOffset) || 0,
       lyricScale: Math.max(0.75, Math.min(1.4, Number(S.lyricFontSize) || 1)),
       appearance: document.body.classList.contains('light-theme') ? 'light' : 'dark',
+      bgImage: S.stageBgImage || '',
+      bgOpacity: S.stageBgOpacity,
       topInset: 0,
       bottomInset: 0
     };
@@ -360,13 +367,80 @@
     S.wallpaperStage = data;
     if (S.wallpaperMode) window.desktopWindow?.updateWallpaperMode?.({ stage: data, clock: { positionMs: S.position, playing: !!S.playing } }).catch(() => {});
   }
-  function setStageSong(song) {
-    refreshLyricPalette(song && song.cover);
+  function applyStageFallbackBg(song) {
     const fallback = document.getElementById('stage-fallback');
-    if (fallback) {
-      const cover = song && song.cover ? coverUrl(song.cover) : '';
+    if (!fallback) return;
+    const op = Math.max(0, Math.min(1, Number(S.stageBgOpacity)));
+    const hasCustom = !!(S.stageBgImage && S.stageBgImage.length > 0);
+    fallback.classList.toggle('has-custom-bg', hasCustom);
+    if (hasCustom) {
+      fallback.style.backgroundImage = 'url("' + S.stageBgImage.replace(/"/g, '%22') + '")';
+    } else {
+      const cur = song !== undefined ? song : S.current;
+      const cover = cur && cur.cover ? coverUrl(cur.cover) : '';
       fallback.style.backgroundImage = cover ? 'url("' + cover.replace(/"/g, '%22') + '")' : 'none';
     }
+    fallback.style.opacity = op.toFixed(3);
+  }
+  function pushStageBackground() {
+    applyStageFallbackBg();
+    const payload = { bgImage: S.stageBgImage || '', bgOpacity: S.stageBgOpacity };
+    for (const target of stageWindowsForUpdate()) {
+      try {
+        if (typeof target.lxmineStage?.setBackground === 'function') target.lxmineStage.setBackground(payload);
+      } catch (_) {}
+    }
+    if (S.wallpaperMode && S.wallpaperStage) {
+      S.wallpaperStage = Object.assign({}, S.wallpaperStage, payload);
+      window.desktopWindow?.updateWallpaperMode?.({ stage: S.wallpaperStage, clock: { positionMs: S.position, playing: !!S.playing } }).catch(() => {});
+    }
+  }
+  function saveStageBgImage(dataUrl) {
+    S.stageBgImage = dataUrl || '';
+    try {
+      if (S.stageBgImage) localStorage.setItem(STORE_KEY + '.stageBgImage', S.stageBgImage);
+      else localStorage.removeItem(STORE_KEY + '.stageBgImage');
+    } catch (_) {
+      notify('图片过大，无法持久保存');
+    }
+    pushStageBackground();
+  }
+  function pickStageBgImage(onDone) {
+    const input = document.createElement('input');
+    input.type = 'file';
+    input.accept = 'image/*';
+    input.onchange = () => {
+      const file = input.files && input.files[0];
+      if (!file) return;
+      const reader = new FileReader();
+      reader.onload = () => {
+        const raw = String(reader.result || '');
+        const img = new Image();
+        img.onload = () => {
+          try {
+            const maxDim = 1920;
+            const scale = Math.min(1, maxDim / Math.max(img.width || 1, img.height || 1));
+            const canvas = document.createElement('canvas');
+            canvas.width = Math.max(1, Math.round((img.width || 1) * scale));
+            canvas.height = Math.max(1, Math.round((img.height || 1) * scale));
+            canvas.getContext('2d').drawImage(img, 0, 0, canvas.width, canvas.height);
+            saveStageBgImage(canvas.toDataURL('image/jpeg', 0.86));
+          } catch (_) {
+            saveStageBgImage(raw);
+          }
+          notify('已更新播放页自定义背景图');
+          if (onDone) onDone();
+        };
+        img.onerror = () => notify('图片读取失败');
+        img.src = raw;
+      };
+      reader.readAsDataURL(file);
+    };
+    input.click();
+  }
+  function setStageSong(song) {
+    refreshLyricPalette(song && song.cover);
+    applyStageFallbackBg(song);
     pushStageMetadata();
   }
   function pushStageClock(force) {
@@ -3518,6 +3592,49 @@
     playbackCard.appendChild(settingSelect('MineRadio 动效', '仅播放页生效，关闭后保留模糊封面与纯文字歌词', MINE_STYLES, S.styleName, value => {
       S.styleName = value; saveStore(); pushStageMetadata(); notify('动效：' + (MINE_STYLES.find(item => item[0] === value) || [])[1]);
     }));
+    const bgOpRow = h('div', 'setting-row');
+    const bgOpCopy = h('div', 'copy');
+    bgOpCopy.appendChild(h('strong', '', '播放页背景透明度'));
+    bgOpCopy.appendChild(h('small', '', '实时调节封面或自定义背景图的透明程度，所有动效模式生效'));
+    const bgOpCtrl = h('div', 'bg-opacity-ctrl');
+    const bgOpVal = h('span', 'bg-opacity-val', Math.round(S.stageBgOpacity * 100) + '%');
+    const bgOpSlider = h('input', 'bg-opacity-slider');
+    bgOpSlider.type = 'range'; bgOpSlider.min = '0'; bgOpSlider.max = '100'; bgOpSlider.step = '1';
+    bgOpSlider.value = String(Math.round(S.stageBgOpacity * 100));
+    bgOpSlider.oninput = () => {
+      S.stageBgOpacity = Math.max(0, Math.min(1, Number(bgOpSlider.value) / 100));
+      bgOpVal.textContent = Math.round(S.stageBgOpacity * 100) + '%';
+      pushStageBackground();
+    };
+    bgOpSlider.onchange = () => saveStore();
+    bgOpCtrl.append(bgOpSlider, bgOpVal);
+    bgOpRow.append(bgOpCopy, bgOpCtrl);
+    playbackCard.appendChild(bgOpRow);
+
+    const bgImgRow = h('div', 'setting-row');
+    const bgImgCopy = h('div', 'copy');
+    bgImgCopy.appendChild(h('strong', '', '播放页自定义背景图'));
+    const bgImgSub = h('small', '', S.stageBgImage ? '已启用自定义背景图（所有播放页模式生效）' : '默认跟随当前歌曲专辑封面');
+    bgImgCopy.appendChild(bgImgSub);
+    const bgImgActs = h('div', 'bg-img-actions');
+    const bgPickBtn = h('button', 'pill-btn accent', '选择图片');
+    bgPickBtn.type = 'button';
+    const bgResetBtn = h('button', 'pill-btn', '恢复默认');
+    bgResetBtn.type = 'button';
+    bgResetBtn.style.display = S.stageBgImage ? '' : 'none';
+    bgPickBtn.onclick = () => pickStageBgImage(() => {
+      bgImgSub.textContent = '已启用自定义背景图（所有播放页模式生效）';
+      bgResetBtn.style.display = '';
+    });
+    bgResetBtn.onclick = () => {
+      saveStageBgImage('');
+      bgImgSub.textContent = '默认跟随当前歌曲专辑封面';
+      bgResetBtn.style.display = 'none';
+      notify('已恢复默认专辑封面背景');
+    };
+    bgImgActs.append(bgPickBtn, bgResetBtn);
+    bgImgRow.append(bgImgCopy, bgImgActs);
+    playbackCard.appendChild(bgImgRow);
     root.appendChild(playbackCard);
 
     root.appendChild(h('div', 'setting-title', '歌词'));

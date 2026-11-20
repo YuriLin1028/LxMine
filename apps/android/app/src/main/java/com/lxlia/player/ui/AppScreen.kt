@@ -277,6 +277,8 @@ fun AppScreen(
                                     coverUrl = viewModel.selected?.coverUrl.orEmpty(),
                                     colorFirst = colorFirst,
                                     colorLast = colorLast,
+                                    bgImage = viewModel.stageBgImagePath,
+                                    bgOpacity = viewModel.stageBgOpacity,
                                 )
                               }
                                 val selected = viewModel.selected ?: stagePlaceholder
@@ -297,6 +299,8 @@ fun AppScreen(
                                                 lyricScale = viewModel.lyricPrefs.lyricScale,
                                                 mode = if (plain) "off" else viewModel.dynamicStyle,
                                                 light = light,
+                                                bgImage = viewModel.stageBgDataUrl,
+                                                bgOpacity = viewModel.stageBgOpacity,
                                                 duration = viewModel.duration,
                                                 lyricOffset = viewModel.lyricOffset,
                                                 playing = viewModel.playing && viewModel.foreground,

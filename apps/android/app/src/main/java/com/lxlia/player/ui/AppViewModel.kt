@@ -365,6 +365,9 @@ class AppViewModel(internal val app: LxMineApp) : ViewModel() {
             if (value != "off") dynamicStyle = value
         }
     var appearance by mutableStateOf("system")
+    var stageBgOpacity by mutableStateOf(0.78f)
+    var stageBgImagePath by mutableStateOf("")
+    var stageBgDataUrl by mutableStateOf("")
     var stageMounted by mutableStateOf(false)
     var dynamicStageMounted by mutableStateOf(false)
     var plainStageMounted by mutableStateOf(false)
@@ -679,6 +682,8 @@ class AppViewModel(internal val app: LxMineApp) : ViewModel() {
         }
         (settings["lxlia_audio_quality"] as? String)?.takeIf { it in listOf("128k", "320k", "flac") }?.let { quality = it }
         (settings["lxlia_native_style"] as? String)?.takeIf { com.lxlia.player.model.MINE_RADIO_MODES.any { mode -> mode.id == it } }?.let { styleName = it }
+        (settings["lxmine_stage_bg_opacity"] as? Number)?.toFloat()?.let { stageBgOpacity = it.coerceIn(0f, 1f) }
+        loadCustomStageBgImage()
         (settings["lxlia_play_mode"] as? String)?.takeIf { it in PlaybackController.modeValues }?.let {
             mode = it
             PlaybackController.setMode(it)
@@ -695,6 +700,70 @@ class AppViewModel(internal val app: LxMineApp) : ViewModel() {
         PlaybackController.setLyricOffset(lyricOffset)
     }
 
+    private fun stageBgFile(): java.io.File = java.io.File(app.filesDir, "custom_stage_bg.jpg")
+
+    private fun loadCustomStageBgImage() {
+        val file = stageBgFile()
+        if (!file.exists() || file.length() <= 0L) return
+        viewModelScope.launch(Dispatchers.IO) {
+            try {
+                val bytes = file.readBytes()
+                val b64 = android.util.Base64.encodeToString(bytes, android.util.Base64.NO_WRAP)
+                withContext(Dispatchers.Main) {
+                    stageBgImagePath = file.absolutePath
+                    stageBgDataUrl = "data:image/jpeg;base64,$b64"
+                }
+            } catch (_: Throwable) {}
+        }
+    }
+
+    fun updateStageBgOpacity(value: Float) {
+        stageBgOpacity = value.coerceIn(0f, 1f)
+        save()
+    }
+
+    fun importStageBgImage(uri: android.net.Uri) {
+        viewModelScope.launch(Dispatchers.IO) {
+            try {
+                val raw = app.contentResolver.openInputStream(uri)?.use { it.readBytes() } ?: return@launch
+                val decoded = android.graphics.BitmapFactory.decodeByteArray(raw, 0, raw.size) ?: return@launch
+                val maxDim = 1920
+                val scale = minOf(1f, maxDim.toFloat() / maxOf(decoded.width, decoded.height).coerceAtLeast(1))
+                val bmp = if (scale < 0.99f) {
+                    android.graphics.Bitmap.createScaledBitmap(
+                        decoded,
+                        (decoded.width * scale).toInt().coerceAtLeast(1),
+                        (decoded.height * scale).toInt().coerceAtLeast(1),
+                        true,
+                    )
+                } else decoded
+                val out = java.io.ByteArrayOutputStream()
+                bmp.compress(android.graphics.Bitmap.CompressFormat.JPEG, 86, out)
+                if (bmp !== decoded) bmp.recycle()
+                decoded.recycle()
+                val jpegBytes = out.toByteArray()
+                val file = stageBgFile()
+                file.writeBytes(jpegBytes)
+                val b64 = android.util.Base64.encodeToString(jpegBytes, android.util.Base64.NO_WRAP)
+                withContext(Dispatchers.Main) {
+                    stageBgImagePath = file.absolutePath
+                    stageBgDataUrl = "data:image/jpeg;base64,$b64"
+                    notify("已更新播放页自定义背景图")
+                }
+            } catch (_: Throwable) {
+                withContext(Dispatchers.Main) { notify("背景图读取失败") }
+            }
+        }
+    }
+
+    fun clearStageBgImage() {
+        val file = stageBgFile()
+        runCatching { if (file.exists()) file.delete() }
+        stageBgImagePath = ""
+        stageBgDataUrl = ""
+        notify("已恢复默认专辑封面背景")
+    }
+
     internal suspend fun persist() = appDataMutex.withLock {
         settings["lxmine_lyrics"] = lyricPrefs.toJson().toString()
         settings["lxmine_lyric_scale"] = Math.round(lyricPrefs.lyricScale * 100.0) / 100.0
@@ -708,6 +777,7 @@ class AppViewModel(internal val app: LxMineApp) : ViewModel() {
         settings["lxlia_startup_animation"] = startupAnimation
         settings["lxlia_audio_quality"] = quality
         settings["lxlia_native_style"] = styleName
+        settings["lxmine_stage_bg_opacity"] = stageBgOpacity.toDouble()
         settings["lxmine_appearance"] = appearance
         settings["lxlia_play_mode"] = mode
         settings["lxlia_lyric_offset"] = lyricOffset

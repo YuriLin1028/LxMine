@@ -10,7 +10,7 @@ import { displaySync } from '@kit.ArkGraphics2D';
 import { display } from '@kit.ArkUI';
 
 interface StageLyricColors { primary: string; secondary: string; highlight: string; glow: string; }
-interface MineRadioMetadata { translationLines: LyricLine[]; lyricColorMode: string; lyricColors: StageLyricColors; id: string; audioUrl: string; mode: string; appearance: string; lines: LyricLine[]; name: string; singer: string; cover: string; duration: number; lyricOffset: number; lyricScale: number; topInset: number; bottomInset: number; }
+interface MineRadioMetadata { translationLines: LyricLine[]; lyricColorMode: string; lyricColors: StageLyricColors; id: string; audioUrl: string; mode: string; appearance: string; lines: LyricLine[]; name: string; singer: string; cover: string; bgImage: string; bgOpacity: number; duration: number; lyricOffset: number; lyricScale: number; topInset: number; bottomInset: number; }
 class StageInputHost {
   onSeek: (time: number) => void = () => {};
   onReady: () => void = () => {};
@@ -33,6 +33,8 @@ export struct MineRadioStage {
   @Prop @Watch('metadataChanged') lyricPrimary: string = '#7DD3FC';
   @Prop @Watch('metadataChanged') lyricSecondary: string = '#A5B4FC';
   @Prop @Watch('metadataChanged') light: boolean = false;
+  @Prop @Watch('metadataChanged') bgImage: string = '';
+  @Prop @Watch('metadataChanged') bgOpacity: number = 0.78;
   @Prop @Watch('modeChanged') mode: string = 'mine-0';
   @Prop @Watch('metadataChanged') duration: number = 0;
   @Prop @Watch('metadataChanged') lyricOffset: number = 0;
@@ -131,7 +133,7 @@ export struct MineRadioStage {
     clearTimeout(this.metadataTimer);
     if (!this.ready) return;
     const data: MineRadioMetadata = { translationLines: this.translationLines, lyricColorMode: this.lyricColorMode, lyricColors: { primary: this.lyricPrimary, secondary: this.lyricSecondary, highlight: this.lyricSecondary, glow: this.lyricSecondary }, id: `${this.song.source}:${this.song.id}`, audioUrl: this.plain ? '' : this.audioProxy.source(this.audioUrl), mode: this.mode, lines: this.lines, name: this.song.name, singer: this.song.singer,
-      cover: this.song.coverUrl, appearance: this.light ? 'light' : 'dark', duration: this.duration, lyricOffset: this.lyricOffset, lyricScale: this.lyricScale, topInset: this.topInset, bottomInset: this.bottomInset };
+      cover: this.song.coverUrl, bgImage: this.bgImage, bgOpacity: this.bgOpacity, appearance: this.light ? 'light' : 'dark', duration: this.duration, lyricOffset: this.lyricOffset, lyricScale: this.lyricScale, topInset: this.topInset, bottomInset: this.bottomInset };
       const metadataJson = JSON.stringify(data);
       const metadataCall = metadataJson !== this.lastMetadataJson ? `window.lxmineStage?.metadata(${metadataJson});` : '';
       this.lastMetadataJson = metadataJson;

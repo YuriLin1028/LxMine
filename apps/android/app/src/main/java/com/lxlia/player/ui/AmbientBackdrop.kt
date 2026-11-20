@@ -25,21 +25,38 @@ fun AmbientBackdrop(
     coverUrl: String,
     colorFirst: Color,
     colorLast: Color,
+    bgImage: String = "",
+    bgOpacity: Float = 0.78f,
 ) {
+    val effOpacity = bgOpacity.coerceIn(0f, 1f)
     Box(Modifier.fillMaxSize().background(if (AppAppearance.light) Color(0xFFD0D4DB) else INK)) {
-        if (coverUrl.isNotEmpty()) {
+        if (bgImage.isNotEmpty()) {
             val context = androidx.compose.ui.platform.LocalContext.current
             coil.compose.AsyncImage(
-                model = remember(context, coverUrl) { coil.request.ImageRequest.Builder(context)
-                    .data(coverUrl)
-                    .size(512, 512)
+                model = remember(context, bgImage) { coil.request.ImageRequest.Builder(context)
+                    .data(java.io.File(bgImage))
                     .crossfade(false)
                     .build() },
                 contentDescription = null,
                 contentScale = ContentScale.Crop,
-                modifier = Modifier.fillMaxSize().blur(36.dp).alpha(if (AppAppearance.light) 0.32f else 0.82f),
+                modifier = Modifier.fillMaxSize().alpha(effOpacity),
             )
+            Box(Modifier.fillMaxSize().background(if (AppAppearance.light) Color(0x38EBF0F6) else Color(0x420C0E12)))
+        } else {
+            if (coverUrl.isNotEmpty()) {
+                val context = androidx.compose.ui.platform.LocalContext.current
+                coil.compose.AsyncImage(
+                    model = remember(context, coverUrl) { coil.request.ImageRequest.Builder(context)
+                        .data(coverUrl)
+                        .size(512, 512)
+                        .crossfade(false)
+                        .build() },
+                    contentDescription = null,
+                    contentScale = ContentScale.Crop,
+                    modifier = Modifier.fillMaxSize().blur(36.dp).alpha(effOpacity),
+                )
+            }
+            Box(Modifier.fillMaxSize().background(if (AppAppearance.light) Color(0x59C8CDD4) else Color(0x9E151619)))
         }
-        Box(Modifier.fillMaxSize().background(if (AppAppearance.light) Color(0x59C8CDD4) else Color(0x9E151619)))
     }
 }

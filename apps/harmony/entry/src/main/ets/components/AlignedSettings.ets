@@ -18,6 +18,8 @@ export struct AlignedSettings {
   @Prop quality: string = '128k';
   @Prop mode: string = '列表循环';
   @Prop styleName: string = 'mine-7';
+  @Prop stageBgOpacity: number = 0.78;
+  @Prop stageBgCustom: boolean = false;
   @Prop appearance: string = 'system';
   @Prop startupAnimation: boolean = true;
   @Prop resumeOnStartup: boolean = false;
@@ -58,6 +60,9 @@ export struct AlignedSettings {
   onQuality: (value: string) => void = () => {};
   onMode: (value: string) => void = () => {};
   onStyle: (value: string) => void = () => {};
+  onStageBgOpacity: (value: number) => void = () => {};
+  onPickStageBgImage: () => void = () => {};
+  onClearStageBgImage: () => void = () => {};
   onAppearance: (value: string) => void = () => {};
   onResume: (value: boolean) => void = () => {};
   onStartup: (value: boolean) => void = () => {};
@@ -103,6 +108,26 @@ export struct AlignedSettings {
       this.select({ title: '音质', detail: '播放和下载优先使用该档位', labels: ['标准 128k', '高品质 320k', '无损 flac'], values: ['128k', '320k', 'flac'], current: this.quality, action: this.onQuality })
       this.select({ title: '播放顺序', detail: '列表循环 / 单曲 / 随机 / 顺序', labels: ['列表循环', '单曲循环', '随机播放', '顺序播放'], values: ['列表循环', '单曲循环', '随机播放', '顺序播放'], current: this.mode, action: this.onMode })
       this.select({ title: 'MineRadio 动效', detail: '仅播放页生效，关闭后保留模糊封面与纯文字歌词', labels: MINE_RADIO_MODES.map((mode: MineRadioMode) => mode.label), values: MINE_RADIO_MODES.map((mode: MineRadioMode) => mode.id), current: this.styleName, action: this.onStyle })
+      Column({ space: 8 }) {
+        Row({ space: 10 }) {
+          this.copy({ title: '播放页背景透明度', detail: '实时调节封面或自定义背景图的透明程度，所有动效模式生效' })
+          Text(`${Math.round(this.stageBgOpacity * 100)}%`).fontSize(13).fontWeight(FontWeight.Medium).fontColor(ACCENT)
+        }.width('100%')
+        Slider({ value: Math.round(this.stageBgOpacity * 100), min: 0, max: 100, step: 1 })
+          .width('100%').selectedColor(ACCENT).blockColor('#FFFFFF')
+          .onChange((value: number) => this.onStageBgOpacity(Math.max(0, Math.min(1, value / 100))))
+      }.width('100%').padding({ left: 18, right: 18, top: 14, bottom: 10 })
+      Row({ space: 10 }) {
+        this.copy({ title: '播放页自定义背景图', detail: this.stageBgCustom ? '已启用自定义背景图（所有播放页模式生效）' : '默认跟随当前歌曲专辑封面' })
+        Row({ space: 8 }) {
+          Button('选择图片').height(32).fontSize(12).fontColor('#081018').backgroundColor(ACCENT).borderRadius(16)
+            .padding({ left: 12, right: 12 }).onClick(() => this.onPickStageBgImage())
+          if (this.stageBgCustom) {
+            Button('恢复默认').height(32).fontSize(12).fontColor(TEXT).backgroundColor('#1E808898').borderRadius(16)
+              .padding({ left: 12, right: 12 }).onClick(() => this.onClearStageBgImage())
+          }
+        }
+      }.width('100%').padding({ left: 18, right: 14, top: 14, bottom: 14 })
       this.toggle({ title: '旋转锁定时允许播放页横屏', detail: '开启后即使系统开启竖屏锁定，横置手机仍可进入沉浸横屏；关闭则跟随系统方向锁定', value: this.allowLandscapeLocked, action: this.onAllowLandscapeLocked })
       this.toggle({ title: '允许与其他应用同时播放', detail: '开启后与其他视频、游戏或导航等应用混音播放，互不打断', value: this.mixWithOthers, action: this.onMixWithOthers })
     }.width('100%').backgroundColor($r('app.color.card_surface')).borderRadius(20)

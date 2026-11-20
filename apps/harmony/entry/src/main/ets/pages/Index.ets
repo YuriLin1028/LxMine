@@ -206,6 +206,8 @@ struct Index {
   @State private quality: string = '128k';
   @State private libraryMosaicSeed: number = 0;
   @State @Watch('visualStyleChanged') private styleName: string = 'mine-0';
+  @State private stageBgOpacity: number = 0.78;
+  @State private stageBgImage: string = '';
   @State @Watch('applyAppearance') private appearance: string = 'system';
   @State private mode: string = '列表循环';
   @State private lyricOffset: number = 0;
@@ -1131,6 +1133,9 @@ struct Index {
     if (typeof quality === 'string' && ['128k', '320k', 'flac'].includes(quality)) this.quality = quality;
     const style = this.settings['lxlia_native_style'];
     if (typeof style === 'string' && MINE_RADIO_MODES.some((mode: MineRadioMode) => mode.id === style)) this.styleName = style;
+    const bgOp = this.settings['lxmine_stage_bg_opacity'];
+    if (typeof bgOp === 'number' && Number.isFinite(bgOp)) this.stageBgOpacity = Math.max(0, Math.min(1, bgOp));
+    this.loadCustomStageBgImage();
     const mode = this.settings['lxlia_play_mode'];
     const platform=this.settings['lxmine_home_platform'];if(typeof platform==='string'&&['wy','tx','kw','kg'].includes(platform))this.homePlatform=platform;
     if (typeof mode === 'string' && ['列表循环', '单曲循环', '随机播放', '顺序播放'].includes(mode)) this.mode = mode;
@@ -1157,10 +1162,67 @@ struct Index {
     this.settings['lxlia_grip_enabled'] = this.gripEnabled;
     this.settings['lxlia_startup_animation'] = this.startupAnimation;
     this.settings['lxlia_audio_quality'] = this.quality; this.settings['lxlia_native_style'] = this.styleName;
+    this.settings['lxmine_stage_bg_opacity'] = this.stageBgOpacity;
     this.settings['lxlia_play_mode'] = this.mode; this.settings['lxlia_lyric_offset'] = this.lyricOffset;
     const data: AppData = { sourceScript: this.sources.find((source: SyncSourcePayload) => source.id === this.activeId)?.script ?? '',
       sourcesJson: JSON.stringify(this.sources), activeSourceId: this.activeId, settingsJson: JSON.stringify(this.settings), playlistsJson: JSON.stringify(this.playlists) };
     await saveAppData(data);
+  }
+  private stageBgFilePath(): string {
+    const ctx = this.getUIContext().getHostContext() as common.UIAbilityContext | undefined;
+    return ctx ? `${ctx.filesDir}/custom_stage_bg.dataurl` : '';
+  }
+  private loadCustomStageBgImage(): void {
+    const path = this.stageBgFilePath();
+    if (!path) return;
+    try {
+      if (fileIo.accessSync(path)) {
+        const text = fileIo.readTextSync(path);
+        if (text && text.startsWith('data:image/')) this.stageBgImage = text;
+      }
+    } catch (_) {}
+  }
+  private async pickStageBgImage(): Promise<void> {
+    const ctx = this.getUIContext().getHostContext() as common.UIAbilityContext | undefined;
+    if (!ctx) return;
+    let file: fileIo.File | null = null;
+    try {
+      const docPicker = new picker.DocumentViewPicker(ctx);
+      const opts = new picker.DocumentSelectOptions();
+      opts.maxSelectNumber = 1;
+      opts.fileSuffixFilters = ['.jpg', '.jpeg', '.png', '.webp'];
+      const uris = await docPicker.select(opts);
+      if (!uris || !uris.length) return;
+      const uri = uris[0];
+      file = fileIo.openSync(uri, fileIo.OpenMode.READ_ONLY);
+      const stat = fileIo.statSync(file.fd);
+      if (stat.size <= 0 || stat.size > 12 * 1024 * 1024) {
+        this.notify('图片不能超过 12MB');
+        return;
+      }
+      const bytes = new ArrayBuffer(stat.size);
+      fileIo.readSync(file.fd, bytes);
+      const lower = uri.toLowerCase();
+      const mime = lower.endsWith('.png') ? 'image/png' : (lower.endsWith('.webp') ? 'image/webp' : 'image/jpeg');
+      const dataUrl = `data:${mime};base64,${buffer.from(bytes).toString('base64')}`;
+      const target = this.stageBgFilePath();
+      if (target) {
+        const out = fileIo.openSync(target, fileIo.OpenMode.CREATE | fileIo.OpenMode.TRUNC | fileIo.OpenMode.WRITE_ONLY);
+        try { fileIo.writeSync(out.fd, dataUrl); } finally { fileIo.closeSync(out.fd); }
+      }
+      this.stageBgImage = dataUrl;
+      this.notify('已更新播放页自定义背景图');
+    } catch (_) {
+      this.notify('选择背景图失败');
+    } finally {
+      if (file) { try { fileIo.closeSync(file.fd); } catch (_) {} }
+    }
+  }
+  private clearStageBgImage(): void {
+    const path = this.stageBgFilePath();
+    if (path) { try { if (fileIo.accessSync(path)) fileIo.unlinkSync(path); } catch (_) {} }
+    this.stageBgImage = '';
+    this.notify('已恢复默认专辑封面背景');
   }
   private save(): void { this.persist().catch((error: Error) => { this.error = `保存失败：${error.message}`; }); }
   private sourceFromScript(script: string): SyncSourcePayload {
@@ -2887,7 +2949,7 @@ struct Index {
       onOpenSources: () => { this.openSources(); },
       onOffset: (value: number) => { this.lyricOffset = value; this.player.setLyricOffset(value); this.save(); } })
     } else {
-      AlignedSettings({ panel: this.settingsPanel, sources: this.sources, activeId: this.activeId, quality: this.quality, mode: this.mode, styleName: this.styleName, appearance: this.appearance,
+      AlignedSettings({ panel: this.settingsPanel, sources: this.sources, activeId: this.activeId, quality: this.quality, mode: this.mode, styleName: this.styleName, stageBgOpacity: this.stageBgOpacity, stageBgCustom: this.stageBgImage.length > 0, appearance: this.appearance,
         startupAnimation: this.startupAnimation, resumeOnStartup: this.resumeOnStartup, gripEnabled: this.gripEnabled,
         allowLandscapeLocked: this.allowLandscapeLocked, mixWithOthers: this.mixWithOthers, refreshAlgoDoubleTap: this.refreshAlgoDoubleTap, lanAutoSync: this.lanAutoSync, lanLocalAddress: this.lanLocalAddress, carDetail: this.carDetail,
         completedDownloads: this.downloadItems.filter((item: MusicDownload) => item.state === 'complete').length, devices: this.devices, lanSsid: this.lanSsid, message: this.message,
@@ -2917,6 +2979,9 @@ struct Index {
         },
         onQuality: (value: string) => { this.quality = value; this.save(); },
         onMode: (value: string) => { this.mode = value; this.save(); }, onStyle: (value: string) => { this.styleName = value; this.save(); },
+        onStageBgOpacity: (value: number) => { this.stageBgOpacity = Math.max(0, Math.min(1, value)); this.save(); },
+        onPickStageBgImage: () => { this.pickStageBgImage().catch(() => {}); },
+        onClearStageBgImage: () => { this.clearStageBgImage(); },
         onAppearance: (value: string) => { this.appearance = value; this.save(); },
         onResume: (value: boolean) => { this.resumeOnStartup = value; this.save(); }, onStartup: (value: boolean) => { this.startupAnimation = value; this.save(); },
         onGrip: (value: boolean) => { this.gripEnabled = value; this.foregroundChanged(); this.save(); },
@@ -2937,7 +3002,7 @@ struct Index {
   }
   @LocalBuilder private playbackStage(plain: boolean) {
       if (this.stageMounted && (plain ? this.plainStageMounted : this.dynamicStageMounted)) {
-        MineRadioStage({ song: this.selected ?? this.stagePlaceholder, audioUrl: this.playbackUrl, lines: this.lyrics, translationLines: this.stageTranslations, lyricColorMode: this.lyricPrefs.colorMode.endsWith('gradient') ? 'custom-gradient' : 'custom-solid', lyricPrimary: lyricPrimary(this.lyricPrefs, this.coverColors), lyricSecondary: lyricSecondary(this.lyricPrefs, this.coverColors), mode: plain ? 'off' : this.dynamicStyle, light: this.stageLight(), duration: this.duration, lyricOffset: this.lyricOffset, lyricScale: this.lyricPrefs.scale ?? 1,
+        MineRadioStage({ song: this.selected ?? this.stagePlaceholder, audioUrl: this.playbackUrl, lines: this.lyrics, translationLines: this.stageTranslations, lyricColorMode: this.lyricPrefs.colorMode.endsWith('gradient') ? 'custom-gradient' : 'custom-solid', lyricPrimary: lyricPrimary(this.lyricPrefs, this.coverColors), lyricSecondary: lyricSecondary(this.lyricPrefs, this.coverColors), mode: plain ? 'off' : this.dynamicStyle, light: this.stageLight(), bgImage: this.stageBgImage, bgOpacity: this.stageBgOpacity, duration: this.duration, lyricOffset: this.lyricOffset, lyricScale: this.lyricPrefs.scale ?? 1,
           playing: this.playing && this.foreground, positionMs: this.positionMs, topInset: this.statusInset + 72, bottomInset: this.bottomInset + 164,
           visible: this.stageLayerVisible(plain), detail: this.showPlayer,
           interactive: plain ? this.styleName === 'off' || this.dynamicStageFailed : this.styleName !== 'off' && !this.dynamicStageFailed,
@@ -2959,7 +3024,7 @@ struct Index {
   build() {
     Stack({ alignContent: Alignment.Bottom }) {
       if (this.showPlayer && !this.commentsOpen) {
-        AmbientBackdrop({ playing: this.playing, styleName: this.dynamicStageFailed ? 'off' : this.styleName, coverUrl: this.selected?.coverUrl ?? '', colorFirst: this.coverColors.first, colorLast: this.coverColors.last, light: this.stageLight() })
+        AmbientBackdrop({ playing: this.playing, styleName: this.dynamicStageFailed ? 'off' : this.styleName, coverUrl: this.selected?.coverUrl ?? '', bgImage: this.stageBgImage, bgOpacity: this.stageBgOpacity, colorFirst: this.coverColors.first, colorLast: this.coverColors.last, light: this.stageLight() })
       }
       this.playbackStage(false)
       this.playbackStage(true)
