@@ -1,6 +1,6 @@
 package com.lxlia.player.model
 
-const val MINE_STAGE_REVISION = "7f2cbe1a1b85b0d6"
+const val MINE_STAGE_REVISION = "3750b7a7a96d1dcb"
 
 data class MineRadioMode(val id: String, val label: String)
 

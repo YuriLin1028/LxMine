@@ -403,6 +403,8 @@
     } catch (_) {
       notify('图片过大，无法持久保存');
     }
+    if (S.stageBgImage) refreshLyricPalette(S.stageBgImage);
+    else refreshLyricPalette(S.current && S.current.cover);
     pushStageBackground();
   }
   function pickStageBgImage(onDone) {
@@ -439,7 +441,7 @@
     input.click();
   }
   function setStageSong(song) {
-    refreshLyricPalette(song && song.cover);
+    refreshLyricPalette(S.stageBgImage || (song && song.cover));
     applyStageFallbackBg(song);
     pushStageMetadata();
   }
@@ -3604,10 +3606,23 @@
     bgOpSlider.oninput = () => {
       S.stageBgOpacity = Math.max(0, Math.min(1, Number(bgOpSlider.value) / 100));
       bgOpVal.textContent = Math.round(S.stageBgOpacity * 100) + '%';
+      bgOpResetBtn.style.display = Math.abs(S.stageBgOpacity - defaults.stageBgOpacity) > 0.005 ? '' : 'none';
       pushStageBackground();
     };
     bgOpSlider.onchange = () => saveStore();
-    bgOpCtrl.append(bgOpSlider, bgOpVal);
+    const bgOpResetBtn = h('button', 'pill-btn', '恢复默认');
+    bgOpResetBtn.type = 'button';
+    bgOpResetBtn.style.display = Math.abs(S.stageBgOpacity - defaults.stageBgOpacity) > 0.005 ? '' : 'none';
+    bgOpResetBtn.onclick = () => {
+      S.stageBgOpacity = defaults.stageBgOpacity;
+      bgOpSlider.value = String(Math.round(S.stageBgOpacity * 100));
+      bgOpVal.textContent = Math.round(S.stageBgOpacity * 100) + '%';
+      bgOpResetBtn.style.display = 'none';
+      saveStore();
+      pushStageBackground();
+      notify('已恢复默认背景透明度');
+    };
+    bgOpCtrl.append(bgOpSlider, bgOpVal, bgOpResetBtn);
     bgOpRow.append(bgOpCopy, bgOpCtrl);
     playbackCard.appendChild(bgOpRow);
 

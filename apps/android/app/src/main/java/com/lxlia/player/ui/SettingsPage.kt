@@ -251,12 +251,28 @@ private fun SettingsMainPanel(vm: AppViewModel) {
                     detail = "实时调节封面或自定义背景图的透明程度，所有动效模式生效",
                     modifier = Modifier.weight(1f),
                 )
-                Text(
-                    "${(vm.stageBgOpacity * 100).roundToInt()}%",
-                    fontSize = 13.sp,
-                    fontWeight = FontWeight.Medium,
-                    color = ACCENT,
-                )
+                Row(
+                    horizontalArrangement = Arrangement.spacedBy(8.dp),
+                    verticalAlignment = Alignment.CenterVertically,
+                ) {
+                    Text(
+                        "${(vm.stageBgOpacity * 100).roundToInt()}%",
+                        fontSize = 13.sp,
+                        fontWeight = FontWeight.Medium,
+                        color = ACCENT,
+                    )
+                    if (abs(vm.stageBgOpacity - 0.78f) > 0.005f) {
+                        Box(
+                            modifier = Modifier
+                                .clip(RoundedCornerShape(14.dp))
+                                .background(if (AppAppearance.light) Color(0x14000000) else Color(0x18FFFFFF))
+                                .clickable { vm.updateStageBgOpacity(0.78f) }
+                                .padding(horizontal = 10.dp, vertical = 5.dp),
+                        ) {
+                            Text("恢复默认", fontSize = 11.sp, color = TEXT)
+                        }
+                    }
+                }
             }
             androidx.compose.material3.Slider(
                 value = vm.stageBgOpacity,

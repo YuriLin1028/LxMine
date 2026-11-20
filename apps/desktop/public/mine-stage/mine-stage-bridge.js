@@ -10,10 +10,18 @@
   var sourceUrl = '';
   var lyricKey = '';
   var cover = '';
+  var songCover = '';
   var songId = '';
   var customBgImage = '';
   var customBgOpacity = null;
   var bgOverrideStyle = null;
+  function syncEffectiveVisualCover() {
+    var effective = customBgImage || songCover || '';
+    if (effective !== cover) {
+      cover = effective;
+      loadCoverFromUrl(cover, { trackToken: trackSwitchToken });
+    }
+  }
   function applyStageBackground() {
     var hasOp = customBgOpacity !== null && isFinite(customBgOpacity);
     var op = hasOp ? Math.max(0, Math.min(1, Number(customBgOpacity))) : null;
@@ -39,6 +47,9 @@
       rules.push('#album-bg, #album-bg-next { opacity: 0 !important; }');
       rules.push('#custom-bg { opacity: 1 !important; display: block !important; z-index: 0 !important; }');
       rules.push('#custom-bg::before { opacity: ' + effOp.toFixed(3) + ' !important; background-size: cover !important; filter: none !important; }');
+      if (effOp > 0.005) {
+        rules.push('#sonic-workshop-layer { mix-blend-mode: screen !important; }');
+      }
     } else {
       if (customBg) {
         customBg.style.removeProperty('--custom-bg-image');
@@ -46,6 +57,9 @@
       }
       if (op !== null) {
         rules.push('#album-bg.visible, #album-bg-next.visible { opacity: ' + op.toFixed(3) + ' !important; }');
+        if (op > 0.005) {
+          rules.push('#sonic-workshop-layer { mix-blend-mode: screen !important; }');
+        }
       }
     }
     bgOverrideStyle.textContent = rules.join('\n');
@@ -267,11 +281,12 @@
       var preset = Math.max(0, Math.min(presetMeta.length - 1, Number(String(data.mode || 'mine-0').replace('mine-', '')) || 0));
       if (fx.preset !== preset) setPreset(preset, { silent: true, noSave: true, skipTransition: wakingPreset });
       wakingPreset = false;
-      if (data.cover !== cover) { cover = data.cover; loadCoverFromUrl(cover || '', { trackToken: trackSwitchToken }); }
+      songCover = data.cover || '';
       if (typeof data.bgImage === 'string' && data.bgImage !== customBgImage) { customBgImage = data.bgImage; }
       if (data.bgOpacity !== undefined && data.bgOpacity !== null && isFinite(Number(data.bgOpacity))) {
         customBgOpacity = Math.max(0, Math.min(1, Number(data.bgOpacity)));
       }
+      syncEffectiveVisualCover();
       applyStageBackground();
       var userScale = Math.max(0.75, Math.min(1.4, Number(data.lyricScale) || 1));
       if (typeof fx !== 'undefined') fx.userLyricScale = userScale;
@@ -311,6 +326,7 @@
       if (opts.bgOpacity !== undefined && opts.bgOpacity !== null && isFinite(Number(opts.bgOpacity))) {
         customBgOpacity = Math.max(0, Math.min(1, Number(opts.bgOpacity)));
       }
+      syncEffectiveVisualCover();
       applyStageBackground();
     },
     clock: function (data) {

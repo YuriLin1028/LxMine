@@ -112,6 +112,10 @@ export struct AlignedSettings {
         Row({ space: 10 }) {
           this.copy({ title: '播放页背景透明度', detail: '实时调节封面或自定义背景图的透明程度，所有动效模式生效' })
           Text(`${Math.round(this.stageBgOpacity * 100)}%`).fontSize(13).fontWeight(FontWeight.Medium).fontColor(ACCENT)
+          if (Math.abs(this.stageBgOpacity - 0.78) > 0.005) {
+            Button('恢复默认').height(28).fontSize(11).fontColor(TEXT).backgroundColor('#1E808898').borderRadius(14)
+              .padding({ left: 10, right: 10 }).onClick(() => this.onStageBgOpacity(0.78))
+          }
         }.width('100%')
         Slider({ value: Math.round(this.stageBgOpacity * 100), min: 0, max: 100, step: 1 })
           .width('100%').selectedColor(ACCENT).blockColor('#FFFFFF')
