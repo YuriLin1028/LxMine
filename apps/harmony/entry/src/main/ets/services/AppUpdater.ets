@@ -312,15 +312,16 @@ export async function saveCachedHapToUserLocation(
   }
 }
 
-export async function openAppGalleryInviteTest(context: common.UIAbilityContext): Promise<void> {
+export async function openAppGalleryInviteTest(context: common.UIAbilityContext, targetUrl?: string): Promise<void> {
+  const url = (targetUrl && targetUrl.startsWith('https://appgallery.huawei.com/')) ? targetUrl : HARMONY_INVITE_URL;
   try {
-    await context.openLink(HARMONY_INVITE_URL, { appLinkingOnly: false });
+    await context.openLink(url, { appLinkingOnly: false });
     return;
   } catch (_) {}
   const want: Want = {
     action: 'ohos.want.action.viewData',
     entities: ['entity.system.browsable'],
-    uri: HARMONY_INVITE_URL,
+    uri: url,
   };
   await context.startAbility(want);
 }

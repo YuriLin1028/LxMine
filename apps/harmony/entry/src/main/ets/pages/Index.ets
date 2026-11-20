@@ -390,7 +390,7 @@ struct Index {
   private async openUpdateInviteLink(): Promise<void> {
     try {
       const ctx = getContext(this) as common.UIAbilityContext;
-      await openAppGalleryInviteTest(ctx);
+      await openAppGalleryInviteTest(ctx, this.updateInfo?.releaseUrl);
       this.updateDialogOpen = false;
     } catch (error) {
       this.updateError = `无法打开应用市场邀测链接：${(error as Error).message}`;
