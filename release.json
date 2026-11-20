@@ -7,9 +7,9 @@
   "assets": [
     {
       "name": "LxMine-1.2.1-Android.apk",
-      "size": 24043045,
+      "size": 24047141,
       "browser_download_url": "https://github.com/YuriLin1028/LxMine/releases/download/v1.2.1/LxMine-1.2.1-Android.apk",
-      "digest": "sha256:171801146eeee10196d237392ed0524e6e359ef857b659932ac0f1ff945e96e6"
+      "digest": "sha256:bbbf0fdf17759f7b8cffbd33ffe91a0d2a509064931ecd3aa280f3cc55bfdf43"
     },
     {
       "name": "LxMine-1.2.1-HiCar-unsigned.hap",
@@ -33,7 +33,7 @@
       "name": "SHA256SUMS.txt",
       "size": 374,
       "browser_download_url": "https://github.com/YuriLin1028/LxMine/releases/download/v1.2.1/SHA256SUMS.txt",
-      "digest": "sha256:7e71b8d72d34e8d253ce459aafd853f870dc5c4d08b69819e86b23ad90325d80"
+      "digest": "sha256:fe87112277eb6d9bcde74d501579ef99b2c5ae610c3a1fbfe29c76d2ce5d95e8"
     }
   ]
 }
