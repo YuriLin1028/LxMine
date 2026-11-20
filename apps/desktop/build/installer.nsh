@@ -80,6 +80,7 @@
 !macroend
 
 !macro customInstall
+  Delete "$INSTDIR\${MINERADIO_INSTALL_MARKER}"
   FileOpen $0 "$INSTDIR\${MINERADIO_INSTALL_MARKER}" w
   ${IfNot} ${Errors}
     FileWrite $0 "LxMine install root$\r$\n"

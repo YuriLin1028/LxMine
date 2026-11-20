@@ -144,6 +144,54 @@ async function fetchLatestRelease() {
   return valid[0].data;
 }
 
+function getReceiptPaths(execDir) {
+  const paths = [];
+  if (execDir) {
+    paths.push(path.join(execDir, '.lxmine-installed-asset.json'));
+  }
+  if (process.env.APPDATA) {
+    paths.push(path.join(process.env.APPDATA, 'LxMine', 'installed-update.json'));
+  }
+  return paths;
+}
+
+function readInstalledAssetReceipt(execDir) {
+  const digests = new Set();
+  for (const filePath of getReceiptPaths(execDir)) {
+    try {
+      if (!fs.existsSync(filePath)) continue;
+      const raw = fs.readFileSync(filePath, 'utf8').replace(/^\uFEFF/, '');
+      const data = JSON.parse(raw);
+      if (data && typeof data.digest === 'string') {
+        const clean = data.digest.trim().toLowerCase();
+        if (clean) digests.add(clean);
+      }
+    } catch (_) {}
+  }
+  return digests;
+}
+
+function writeInstalledAssetReceipt(receipt, targetDir) {
+  const payload = JSON.stringify({
+    version: String((receipt && receipt.version) || ''),
+    name: String((receipt && receipt.name) || ''),
+    digest: String((receipt && receipt.digest) || '').trim().toLowerCase(),
+    installedAt: Number(receipt && receipt.installedAt) || Date.now(),
+  });
+  if (process.env.APPDATA) {
+    try {
+      const appDataDir = path.join(process.env.APPDATA, 'LxMine');
+      fs.mkdirSync(appDataDir, { recursive: true });
+      fs.writeFileSync(path.join(appDataDir, 'installed-update.json'), payload, 'utf8');
+    } catch (_) {}
+  }
+  if (targetDir && fs.existsSync(targetDir)) {
+    try {
+      fs.writeFileSync(path.join(targetDir, '.lxmine-installed-asset.json'), payload, 'utf8');
+    } catch (_) {}
+  }
+}
+
 async function checkForUpdate(currentVersion) {
   const current = String(currentVersion || '1.1.0').replace(/^v/i, '');
   const release = await fetchLatestRelease();
@@ -152,9 +200,15 @@ async function checkForUpdate(currentVersion) {
   const baseCurrent = current.split('.').slice(0, 3).join('.');
   const asset = selectWindowsAsset(release.assets, 'v' + latestVersion);
   const cmp = compareVersions(latestVersion, baseCurrent);
+  const digest = asset && typeof asset.digest === 'string' && /^sha256:[a-f\d]{64}$/i.test(asset.digest)
+    ? asset.digest.slice(7).toLowerCase()
+    : '';
+  const execDir = process.execPath ? path.dirname(process.execPath) : '';
   let installedMtimeMs = 0;
   if (!process.defaultApp) {
     const candidates = [
+      execDir ? path.join(execDir, '.lxmine-install-root') : '',
+      execDir ? path.join(execDir, 'Uninstall LxMine.exe') : '',
       process.resourcesPath ? path.join(process.resourcesPath, 'app.asar') : '',
       process.resourcesPath ? path.join(process.resourcesPath, 'app', 'desktop', 'updater.cjs') : '',
       process.execPath || '',
@@ -166,12 +220,16 @@ async function checkForUpdate(currentVersion) {
       } catch (_) {}
     }
   }
+  const knownDigests = !process.defaultApp ? readInstalledAssetReceipt(execDir) : new Set();
+  const alreadyInstalledDigest = !!(digest && knownDigests.has(digest));
   const remoteTimeMs = Date.parse((asset && asset.updated_at) || release.published_at || '') || 0;
-  const sameVersionNewer = cmp === 0 && !!asset && remoteTimeMs > 0 && installedMtimeMs > 0 && remoteTimeMs > installedMtimeMs + 600000;
+  const sameVersionNewer = cmp === 0
+    && !!asset
+    && !alreadyInstalledDigest
+    && remoteTimeMs > 0
+    && installedMtimeMs > 0
+    && remoteTimeMs > installedMtimeMs + 2700000;
   const hasUpdate = !!asset && (cmp > 0 || sameVersionNewer);
-  const digest = asset && typeof asset.digest === 'string' && /^sha256:[a-f\d]{64}$/i.test(asset.digest)
-    ? asset.digest.slice(7).toLowerCase()
-    : '';
   return {
     ok: true,
     currentVersion: baseCurrent,
@@ -325,6 +383,13 @@ async function downloadAndLaunchInstaller(asset, onProgress, appInstance) {
   onProgress({ stage: 'installing', received: downloaded.size, total: downloaded.size, percent: 100 });
 
   // Launch silent overwrite install via NSIS (/S) and automatically restart LxMine after installation completes.
+  const installedSha = (downloaded.sha256 || asset.digest || '').toLowerCase();
+  const receiptVersionMatch = String(asset.name || '').match(/LxMine-([^-]+)-/i);
+  const receiptVersion = receiptVersionMatch ? receiptVersionMatch[1] : '';
+  const escapedVersion = receiptVersion.replace(/'/g, "''");
+  const escapedAssetName = String(asset.name || safeName).replace(/'/g, "''");
+  const escapedSha = installedSha.replace(/'/g, "''");
+  const APP_GUID_REG = 'HKCU:\\Software\\c7f26fab-4afd-5130-b2a9-63f950112de4';
   const psScript = path.join(updateDir, 'apply-update.ps1');
   const escapedInstaller = destPath.replace(/'/g, "''");
   const execDir = process.execPath ? path.dirname(process.execPath) : '';
@@ -332,14 +397,20 @@ async function downloadAndLaunchInstaller(asset, onProgress, appInstance) {
   const escapedExecDir = (hasMarker ? execDir : '').replace(/'/g, "''");
   const scriptContent = [
     `$oldPid = ${process.pid}`,
-    'Wait-Process -Id $oldPid -Timeout 10 -ErrorAction SilentlyContinue',
+    'Wait-Process -Id $oldPid -Timeout 5 -ErrorAction SilentlyContinue',
     'Get-Process -Name "LxMine" -ErrorAction SilentlyContinue | Stop-Process -Force -ErrorAction SilentlyContinue',
-    'Start-Sleep -Milliseconds 600',
+    'Start-Sleep -Milliseconds 1000',
+    `$appGuidReg = '${APP_GUID_REG}'`,
     `$targetDir = '${escapedExecDir}'`,
     'if (-not $targetDir) {',
-    '  $reg = Get-ItemProperty "HKCU:\\Software\\Microsoft\\Windows\\CurrentVersion\\Uninstall\\*" -ErrorAction SilentlyContinue | Where-Object { $_.DisplayName -match "^LxMine" -and $_.InstallLocation } | Select-Object -First 1',
-    '  if ($reg) { $targetDir = $reg.InstallLocation.TrimEnd("\\") }',
+    '  $guidProps = Get-ItemProperty $appGuidReg -ErrorAction SilentlyContinue',
+    '  if ($guidProps -and $guidProps.InstallLocation) { $targetDir = [string]$guidProps.InstallLocation }',
     '}',
+    'if (-not $targetDir) {',
+    '  $reg = Get-ItemProperty "HKCU:\\Software\\Microsoft\\Windows\\CurrentVersion\\Uninstall\\*" -ErrorAction SilentlyContinue | Where-Object { $_.DisplayName -match "^LxMine" -and $_.InstallLocation } | Select-Object -First 1',
+    '  if ($reg) { $targetDir = [string]$reg.InstallLocation }',
+    '}',
+    'if ($targetDir) { $targetDir = $targetDir.TrimEnd("\\") }',
     'if (-not $targetDir) {',
     '  if (Test-Path "D:\\") {',
     '    if (Test-Path "D:\\LxMine\\.lxmine-install-root") {',
@@ -351,16 +422,36 @@ async function downloadAndLaunchInstaller(asset, onProgress, appInstance) {
     '    $targetDir = Join-Path $env:LOCALAPPDATA "Programs\\LxMine"',
     '  }',
     '}',
-    'if ($targetDir) {',
-    `  $p = Start-Process -FilePath '${escapedInstaller}' -ArgumentList "/S /D=$targetDir" -PassThru -Wait`,
-    '} else {',
-    `  $p = Start-Process -FilePath '${escapedInstaller}' -ArgumentList "/S" -PassThru -Wait`,
-    '}',
+    'try {',
+    '  if (-not (Test-Path $appGuidReg)) { New-Item -Path $appGuidReg -Force | Out-Null }',
+    '  Set-ItemProperty -Path $appGuidReg -Name "InstallLocation" -Value $targetDir',
+    '} catch {}',
+    `$p = Start-Process -FilePath '${escapedInstaller}' -ArgumentList '/S' -PassThru -Wait`,
     'Start-Sleep -Milliseconds 600',
+    'if ($p -and $p.ExitCode -eq 0 -and (Test-Path (Join-Path $targetDir "LxMine.exe"))) {',
+    '  try {',
+    '    $nowMs = [DateTimeOffset]::UtcNow.ToUnixTimeMilliseconds()',
+    '    $receiptJson = [ordered]@{',
+    `      version = '${escapedVersion}'`,
+    `      name = '${escapedAssetName}'`,
+    `      digest = '${escapedSha}'`,
+    '      installedAt = $nowMs',
+    '    } | ConvertTo-Json -Compress',
+    '    $utf8NoBom = [Text.UTF8Encoding]::new($false)',
+    '    $appDataDir = Join-Path $env:APPDATA "LxMine"',
+    '    if (-not (Test-Path $appDataDir)) { New-Item -ItemType Directory -Path $appDataDir -Force | Out-Null }',
+    '    [IO.File]::WriteAllText((Join-Path $appDataDir "installed-update.json"), $receiptJson, $utf8NoBom)',
+    '    if (Test-Path $targetDir) {',
+    '      [IO.File]::WriteAllText((Join-Path $targetDir ".lxmine-installed-asset.json"), $receiptJson, $utf8NoBom)',
+    '    }',
+    '  } catch {}',
+    '}',
+    '$guidAfter = Get-ItemProperty $appGuidReg -ErrorAction SilentlyContinue',
     '$regAfter = Get-ItemProperty "HKCU:\\Software\\Microsoft\\Windows\\CurrentVersion\\Uninstall\\*" -ErrorAction SilentlyContinue | Where-Object { $_.DisplayName -match "^LxMine" -and $_.InstallLocation } | Select-Object -First 1',
     '$candidates = @()',
-    'if ($regAfter) { $candidates += (Join-Path $regAfter.InstallLocation "LxMine.exe") }',
     'if ($targetDir) { $candidates += (Join-Path $targetDir "LxMine.exe") }',
+    'if ($guidAfter -and $guidAfter.InstallLocation) { $candidates += (Join-Path $guidAfter.InstallLocation "LxMine.exe") }',
+    'if ($regAfter -and $regAfter.InstallLocation) { $candidates += (Join-Path $regAfter.InstallLocation "LxMine.exe") }',
     'if (Test-Path "D:\\LxMine\\.lxmine-install-root") { $candidates += "D:\\LxMine\\LxMine.exe" }',
     '$candidates += "D:\\Program Files\\LxMine\\LxMine.exe"',
     '$candidates += (Join-Path $env:LOCALAPPDATA "Programs\\LxMine\\LxMine.exe")',
@@ -369,8 +460,8 @@ async function downloadAndLaunchInstaller(asset, onProgress, appInstance) {
     '$exe = $candidates | Where-Object { $_ -and (Test-Path $_) } | Select-Object -First 1',
     'if (-not $exe) {',
     `  Start-Process -FilePath '${escapedInstaller}' -Wait`,
-    '  $regRetry = Get-ItemProperty "HKCU:\\Software\\Microsoft\\Windows\\CurrentVersion\\Uninstall\\*" -ErrorAction SilentlyContinue | Where-Object { $_.DisplayName -match "^LxMine" -and $_.InstallLocation } | Select-Object -First 1',
-    '  if ($regRetry) { $exe = Join-Path $regRetry.InstallLocation "LxMine.exe" }',
+    '  $guidRetry = Get-ItemProperty $appGuidReg -ErrorAction SilentlyContinue',
+    '  if ($guidRetry -and $guidRetry.InstallLocation) { $exe = Join-Path $guidRetry.InstallLocation "LxMine.exe" }',
     '}',
     'if ($exe -and (Test-Path $exe)) {',
     '  try {',
@@ -414,6 +505,8 @@ module.exports = {
   compareVersions,
   validateAssetUrl,
   selectWindowsAsset,
+  readInstalledAssetReceipt,
+  writeInstalledAssetReceipt,
   checkForUpdate,
   downloadAndLaunchInstaller,
   cancelActiveDownload,
