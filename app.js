@@ -82,6 +82,17 @@ function renderDownloadConsole() {
 
 async function loadRelease() {
   try {
+    const res = await fetch('./store-release.json', { cache: 'no-cache' });
+    if (res.ok) {
+      const storeData = await res.json();
+      if (storeData && typeof storeData.invite_url === 'string' && storeData.invite_url.startsWith('https://appgallery.huawei.com/link/invite-test-wap')) {
+        const inviteBtn = el('harmony-invite');
+        if (inviteBtn) inviteBtn.href = storeData.invite_url;
+      }
+    }
+  } catch (_) {}
+
+  try {
     const res = await fetch('./release.json', { cache: 'no-cache' });
     if (res.ok) {
       currentRelease = normalizeRelease(await res.json());
