@@ -826,7 +826,7 @@
     if (!S.current) return;
     if (S.resolving) { S.playRequested = true; return; }
     if (!audio.src) { playSong(S.current, S.queue, { startMs: S.position }); return; }
-    if (audio.paused) { S.playRequested = true; audio.play().catch(error => notify('播放失败：' + error.message)); }
+    if (audio.paused) { S.playRequested = true; audio.play().catch(error => notify(friendlyPlayError(error))); }
     else { S.playRequested = false; audio.pause(); }
   }
   function nextSong(step) {

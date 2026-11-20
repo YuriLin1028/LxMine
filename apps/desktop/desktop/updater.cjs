@@ -148,9 +148,20 @@ async function checkForUpdate(currentVersion) {
   const asset = selectWindowsAsset(release.assets, release.tag_name);
   const cmp = compareVersions(latestVersion, current);
   let installedMtimeMs = 0;
-  try { installedMtimeMs = fs.statSync(path.join(__dirname, '..', 'package.json')).mtimeMs || 0; } catch (_) {}
+  if (!process.defaultApp) {
+    const candidates = [
+      process.resourcesPath ? path.join(process.resourcesPath, 'app.asar') : '',
+      process.execPath || '',
+    ].filter(Boolean);
+    for (const p of candidates) {
+      try {
+        const t = fs.statSync(p).mtimeMs || 0;
+        if (t > installedMtimeMs) installedMtimeMs = t;
+      } catch (_) {}
+    }
+  }
   const remoteTimeMs = Date.parse((asset && asset.updated_at) || release.published_at || '') || 0;
-  const sameVersionNewer = cmp === 0 && !!asset && remoteTimeMs > 0 && installedMtimeMs > 0 && remoteTimeMs > installedMtimeMs + 120000;
+  const sameVersionNewer = cmp === 0 && !!asset && remoteTimeMs > 0 && installedMtimeMs > 0 && remoteTimeMs > installedMtimeMs + 600000;
   const hasUpdate = cmp > 0 || sameVersionNewer;
   const digest = asset && typeof asset.digest === 'string' && /^sha256:[a-f\d]{64}$/i.test(asset.digest)
     ? asset.digest.slice(7).toLowerCase()

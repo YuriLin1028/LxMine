@@ -86,8 +86,17 @@ object PlaybackController {
     var onState: ((String) -> Unit)? = null
     var onTime: ((Long) -> Unit)? = null
     var onError: ((String) -> Unit)? = null
+    var fallbackUrlResolver: (suspend (Song) -> String)? = null
 
     private var playToken = 0
+    private var retriedSongKey = ""
+
+    private fun friendlyError(raw: String?): String {
+        val msg = raw?.trim().orEmpty()
+        if (msg.isEmpty()) return "当前音源暂不可播放，请切换其他音源或重试"
+        val isRawTech = Regex("[A-Za-z_]{4,}|CONTAINER_ERR|Unsupported|HTTP\\s*\\d|ECONN|ETIMEDOUT|IO_ERR|Exception|Source error|ERROR_CODE|MediaCodec|Socket|SSL|TLS|Unable to resolve", RegexOption.IGNORE_CASE).containsMatchIn(msg)
+        return if (isRawTech) "当前音源暂不可播放，请切换其他音源或重试" else msg
+    }
     private var ticker: Job? = null
     private var resolveJob: Job? = null
     private var autoPlay = true
@@ -204,7 +213,27 @@ object PlaybackController {
             }
 
             override fun onPlayerError(error: androidx.media3.common.PlaybackException) {
-                onError?.invoke(error.message ?: "播放失败")
+                val failedSong = current
+                val fallback = fallbackUrlResolver
+                if (failedSong != null && localPath == null && fallback != null && retriedSongKey != failedSong.key) {
+                    retriedSongKey = failedSong.key
+                    val token = playToken
+                    resolveJob?.cancel()
+                    resolveJob = scope.launch {
+                        try {
+                            val nextUrl = withContext(Dispatchers.IO) { fallback(failedSong) }
+                            if (token != playToken) return@launch
+                            prepareUrl(nextUrl, failedSong, token)
+                        } catch (fallbackErr: Throwable) {
+                            if (token != playToken) return@launch
+                            playing = false
+                            emitState("error")
+                            onError?.invoke(friendlyError(fallbackErr.message ?: error.message))
+                        }
+                    }
+                    return
+                }
+                onError?.invoke(friendlyError(error.message))
                 playing = false
                 emitState("error")
             }
@@ -251,6 +280,7 @@ object PlaybackController {
     private fun internalPlay(song: Song, startMs: Long, autoPlay: Boolean) {
         val token = ++playToken
         resolveJob?.cancel()
+        if (retriedSongKey != song.key) retriedSongKey = ""
         this.autoPlay = autoPlay
         startPosition = startMs.coerceAtLeast(0)
         current = song
@@ -286,7 +316,7 @@ object PlaybackController {
                 player?.pause()
                 playing = false
                 emitState("error")
-                onError?.invoke(error.message ?: "播放失败")
+                onError?.invoke(friendlyError(error.message))
             }
         }
     }

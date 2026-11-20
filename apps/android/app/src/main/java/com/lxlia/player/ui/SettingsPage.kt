@@ -274,14 +274,11 @@ private fun SettingsMainPanel(vm: AppViewModel) {
                     }
                 }
             }
-            androidx.compose.material3.Slider(
-                value = vm.stageBgOpacity,
-                onValueChange = { vm.updateStageBgOpacity(it) },
-                valueRange = 0f..1f,
-                colors = androidx.compose.material3.SliderDefaults.colors(
-                    thumbColor = Color.White,
-                    activeTrackColor = ACCENT,
-                ),
+            GlassSlider(
+                value = (vm.stageBgOpacity * 100f).roundToInt().coerceIn(0, 100).toFloat(),
+                onValueChange = { percent -> vm.updateStageBgOpacity(percent / 100f) },
+                valueRange = 0f..100f,
+                step = 1f,
             )
         }
         Row(

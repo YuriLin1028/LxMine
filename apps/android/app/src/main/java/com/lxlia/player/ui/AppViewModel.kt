@@ -397,7 +397,12 @@ class AppViewModel(internal val app: LxMineApp) : ViewModel() {
     // ---- 提示与弹层 ----
     var message by mutableStateOf("")
     var toastMessage by mutableStateOf("")
-    var error by mutableStateOf("")
+    private var errorState by mutableStateOf("")
+    var error: String
+        get() = errorState
+        set(value) {
+            errorState = if (value.isBlank()) "" else sanitizeUiError(value)
+        }
     var showSheet by mutableStateOf(false)
     var sheet by mutableStateOf("")
     var draft by mutableStateOf("")
@@ -431,8 +436,15 @@ class AppViewModel(internal val app: LxMineApp) : ViewModel() {
     init {
         PlaybackController.onState = { state -> handlePlaybackState(state) }
         PlaybackController.onTime = { time -> handlePlaybackTime(time) }
+        PlaybackController.fallbackUrlResolver = { song ->
+            engine.resolveUrl(
+                song,
+                excludeSourceIds = if (activeId.isNotEmpty()) listOf(activeId) else emptyList(),
+                raceAll = true,
+            )
+        }
         PlaybackController.onError = { detail ->
-            error = detail
+            error = sanitizeUiError(detail)
             resolving = false
         }
         PlaybackController.onSourceReady = { song, url ->
@@ -460,10 +472,11 @@ class AppViewModel(internal val app: LxMineApp) : ViewModel() {
                 openedPlaylist = opened.copy(songs = songs, songIds = songs.map { it.key }, updatedAt = System.currentTimeMillis())
             }
         }
-        localMusic.onError = { error = it }
+        localMusic.onError = { error = sanitizeUiError(it) }
         downloads.onError = { detail ->
-            error = detail
-            notify(detail, 3000)
+            val clean = sanitizeUiError(detail)
+            error = clean
+            notify(clean, 3000)
         }
         downloads.onChange = { items ->
             for (item in items) {
@@ -631,7 +644,7 @@ class AppViewModel(internal val app: LxMineApp) : ViewModel() {
         }
         engine.onPersist = { save() }
         engine.onMessage = { notify(it, 2500) }
-        engine.onError = { error = it }
+        engine.onError = { error = sanitizeUiError(it) }
         sourceReady = engine.ready
         activeId = engine.activeId
         storeReady = true
@@ -767,6 +780,16 @@ class AppViewModel(internal val app: LxMineApp) : ViewModel() {
     fun removeDownload(id: String) {
         app.downloads.remove(id)
         notify("已删除下载记录")
+    }
+
+    internal fun sanitizeUiError(raw: String?): String {
+        val msg = raw?.trim().orEmpty()
+        if (msg.isEmpty()) return "当前操作暂不可用，请稍后重试"
+        val isRawTech = Regex(
+            "[A-Za-z_]{4,}|CONTAINER_ERR|Unsupported|HTTP\\s*\\d|ECONN|ETIMEDOUT|IO_ERR|Exception|Source error|ERROR_CODE|MediaCodec|Socket|SSL|TLS|Unable to resolve|Failed to connect",
+            RegexOption.IGNORE_CASE,
+        ).containsMatchIn(msg)
+        return if (isRawTech) "当前音源或网络暂不可用，请切换其他音源或稍后重试" else msg
     }
 
     internal suspend fun persist() = appDataMutex.withLock {
