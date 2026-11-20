@@ -5,7 +5,7 @@ import { PRODUCT_NAME, VERSION_NAME } from 'BuildProfile';
 
 export const UPDATE_REPO: string = 'YuriLin1028/LxMine';
 export const HARMONY_INVITE_URL: string =
-  'https://appgallery.huawei.com/link/invite-test-wap?taskId=7181c9f3cfda4854dc2f0d8fec00ab40&invitationCode=1Klp9jEJXOp';
+  'https://appgallery.huawei.com/link/invite-test-wap?taskId=829a9176e89afda4703cbcc9273a0bfb&invitationCode=1Klp9jEJXOp';
 
 export function isStoreEdition(): boolean {
   return PRODUCT_NAME.toString() === 'store';

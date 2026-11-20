@@ -91,7 +91,7 @@ Android 13 及以上提供液态玻璃与水球导航交互，Android 12 及以�
 
 ### HarmonyOS（应用市场邀请测试）
 
-[**加入 LxMine 1.2.1 邀请测试**](https://appgallery.huawei.com/link/invite-test-wap?taskId=7181c9f3cfda4854dc2f0d8fec00ab40&invitationCode=1Klp9jEJXOp)
+[**加入 LxMine 1.2.1 邀请测试**](https://appgallery.huawei.com/link/invite-test-wap?taskId=829a9176e89afda4703cbcc9273a0bfb&invitationCode=1Klp9jEJXOp)
 
 使用鸿蒙系统自带浏览器打开完整链接，点击「开始测试」，首次参与时点击「同意」加入
 测试群组，然后点击「安装」。1.2.1 沿用同一测试群组，已有用户可从应用市场「应用尝鲜」
@@ -102,7 +102,7 @@ Android 13 及以上提供液态玻璃与水球导航交互，Android 12 及以�
 再点击网页里的「开始测试」。
 
 ```text
-https://appgallery.huawei.com/link/invite-test-wap?taskId=7181c9f3cfda4854dc2f0d8fec00ab40&invitationCode=1Klp9jEJXOp
+https://appgallery.huawei.com/link/invite-test-wap?taskId=829a9176e89afda4703cbcc9273a0bfb&invitationCode=1Klp9jEJXOp
 ```
 
 当前测试包最低兼容 API 26.0.0，支持手机、平板和 PC/2in1，包名为 `com.lxmine.player`。
@@ -110,7 +110,7 @@ https://appgallery.huawei.com/link/invite-test-wap?taskId=7181c9f3cfda4854dc2f0d
 （`cn.migu.music`）通过上方的未签名 HAP 安装方式分发。
 
 邀请名额上限为 **10000 人**，邀请码有效至 **2026-12-16 12:46（北京时间）**。
-本轮测试至 **2027-02-14 13:15（北京时间）**。
+本轮测试至 **2027-02-18 10:05（北京时间）**。
 
 出包与 AGC 操作见 [docs/INVITE_TEST.md](docs/INVITE_TEST.md)，命令为
 `npm run build:store`。
