@@ -1,9 +1,9 @@
 /* Differential check against the immutable, previously shipped renderer. */
 const fs=require('fs'),vm=require('vm'),path=require('path'),assert=require('assert/strict'),crypto=require('crypto');
-const original=path.resolve('releases/windows/runtime/bundle-a5915fb9305c554f/resources/app/public/lxmine/material.js');
+const original=path.resolve('releases/windows/runtime/bundle-eef7f60599fed7cb/resources/app/public/lxmine/material.js');
 const current=path.resolve('apps/desktop/public/lxmine/material.js');
 const {hashes,sourceFiles}=require('./common.cjs');
-assert.equal(crypto.createHash('sha256').update(fs.readFileSync(original)).digest('hex'),'ef0da2ea3e80fafcde7489018ee3641bd1fef819dd757b8f5c2e5475b2cafa80');
+assert.equal(crypto.createHash('sha256').update(fs.readFileSync(original)).digest('hex'),'444e6988494eee12578975c25e135caf95e9a5d014ea106779409ed879f20c55');
 function render(file,w,h,r,kind,profile={}){
  const maps=[];const element=()=>({style:{setProperty(){}},dataset:{},append(){},setAttribute(){},remove(){},querySelectorAll(){return []}});
  const context={window:{},location:{search:'?materialLab=1'},URLSearchParams,ResizeObserver:class{observe(){}},requestAnimationFrame:()=>1,matchMedia:()=>({matches:false}),getComputedStyle:()=>({borderTopWidth:'0',borderRightWidth:'0',borderBottomWidth:'0',borderLeftWidth:'0',borderTopLeftRadius:String(r),borderTopRightRadius:String(r),borderBottomRightRadius:String(r),borderBottomLeftRadius:String(r),borderRadius:String(r)}),document:{querySelector:element,createElementNS:element,createElement:tag=>{
@@ -29,7 +29,7 @@ assert.deepEqual(popupRules(path.join(baselineDirectory,'style.css')),popupRules
 const popupMotion=fs.readFileSync(path.join(baselineDirectory,'popup-motion.js'));
 assert(popupMotion.equals(fs.readFileSync('apps/desktop/public/lxmine/popup-motion.js')),'Popup motion changed');
 const referenceFiles=['material.js','style.css','popup-motion.js'].map(file=>path.relative(process.cwd(),path.join(baselineDirectory,file)).replaceAll('\\','/'));
-const report={status:'SOURCE_PARITY',reference:original,referenceMaterialSHA256:'ef0da2ea3e80fafcde7489018ee3641bd1fef819dd757b8f5c2e5475b2cafa80',
+const report={status:'SOURCE_PARITY',reference:original,referenceMaterialSHA256:'444e6988494eee12578975c25e135caf95e9a5d014ea106779409ed879f20c55',
  opticalProfileEqual:true,mapBytesEqual:true,popupStylesEqual:true,popupMotionEqual:true,nativePopupReferencesAvailable:false,popupComparisonAppearance:'original dark appearance',
  scenes:reports.length,calibrationVariants:2,reports,hashes:hashes([...sourceFiles,...referenceFiles,'qa/material/map-equivalence.cjs'])};
 fs.writeFileSync(path.join(__dirname,'artifacts/map-equivalence.json'),JSON.stringify(report,null,2));

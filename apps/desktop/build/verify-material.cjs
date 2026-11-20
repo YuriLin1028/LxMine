@@ -12,7 +12,7 @@ function verify() {
   const restoredPopup=report.systemMenus?.status==='SOURCE_PARITY'&&report.systemMenus.opticalProfileEqual===true&&
     report.systemMenus.mapBytesEqual===true&&report.systemMenus.popupStylesEqual===true&&report.systemMenus.popupMotionEqual===true&&
     report.systemMenus.scenes>=12&&report.systemMenus.calibrationVariants>=2&&
-    report.systemMenus.referenceMaterialSHA256==='ef0da2ea3e80fafcde7489018ee3641bd1fef819dd757b8f5c2e5475b2cafa80'&&
+    report.systemMenus.referenceMaterialSHA256==='444e6988494eee12578975c25e135caf95e9a5d014ea106779409ed879f20c55'&&
     report.hashes?.['qa/material/map-equivalence.cjs'];
   if(!restoredPopup){
     if(report.systemMenus?.status!=='PASS'||report.systemMenus.best?.metrics?.length!==6)throw new Error('Material gate: native popup verification or restored-release parity is missing.');
