@@ -44,20 +44,23 @@ export function normalizeRelease(data) {
   if (!data || data.draft || data.prerelease || !Array.isArray(data.assets)) {
     throw new Error('Invalid stable release');
   }
-  if (typeof data.tag_name !== 'string' || !/^v?\d+\.\d+\.\d+(?:[-+][\w.-]+)?$/.test(data.tag_name)) {
+  if (typeof data.tag_name !== 'string' || !/^v?\d+\.\d+\.\d+(?:\.\d+)?(?:[-+][\w.-]+)?$/.test(data.tag_name)) {
     throw new Error('Invalid release version');
   }
+  const baseTagMatch = data.tag_name.match(/^v?(\d+\.\d+\.\d+)/i);
+  const baseTag = baseTagMatch ? `v${baseTagMatch[1]}` : data.tag_name;
   const releaseUrl = new URL(data.html_url);
   if (releaseUrl.origin !== 'https://github.com'
-      || releaseUrl.pathname !== `/YuriLin1028/LxMine/releases/tag/${data.tag_name}`
+      || (releaseUrl.pathname !== `/YuriLin1028/LxMine/releases/tag/${data.tag_name}` && releaseUrl.pathname !== `/YuriLin1028/LxMine/releases/tag/${baseTag}`)
       || releaseUrl.username || releaseUrl.password || releaseUrl.search || releaseUrl.hash) {
     throw new Error('Invalid release page');
   }
   const assets = data.assets.filter((asset) => {
     if (typeof asset?.name !== 'string' || !validateAssetUrl(asset.browser_download_url)) return false;
     const url = new URL(asset.browser_download_url);
+    const urlTag = decodeURIComponent(url.pathname.split('/').at(-2));
     return decodeURIComponent(url.pathname.split('/').at(-1)) === asset.name
-      && decodeURIComponent(url.pathname.split('/').at(-2)) === data.tag_name
+      && (urlTag === data.tag_name || urlTag === baseTag)
       && Number.isSafeInteger(asset.size) && asset.size > 0;
   }).map((asset) => ({
     name: asset.name,
@@ -65,7 +68,7 @@ export function normalizeRelease(data) {
     browser_download_url: asset.browser_download_url,
     digest: /^sha256:[a-f\d]{64}$/i.test(asset.digest || '') ? asset.digest.slice(7).toLowerCase() : null,
   }));
-  return { tag: data.tag_name, url: releaseUrl.href, publishedAt: data.published_at, assets };
+  return { tag: baseTag, url: releaseUrl.href, publishedAt: data.published_at, assets };
 }
 
 export function selectAsset(release, platform, variant = 'setup') {
