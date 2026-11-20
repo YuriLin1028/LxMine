@@ -2,8 +2,8 @@
   "app": {
     "bundleName": "com.lxlia.player",
     "vendor": "LxMine",
-    "versionCode": 1200000,
-    "versionName": "1.2.0",
+    "versionCode": 1200100,
+    "versionName": "1.2.1",
     "icon": "$media:app_icon",
     "label": "$string:app_name"
   }
