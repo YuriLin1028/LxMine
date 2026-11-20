@@ -51,6 +51,7 @@ class MainActivity : ComponentActivity() {
 
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
+        com.lxlia.player.data.AppUpdater.attachActivity(this)
         if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.S) {
             // 直接衔接应用内启动动画或首页，避免系统图标再播放一次。
             splashScreen.setOnExitAnimationListener { it.remove() }
@@ -95,6 +96,7 @@ class MainActivity : ComponentActivity() {
                                 settings.allowFileAccess = true
                                 settings.allowFileAccessFromFileURLs = true
                                 settings.allowUniversalAccessFromFileURLs = true
+                                settings.cacheMode = android.webkit.WebSettings.LOAD_NO_CACHE
                                 settings.mediaPlaybackRequiresUserGesture = false
                                 if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.KITKAT) {
                                     WebView.setWebContentsDebuggingEnabled(true)
@@ -141,11 +143,17 @@ class MainActivity : ComponentActivity() {
 
     override fun onResume() {
         super.onResume()
+        com.lxlia.player.data.AppUpdater.attachActivity(this)
         applyHighRefreshRate()
         // 文件选择期间空闲服务可能被系统停止，回到前台时重新连接播放器。
         runCatching { startService(Intent(this, PlaybackService::class.java)) }
             .onFailure { viewModel.error = "播放器服务启动失败：${it.message}" }
         viewModel.onForeground()
+        if (viewModel.updateNeedsInstallPermission && viewModel.updateDownloadedApk != null &&
+            com.lxlia.player.data.AppUpdater.canInstallPackages(this)
+        ) {
+            viewModel.triggerDownloadedApkInstall()
+        }
     }
 
     override fun onPause() {
@@ -168,6 +176,7 @@ class MainActivity : ComponentActivity() {
     }
 
     override fun onDestroy() {
+        com.lxlia.player.data.AppUpdater.detachActivity(this)
         hostView?.let { view ->
             runCatching { view.stopLoading(); view.destroy() }
         }

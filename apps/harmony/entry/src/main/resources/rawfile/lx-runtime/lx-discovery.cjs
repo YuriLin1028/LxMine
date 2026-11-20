@@ -53,6 +53,9 @@ function createDiscovery(io){
   const source=item.source||'wy',id=item.id;
   if(item.kind!=='chart'||source==='wy'){
    if(source==='wy'){
+    if(typeof io.importPlaylist==='function'){
+     try{const lists=await io.importPlaylist(String(id),'wy');const pl=lists&&lists[0];if(pl&&Array.isArray(pl.songs)&&pl.songs.length)return {items:pl.songs,total:pl.songs.length,complete:true,warning:pl.warning||''};}catch(_){}
+    }
     let r;
     try{r=await json('https://music.163.com/api/v6/playlist/detail?id='+encodeURIComponent(id)+'&n=1000&s=0',headers(source));}catch(_){r=null;}
     if((!r||r.code!==200||!r.playlist)&&typeof io.linuxEncrypt==='function'){

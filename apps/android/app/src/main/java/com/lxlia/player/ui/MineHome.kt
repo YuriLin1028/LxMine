@@ -417,21 +417,6 @@ private fun HomeBannerCard(
                         )
                     ),
             )
-            if (item.id == "daily-30" && item.period == "personalized") {
-                Text(
-                    "个性推荐",
-                    fontSize = 10.sp,
-                    fontWeight = FontWeight.Medium,
-                    color = ACCENT,
-                    modifier = Modifier
-                        .align(Alignment.TopStart)
-                        .padding(12.dp)
-                        .clip(RoundedCornerShape(10.dp))
-                        .background(Color(0x88090B0E))
-                        .border(0.6.dp, ACCENT.copy(alpha = 0.35f), RoundedCornerShape(10.dp))
-                        .padding(horizontal = 8.dp, vertical = 3.dp),
-                )
-            }
             Row(
                 modifier = Modifier.align(Alignment.BottomStart).fillMaxWidth().padding(14.dp),
                 horizontalArrangement = Arrangement.spacedBy(8.dp),
@@ -451,21 +436,18 @@ private fun HomeBannerCard(
                     Text(
                         bannerNote(item),
                         fontSize = 11.sp,
-                        color = Color(0xC4FFFFFF),
+                        color = Color(0xB3FFFFFF),
                         maxLines = 1,
                         overflow = TextOverflow.Ellipsis,
                     )
                 }
                 Box(
                     Modifier
-                        .size(36.dp)
-                        .clip(CircleShape)
-                        .background(Color(0x4D000000))
-                        .border(0.75.dp, Color(0x33FFFFFF), CircleShape)
+                        .size(28.dp)
                         .tapNoRipple(onPlay),
                     contentAlignment = Alignment.Center,
                 ) {
-                    AssetIcon(if (playing && isActive) "ic_pause.svg" else "ic_play.svg", size = 22.dp, tint = ACCENT)
+                    AssetIcon(if (playing && isActive) "ic_pause.svg" else "ic_play.svg", size = 24.dp, tint = ACCENT)
                 }
             }
         }

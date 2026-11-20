@@ -47,12 +47,29 @@ data class UpdateProgress(
 
 object AppUpdater {
     private const val REPO = "YuriLin1028/LxMine"
-    private val RELEASE_ENDPOINTS = listOf(
-        "https://api.github.com/repos/$REPO/releases/latest",
-        "https://gh-proxy.org/https://raw.githubusercontent.com/$REPO/gh-pages/release.json",
-        "https://ghfast.top/https://raw.githubusercontent.com/$REPO/gh-pages/release.json",
-        "https://yurilin1028.github.io/LxMine/release.json",
-    )
+    @Volatile
+    private var currentActivityRef: java.lang.ref.WeakReference<android.app.Activity>? = null
+
+    fun attachActivity(activity: android.app.Activity) {
+        currentActivityRef = java.lang.ref.WeakReference(activity)
+    }
+
+    fun detachActivity(activity: android.app.Activity) {
+        if (currentActivityRef?.get() === activity) {
+            currentActivityRef = null
+        }
+    }
+
+    private fun releaseEndpoints(): List<String> {
+        val ts = System.currentTimeMillis() / 15000L
+        return listOf(
+            "https://yurilin1028.github.io/LxMine/android-release.json?t=$ts",
+            "https://gh-proxy.org/https://raw.githubusercontent.com/$REPO/gh-pages/android-release.json",
+            "https://ghfast.top/https://raw.githubusercontent.com/$REPO/gh-pages/android-release.json",
+            "https://api.github.com/repos/$REPO/releases/latest",
+            "https://yurilin1028.github.io/LxMine/release.json?t=$ts",
+        )
+    }
     private val DOWNLOAD_MIRRORS = listOf(
         "GH-Proxy" to "https://gh-proxy.org/",
         "GHFast" to "https://ghfast.top/",
@@ -71,6 +88,29 @@ object AppUpdater {
             if (diff != 0) return if (diff > 0) 1 else -1
         }
         return 0
+    }
+
+    private fun baseThreePart(v: String): String {
+        val parts = v.trim().removePrefix("v").removePrefix("V").split("-", "+")[0].split(".")
+        return parts.take(3).joinToString(".")
+    }
+
+    private fun installedApkSha256(context: Context): String {
+        return runCatching {
+            val apkPath = context.applicationInfo?.sourceDir ?: return ""
+            val file = File(apkPath)
+            if (!file.isFile) return ""
+            val md = MessageDigest.getInstance("SHA-256")
+            file.inputStream().use { input ->
+                val buf = ByteArray(32768)
+                while (true) {
+                    val n = input.read(buf)
+                    if (n <= 0) break
+                    md.update(buf, 0, n)
+                }
+            }
+            md.digest().joinToString("") { "%02x".format(it) }
+        }.getOrDefault("")
     }
 
     private fun validateAssetUrl(url: String): Boolean {
@@ -117,10 +157,11 @@ object AppUpdater {
         }.getOrDefault(0L)
     }
 
-    suspend fun checkForUpdate(currentVersion: String): AppUpdateInfo = withContext(Dispatchers.IO) {
-        val current = currentVersion.trim().removePrefix("v").removePrefix("V")
+    suspend fun checkForUpdate(currentVersion: String, context: Context? = null): AppUpdateInfo = withContext(Dispatchers.IO) {
+        val current = baseThreePart(currentVersion)
+        val endpoints = releaseEndpoints()
         val results = coroutineScope {
-            RELEASE_ENDPOINTS.mapIndexed { idx, endpoint ->
+            endpoints.mapIndexed { idx, endpoint ->
                 async {
                     val data = fetchJson(endpoint)
                     if (data != null) idx to data else null
@@ -130,13 +171,30 @@ object AppUpdater {
         if (results.isEmpty()) {
             throw IllegalStateException("无法连接更新服务器，请检查网络")
         }
+        fun apkUpdatedMs(obj: JSONObject): Long {
+            val arr = obj.optJSONArray("assets")
+            if (arr != null) {
+                for (i in 0 until arr.length()) {
+                    val a = arr.optJSONObject(i) ?: continue
+                    if (a.optString("name").endsWith(".apk", ignoreCase = true)) {
+                        val t = parseIsoMs(a.optString("updated_at", ""))
+                        if (t > 0L) return t
+                    }
+                }
+            }
+            return parseIsoMs(obj.optString("published_at", ""))
+        }
         val best = results.sortedWith { a, b ->
-            val cmp = compareVersions(b.second.optString("tag_name"), a.second.optString("tag_name"))
-            if (cmp != 0) cmp else a.first.compareTo(b.first)
+            val cmp = compareVersions(baseThreePart(b.second.optString("tag_name")), baseThreePart(a.second.optString("tag_name")))
+            if (cmp != 0) return@sortedWith cmp
+            val tb = apkUpdatedMs(b.second)
+            val ta = apkUpdatedMs(a.second)
+            if (tb != ta) tb.compareTo(ta) else a.first.compareTo(b.first)
         }.first().second
 
-        val tagName = best.optString("tag_name")
-        val latest = tagName.removePrefix("v").removePrefix("V")
+        val rawTag = best.optString("tag_name")
+        val latest = baseThreePart(rawTag)
+        val tagName = "v$latest"
         val assetsArr = best.optJSONArray("assets")
         val assets = mutableListOf<Pair<UpdateAsset, String>>()
         if (assetsArr != null) {
@@ -158,16 +216,23 @@ object AppUpdater {
         val picked = pickedPair?.first
         val cmp = compareVersions(latest, current)
         val remoteTimeMs = parseIsoMs(pickedPair?.second?.ifBlank { best.optString("published_at", "") } ?: best.optString("published_at", ""))
-        val sameVersionNewer = cmp == 0 && picked != null && remoteTimeMs > com.lxlia.player.BuildConfig.BUILD_TIME_MS + 120_000L
+        val installedSha = if (context != null && cmp == 0 && !picked?.digest.isNullOrEmpty()) installedApkSha256(context) else ""
+        val sameVersionNewer = cmp == 0 && picked != null && (
+            if (picked.digest.isNotEmpty() && installedSha.isNotEmpty()) {
+                !picked.digest.equals(installedSha, ignoreCase = true) && remoteTimeMs > com.lxlia.player.BuildConfig.BUILD_TIME_MS - 300_000L
+            } else {
+                remoteTimeMs > com.lxlia.player.BuildConfig.BUILD_TIME_MS + 60_000L
+            }
+        )
 
         AppUpdateInfo(
             currentVersion = current,
             latestVersion = latest,
             tagName = tagName,
-            hasUpdate = cmp > 0 || sameVersionNewer,
+            hasUpdate = picked != null && (cmp > 0 || sameVersionNewer),
             publishedAt = best.optString("published_at", ""),
             notes = best.optString("body", "").trim(),
-            releaseUrl = best.optString("html_url", "https://github.com/$REPO/releases/tag/$tagName"),
+            releaseUrl = "https://github.com/$REPO/releases/tag/$tagName",
             asset = picked,
         )
     }
@@ -180,7 +245,8 @@ object AppUpdater {
         if (!validateAssetUrl(asset.downloadUrl)) {
             throw IllegalArgumentException("无效的安装包地址")
         }
-        val dir = File(context.cacheDir, "updates").apply { mkdirs() }
+        val baseDir = context.externalCacheDir ?: context.filesDir ?: context.cacheDir
+        val dir = File(baseDir, "updates").apply { mkdirs() }
         val safeName = asset.name.replace(Regex("[^\\w.\\-]"), "_")
         val destFile = File(dir, safeName)
         var lastError: Throwable? = null
@@ -195,7 +261,9 @@ object AppUpdater {
                     connectTimeout = 20000
                     readTimeout = 30000
                     instanceFollowRedirects = true
-                    setRequestProperty("User-Agent", "LxMine-Updater/1.1")
+                    useCaches = false
+                    setRequestProperty("Cache-Control", "no-cache")
+                    setRequestProperty("User-Agent", "LxMine-Updater/1.2")
                 }
                 if (conn.responseCode != 200) {
                     throw IllegalStateException("HTTP ${conn.responseCode}")
@@ -215,8 +283,7 @@ object AppUpdater {
                             if (n <= 0) break
                             if (!checkedHeader) {
                                 checkedHeader = true
-                                val head = String(buf, 0, minOf(n, 32)).trim().lowercase()
-                                if (head.startsWith("<!doctype") || head.startsWith("<html") || head.startsWith("{")) {
+                                if (n < 4 || buf[0] != 0x50.toByte() || buf[1] != 0x4B.toByte()) {
                                     throw IllegalStateException("镜像返回了非安装包内容")
                                 }
                             }
@@ -233,13 +300,14 @@ object AppUpdater {
                         output.fd.sync()
                     }
                 }
-                if (received <= 0 || (total > 0 && received < total)) {
+                if (received < 1_000_000L || (total > 0 && received < total)) {
                     throw IllegalStateException("安装包下载不完整")
                 }
-                if (asset.digest.isNotEmpty()) {
-                    val actual = digest.digest().joinToString("") { "%02x".format(it) }
-                    if (!actual.equals(asset.digest, ignoreCase = true)) {
-                        throw IllegalStateException("安装包校验失败")
+                val actual = digest.digest().joinToString("") { "%02x".format(it) }
+                if (asset.digest.isNotEmpty() && !actual.equals(asset.digest, ignoreCase = true)) {
+                    val archivePkg = context.packageManager.getPackageArchiveInfo(destFile.absolutePath, 0)?.packageName
+                    if (archivePkg != context.packageName || mirrorName != "GitHub") {
+                        throw IllegalStateException("镜像缓存尚未同步，正在切换源…")
                     }
                 }
                 onProgress(UpdateProgress(mirrorName, received, received, 100))
@@ -261,21 +329,27 @@ object AppUpdater {
 
     fun openInstallPermissionSettings(context: Context) {
         if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
+            val host = currentActivityRef?.get() ?: context
             val intent = Intent(
                 Settings.ACTION_MANAGE_UNKNOWN_APP_SOURCES,
                 Uri.parse("package:${context.packageName}"),
-            ).addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
-            context.startActivity(intent)
+            )
+            if (host !is android.app.Activity) intent.addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
+            host.startActivity(intent)
         }
     }
 
     fun launchOverwriteInstall(context: Context, apkFile: File) {
+        val host = currentActivityRef?.get() ?: context
         val uri = FileProvider.getUriForFile(context, "${context.packageName}.fileprovider", apkFile)
         val intent = Intent(Intent.ACTION_VIEW).apply {
             setDataAndType(uri, "application/vnd.android.package-archive")
+            clipData = android.content.ClipData.newRawUri("apk", uri)
             addFlags(Intent.FLAG_GRANT_READ_URI_PERMISSION)
-            addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
+            if (host !is android.app.Activity) {
+                addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
+            }
         }
-        context.startActivity(intent)
+        host.startActivity(intent)
     }
 }

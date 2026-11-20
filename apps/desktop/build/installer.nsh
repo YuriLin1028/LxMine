@@ -237,18 +237,40 @@ Function MineradioTintCommonControls
   ${EndIf}
 FunctionEnd
 
+Function MineradioCmdLineHasDirFlag
+  StrLen $R3 "$CMDLINE"
+  StrCpy $R4 0
+  loop_cmd_d:
+    ${If} $R4 >= $R3
+      Push "0"
+      Return
+    ${EndIf}
+    StrCpy $R5 "$CMDLINE" 3 $R4
+    ${If} $R5 == "/D="
+    ${OrIf} $R5 == "/d="
+      Push "1"
+      Return
+    ${EndIf}
+    IntOp $R4 $R4 + 1
+    Goto loop_cmd_d
+FunctionEnd
+
 Function MineradioUsePreferredInstallDir
-  ${GetParameters} $R0
-  ClearErrors
-  ${GetOptions} $R0 "/D=" $R1
-  ${IfNot} ${Errors}
-  ${AndIf} $R1 != ""
-    StrCpy $INSTDIR "$R1"
-  ${Else}
-    Call MineradioUseRegisteredInstallDir
-    Pop $R2
-    ${If} $R2 != "1"
-      Call MineradioUseFirstAvailableInstallDir
+  Call MineradioCmdLineHasDirFlag
+  Pop $R0
+  ${If} $R0 != "1"
+    ${GetParameters} $R0
+    ClearErrors
+    ${GetOptions} $R0 "/D=" $R1
+    ${IfNot} ${Errors}
+    ${AndIf} $R1 != ""
+      StrCpy $INSTDIR "$R1"
+    ${Else}
+      Call MineradioUseRegisteredInstallDir
+      Pop $R2
+      ${If} $R2 != "1"
+        Call MineradioUseFirstAvailableInstallDir
+      ${EndIf}
     ${EndIf}
   ${EndIf}
   Push "$INSTDIR"
@@ -285,6 +307,10 @@ Function MineradioUseFirstAvailableInstallDir
 
   driveD:
     StrCpy $INSTDIR "D:\${MINERADIO_INSTALL_DIR_NAME}"
+    IfFileExists "D:\${MINERADIO_INSTALL_DIR_NAME}\*.*" 0 driveD_done
+    IfFileExists "D:\${MINERADIO_INSTALL_DIR_NAME}\${MINERADIO_INSTALL_MARKER}" driveD_done 0
+    StrCpy $INSTDIR "D:\Program Files\${MINERADIO_INSTALL_DIR_NAME}"
+  driveD_done:
     Return
   driveE:
     StrCpy $INSTDIR "E:\${MINERADIO_INSTALL_DIR_NAME}"
@@ -764,7 +790,7 @@ Function MineradioValidateInstallDir
       ${If} $2 == "1"
       ${AndIf} $3 != "1"
       ${AndIf} $4 != "1"
-        MessageBox MB_ICONSTOP|MB_OK "检测到这台电脑还有 D-Z 盘，LxMine 不安装到 C 盘。请改选 D 盘或其它非 C 盘的 LxMine 文件夹。$\r$\n$\r$\n如果电脑只有 C 盘，安装器会自动放行 C:\LxMine。"
+        MessageBox MB_ICONSTOP|MB_OK "检测到这台电脑还有 D-Z 盘，LxMine 不安装到 C 盘。请改选 D 盘或其它非 C 盘的 LxMine 文件夹。$\r$\n$\r$\n如果电脑只有 C 盘，安装器会自动放行 C:\LxMine。" /SD IDOK
         Abort
       ${EndIf}
     ${EndIf}
@@ -777,7 +803,7 @@ Function MineradioValidateInstallDir
   ${If} $0 < $2
   ${OrIf} $1 != "\${MINERADIO_INSTALL_DIR_NAME}"
   ${AndIf} $1 != "\${MINERADIO_INSTALL_DIR_NAME_LOWER}"
-    MessageBox MB_ICONSTOP|MB_OK "安装目录必须是独立的 LxMine 文件夹。请选择一个上级目录，安装器会自动创建 LxMine 子文件夹。"
+    MessageBox MB_ICONSTOP|MB_OK "安装目录必须是独立的 LxMine 文件夹。请选择一个上级目录，安装器会自动创建 LxMine 子文件夹。" /SD IDOK
     Abort
   ${EndIf}
 
@@ -805,7 +831,7 @@ Function MineradioValidateInstallDir
     Goto valid
   ${EndIf}
 
-  MessageBox MB_ICONSTOP|MB_OK "为避免卸载时误删其它文件，LxMine 不能安装到已有文件的非专属目录。请新建或选择一个空的 LxMine 文件夹。$\r$\n$\r$\n当前路径：$INSTDIR"
+  MessageBox MB_ICONSTOP|MB_OK "为避免卸载时误删其它文件，LxMine 不能安装到已有文件的非专属目录。请新建或选择一个空的 LxMine 文件夹。$\r$\n$\r$\n当前路径：$INSTDIR" /SD IDOK
   Abort
 
   valid:

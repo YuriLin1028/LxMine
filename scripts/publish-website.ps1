@@ -45,6 +45,7 @@ $snapshot = [ordered]@{
     tag_name = $release.tag_name
     html_url = $release.html_url
     published_at = $release.published_at
+    body = [string]$release.body
     draft = $release.draft
     prerelease = $release.prerelease
     assets = @($release.assets | ForEach-Object {
@@ -53,6 +54,7 @@ $snapshot = [ordered]@{
             size = $_.size
             browser_download_url = $_.browser_download_url
             digest = $_.digest
+            updated_at = $_.updated_at
         }
     })
 }
@@ -74,6 +76,44 @@ try {
 
     Get-ChildItem -LiteralPath $websitePath -Force | Copy-Item -Destination $publishPath -Recurse -Force
     $snapshot | ConvertTo-Json -Depth 6 | Set-Content -LiteralPath (Join-Path $publishPath 'release.json') -Encoding utf8NoBOM
+
+    # Generate strictly isolated per-platform update manifests so each client only receives updates for its own package.
+    $winAssets = @($snapshot.assets | Where-Object { $_.name -match '\.exe$' })
+    $androidAssets = @($snapshot.assets | Where-Object { $_.name -match '\.apk$' })
+    $hapAssets = @($snapshot.assets | Where-Object { $_.name -match '\.hap$' })
+
+    ([ordered]@{
+        platform = 'windows'
+        tag_name = $release.tag_name
+        html_url = $release.html_url
+        published_at = $release.published_at
+        body = [string]$release.body
+        draft = $release.draft
+        prerelease = $release.prerelease
+        assets = $winAssets
+    }) | ConvertTo-Json -Depth 6 | Set-Content -LiteralPath (Join-Path $publishPath 'windows-release.json') -Encoding utf8NoBOM
+
+    ([ordered]@{
+        platform = 'android'
+        tag_name = $release.tag_name
+        html_url = $release.html_url
+        published_at = $release.published_at
+        body = [string]$release.body
+        draft = $release.draft
+        prerelease = $release.prerelease
+        assets = $androidAssets
+    }) | ConvertTo-Json -Depth 6 | Set-Content -LiteralPath (Join-Path $publishPath 'android-release.json') -Encoding utf8NoBOM
+
+    ([ordered]@{
+        platform = 'harmony-hap'
+        tag_name = $release.tag_name
+        html_url = $release.html_url
+        published_at = $release.published_at
+        body = [string]$release.body
+        draft = $release.draft
+        prerelease = $release.prerelease
+        assets = $hapAssets
+    }) | ConvertTo-Json -Depth 6 | Set-Content -LiteralPath (Join-Path $publishPath 'harmony-hap-release.json') -Encoding utf8NoBOM
     if ($configuredDomain) {
         # Keep an attached domain and canonical URLs consistent on subsequent releases.
         Set-Content -LiteralPath (Join-Path $publishPath 'CNAME') -Value $configuredDomain -Encoding utf8NoBOM

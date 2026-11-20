@@ -1,0 +1,6 @@
+{
+  "tag_name": "v1.2.1",
+  "published_at": "2026-11-20T02:08:41Z",
+  "invite_url": "https://appgallery.huawei.com/link/invite-test-wap?taskId=7181c9f3cfda4854dc2f0d8fec00ab40&invitationCode=1Klp9jEJXOp",
+  "notes": "## LxMine v1.2.1 邀请测试更新\n- 支持播放页背景透明度（0%–100% 实时滑动 + 恢复默认）与自定义背景图\n- 自定义背景图支持实时提取主色板，音乐回响工坊与取色歌词同步跟随\n- 修复音乐回响工坊二次进入画布错位/歪斜问题\n- 下载管理支持删除单条记录与清理本地缓存"
+}

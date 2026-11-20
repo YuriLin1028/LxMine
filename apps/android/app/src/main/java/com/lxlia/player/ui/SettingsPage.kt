@@ -355,6 +355,12 @@ private fun SettingsMainPanel(vm: AppViewModel) {
             value = vm.refreshAlgoOnDoubleTap,
             onChange = { vm.setRefreshAlgoOnDoubleTap(it) },
         )
+        ToggleRow(
+            title = "同局域网自动同步歌单",
+            detail = "发现同网络开启自动同步的手机/电脑时，歌单与喜欢变动自动合并同步",
+            value = vm.lanAutoSync,
+            onChange = { vm.setLanAutoSync(it) },
+        )
         LinkRow(
             title = "局域网同步",
             detail = "手机、平板与电脑之间双向同步歌单、音源和设置",
@@ -383,13 +389,6 @@ private fun SettingsMainPanel(vm: AppViewModel) {
             onClick = { vm.checkAppUpdate(silent = false) },
         )
     }
-    Text(
-        "LxMine · 1.2.0\n融合 LX Music 与 MineRadio",
-        fontSize = 12.sp,
-        color = MUTED,
-        lineHeight = 22.sp,
-        modifier = Modifier.padding(top = 32.dp, bottom = 28.dp, start = 4.dp),
-    )
 }
 
 @Composable

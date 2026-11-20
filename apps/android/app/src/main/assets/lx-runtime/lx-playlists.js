@@ -85,7 +85,7 @@
     return result;
   }
   function parseLink(input, selected, depth = 0) {
-    const match = input.trim().match(/https?:\/\/[^\s<>"\u0000-\u001f]+/i);
+    const match = input.trim().match(/https?:\/\/[A-Za-z0-9\-._~:/?#\[\]@!$&'*+,;=%]+/i);
     if (!match) {
       if (depth < 2 && /%(?:25)?3a/i.test(input)) {
         try { return parseLink(decodeURIComponent(input), selected, depth + 1); } catch (_) {}
@@ -120,20 +120,23 @@
         // Share pages expose canonical URLs even when a native HTTP client hides the final redirect URL.
         const canonical = body.match(/<link[^>]+(?:rel=["']canonical["'][^>]+href|href)=["']([^"']+)["']/i);
         if (canonical) candidates.push(clean(canonical[1]));
-        const collection = target.source === 'kg' && body.match(/["']global_collection_id["']\s*[:=]\s*["']((?:collection_|gcid_)[\w]+)["']/i);
-        if (collection) return { ...target, id: collection[1] };
-        const embedded = body.match(target.source === 'qishui' ? /["']playlist_id["']\s*[:=]\s*["']?(\d+)/i
-          : target.source === 'kg' ? /["']specialid["']\s*[:=]\s*["']?([1-9]\d*)/i
-          : /["'](?:disstid|playlistId|playlist_id)["']\s*[:=]\s*["']?(\d+)/i);
-        if (embedded) return { ...target, id: embedded[1] };
+        const ogUrl = body.match(/<meta[^>]+property=["']og:url["'][^>]+content=["']([^"']+)["']/i);
+        if (ogUrl) candidates.push(clean(ogUrl[1]));
         let next = null;
         for (const candidate of candidates) {
           if (!candidate) continue;
           try {
             const parsed = parseLink(new URL(candidate, target.link).href, selected);
-            if (parsed.source === target.source && (parsed.id || parsed.link !== target.link)) { next = parsed; break; }
+            if (parsed.source === target.source && parsed.id) return parsed;
+            if (!next && parsed.source === target.source && parsed.link !== target.link) next = parsed;
           } catch (_) {}
         }
+        const collection = target.source === 'kg' && body.match(/["']global_collection_id["']\s*[:=]\s*["']((?:collection_|gcid_)[\w]+)["']/i);
+        if (collection) return { ...target, id: collection[1] };
+        const embedded = body.match(target.source === 'qishui' ? /["']playlist_id["']\s*[:=]\s*["']?([1-9]\d*)/i
+          : target.source === 'kg' ? /["']specialid["']\s*[:=]\s*["']?([1-9]\d*)/i
+          : /["'](?:disstid|playlistId|playlist_id)["']\s*[:=]\s*["']?([1-9]\d*)/i);
+        if (embedded) return { ...target, id: embedded[1] };
         if (!next) break;
         target = next;
       } else if (io.resolve) target = parseLink(await io.resolve(target.link), selected);
@@ -330,27 +333,111 @@
       const list = playlist(name, tracks, source); list.id = 'lx-import-kg-' + id; return [list];
     }
     if (source === 'wy') {
+      const randHex = len => Array.from({ length: len }, () => Math.floor(Math.random() * 16).toString(16)).join('');
+      const nmtid = '00O' + randHex(38);
+      const nuid = randHex(64);
+      const devId = randHex(52).toUpperCase();
+      const eapiHeader = {
+        osver: 'Microsoft-Windows-10-Professional-build-19045-64bit',
+        deviceId: devId,
+        os: 'pc',
+        appver: '3.1.17.204416',
+        versioncode: '140',
+        mobilename: '',
+        buildver: String(Math.floor(Date.now() / 1000)),
+        resolution: '1920x1080',
+        __csrf: '',
+        channel: 'netease',
+        requestId: Date.now() + '_' + String(Math.floor(Math.random() * 1000)).padStart(4, '0'),
+        NMTID: nmtid
+      };
+      const pcCookie = Object.entries(eapiHeader).map(([k, v]) => encodeURIComponent(k) + '=' + encodeURIComponent(v)).join('; ') + '; _ntes_nuid=' + nuid;
       const wyHeaders = {
         Referer: 'https://music.163.com/',
-        'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/126.0.0.0 Safari/537.36'
+        'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/126.0.0.0 Safari/537.36',
+        Cookie: pcCookie,
+        'X-Real-IP': '118.88.88.88',
+        'X-Forwarded-For': '118.88.88.88'
       };
-      const forward = (path, params) => io.json('https://music.163.com/api/linux/forward', {
-        method: 'POST',
-        headers: { ...wyHeaders, 'Content-Type': 'application/x-www-form-urlencoded' },
-        body: 'eparams=' + io.linuxEncrypt({ method: 'POST', url: 'https://music.163.com' + path, params })
-      }, data => {
-        if (data.code !== 200) throw new Error(data.message || '网易云歌曲资料暂不可访问');
-      });
-      let payload;
-      try {
-        payload = await io.json('https://music.163.com/api/v6/playlist/detail?id=' + encodeURIComponent(id) + '&n=1000&s=0', { headers: wyHeaders }, data => {
-          if (data.code !== 200 || !data.playlist) throw new Error(data.message || '网易云歌单暂不可用');
+      const callEapi = async (apiPath, bodyObj) => {
+        if (typeof io.eapiEncrypt !== 'function') throw new Error('eapi unavailable');
+        const params = io.eapiEncrypt(apiPath, { ...bodyObj, e_r: false, header: eapiHeader });
+        const postOpts = {
+          method: 'POST',
+          headers: {
+            'Content-Type': 'application/x-www-form-urlencoded',
+            'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; WOW64) AppleWebKit/537.36 (KHTML, like Gecko) Safari/537.36 Chrome/91.0.4472.164 NeteaseMusicDesktop/3.1.17.204416',
+            Cookie: pcCookie,
+            'X-Real-IP': '118.88.88.88',
+            'X-Forwarded-For': '118.88.88.88'
+          },
+          body: 'params=' + encodeURIComponent(params)
+        };
+        const sub = apiPath.replace(/^\/api\//, '/eapi/');
+        try {
+          const d1 = await io.json('https://interfacepc.music.163.com' + sub, postOpts);
+          if (d1 && d1.code === 200) return d1;
+        } catch (_) {}
+        const d2 = await io.json('https://interface.music.163.com' + sub, postOpts);
+        if (!d2 || d2.code !== 200) throw new Error((d2 && d2.message) || 'eapi failed');
+        return d2;
+      };
+      const forward = async (path, params) => {
+        const data = await io.json('https://music.163.com/api/linux/forward', {
+          method: 'POST',
+          headers: {
+            Referer: 'https://music.163.com/',
+            'User-Agent': 'Mozilla/5.0 (X11; Linux x86_64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/60.0.3112.90 Safari/537.36',
+            Cookie: 'MUSIC_U=; NMTID=' + nmtid + '; _ntes_nuid=' + nuid + '; os=linux; appver=1.2.1.0428; channel=netease',
+            'X-Real-IP': '118.88.88.88',
+            'X-Forwarded-For': '118.88.88.88',
+            'Content-Type': 'application/x-www-form-urlencoded'
+          },
+          body: 'eparams=' + io.linuxEncrypt({ method: 'POST', url: 'https://music.163.com' + path, params })
         });
-      } catch (_) {
-        payload = await forward('/api/v3/playlist/detail', { id, n: 100000, s: 0 });
+        if (!data || data.code !== 200) throw new Error((data && data.message) || '网易云歌曲资料暂不可访问');
+        return data;
+      };
+      let payload = null;
+      let lastErr = null;
+      if (typeof io.eapiEncrypt === 'function') {
+        try {
+          const d = await callEapi('/api/v6/playlist/detail', { id: String(id), n: 100000, s: 8 });
+          if (d && (d.playlist || d.result)) payload = d;
+        } catch (e) { lastErr = e; }
       }
-      const list = payload.playlist || payload.result;
-      if (!list) throw new Error(payload.message || '歌单不可访问，可能为私密或已删除');
+      if (!payload && typeof io.linuxEncrypt === 'function') {
+        try {
+          const d = await forward('/api/v3/playlist/detail', { id, n: 100000, s: 0 });
+          if (d && (d.playlist || d.result)) payload = d;
+        } catch (e) { lastErr = e; }
+      }
+      if (!payload) {
+        for (const hostUrl of ['https://interface.music.163.com', 'https://music.163.com']) {
+          try {
+            const d = await io.json(hostUrl + '/api/v6/playlist/detail?id=' + encodeURIComponent(id) + '&n=1000&s=0', { headers: wyHeaders });
+            if (d && d.code === 200 && (d.playlist || d.result)) { payload = d; break; }
+            if (d && d.message) lastErr = new Error(d.message);
+          } catch (e) { lastErr = e; }
+        }
+      }
+      if (!payload && typeof io.page === 'function') {
+        try {
+          const pg = await io.page('https://music.163.com/discover/toplist?id=' + encodeURIComponent(id));
+          const html = str(pg && pg.body);
+          const m = html.match(/<textarea[^>]+id=["']song-list-pre-data["'][^>]*>([\s\S]+?)<\/textarea>/i);
+          if (m && m[1] && m[1].trim().startsWith('[')) {
+            const arr = JSON.parse(clean(m[1]));
+            if (Array.isArray(arr) && arr.length) {
+              const titleM = html.match(/<title>([^<]+)<\/title>/i);
+              const name = titleM ? clean(titleM[1]).replace(/\s*-\s*排行榜.*$|\s*-\s*网易云音乐.*$/g, '').trim() : '网易云榜单';
+              payload = { code: 200, playlist: { name: name || '网易云榜单', tracks: arr, trackIds: arr.map(t => ({ id: t.id })) } };
+            }
+          }
+        } catch (_) {}
+      }
+      const list = payload && (payload.playlist || payload.result);
+      if (!list) throw (lastErr || new Error((payload && payload.message) || '歌单不可访问，可能为私密或已删除'));
       const ids = [...new Set((list.trackIds || []).map(track => str(track.id)).filter(Boolean))];
       const byId = new Map((list.tracks || []).map(track => [str(track.id), track]));
       const missing = ids.filter(trackId => !byId.has(trackId));
@@ -358,23 +445,37 @@
       async function loadDetails() {
         while (nextBatch < missing.length) {
           const start = nextBatch;
-          nextBatch += 50;
-          const batch = missing.slice(start, start + 50);
-          let detail;
-          try {
-            detail = await io.json('https://music.163.com/api/song/detail?ids=' + encodeURIComponent(JSON.stringify(batch)) + '&id=' + batch[0], { headers: wyHeaders }, data => {
-              if (data.code !== 200 || !Array.isArray(data.songs)) throw new Error('歌曲详情未完整返回，请稍后重试');
-            });
-          } catch (_) {
-            detail = await forward('/api/v3/song/detail', {
-              c: JSON.stringify(batch.map(trackId => ({ id: trackId }))), ids: JSON.stringify(batch)
-            });
-            if (!Array.isArray(detail.songs)) throw new Error('网易云未返回歌曲详情');
+          nextBatch += 100;
+          const batch = missing.slice(start, start + 100);
+          let songsArr = null;
+          if (typeof io.eapiEncrypt === 'function') {
+            try {
+              const d = await callEapi('/api/v3/song/detail', { c: JSON.stringify(batch.map(trackId => ({ id: trackId }))) });
+              if (Array.isArray(d && d.songs)) songsArr = d.songs;
+            } catch (_) {}
           }
-          for (const track of detail.songs) byId.set(str(track.id), track);
+          if (!songsArr && typeof io.linuxEncrypt === 'function') {
+            try {
+              const d = await forward('/api/v3/song/detail', {
+                c: JSON.stringify(batch.map(trackId => ({ id: trackId }))), ids: JSON.stringify(batch)
+              });
+              if (Array.isArray(d && d.songs)) songsArr = d.songs;
+            } catch (_) {}
+          }
+          if (!songsArr) {
+            const gathered = [];
+            for (let sub = 0; sub < batch.length; sub += 80) {
+              const part = batch.slice(sub, sub + 80);
+              const d = await io.json('https://music.163.com/api/song/detail?ids=' + encodeURIComponent(JSON.stringify(part)) + '&id=' + part[0], { headers: wyHeaders });
+              if (!d || d.code !== 200 || !Array.isArray(d.songs)) throw new Error('歌曲详情未完整返回，请稍后重试');
+              gathered.push(...d.songs);
+            }
+            songsArr = gathered;
+          }
+          for (const track of songsArr) byId.set(str(track.id), track);
         }
       }
-      await Promise.all(Array.from({ length: Math.min(3, Math.ceil(missing.length / 50)) }, loadDetails));
+      await Promise.all(Array.from({ length: Math.min(3, Math.ceil(missing.length / 100)) }, loadDetails));
       const tracks = ids.length ? ids.map(trackId => byId.get(trackId)).filter(Boolean) : list.tracks || [];
       const result = playlist(list.name, tracks, source);
       result.id = 'lx-import-wy-' + id;

@@ -245,18 +245,21 @@ fun SongRow(
     }
 }
 
-/** 所有歌曲列表统一的头部动作：播放全部 + 批量下载 + 排列；删除歌单只由曲库详情传入。 */
+/** 所有歌曲列表统一的头部动作：播放全部 + 批量下载 + 排列 + 编辑；严格对齐鸿蒙 SongListTools。 */
 @Composable
 fun SongListTools(
     countText: String,
     modifier: Modifier = Modifier,
     disabled: Boolean = false,
     showDelete: Boolean = false,
+    showEdit: Boolean = false,
     onPlayAll: () -> Unit,
     onBatchDownload: (() -> Unit)? = null,
     onSort: (String) -> Unit,
     onManual: () -> Unit,
     onDelete: () -> Unit = {},
+    onRename: () -> Unit = {},
+    onBatchDelete: () -> Unit = {},
 ) {
     val sortMenu = rememberGlassMenuTrigger {
         listOf(
@@ -265,7 +268,19 @@ fun SongListTools(
             "歌手名" to "artist",
             "专辑名首字" to "album",
         ).map { (label, sortMode) -> GlassMenuItem(label) { onSort(sortMode) } } +
-            GlassMenuItem("手动排列") { onManual() }
+            GlassMenuItem("自定义顺序（拖动）") { onManual() }
+    }
+    val editMenu = rememberGlassMenuTrigger {
+        buildList {
+            add(GlassMenuItem("重命名歌单") { onRename() })
+            if (!disabled) {
+                add(GlassMenuItem("批量移除歌曲") { onBatchDelete() })
+                add(GlassMenuItem("自定义歌曲顺序") { onManual() })
+            }
+            if (showDelete) {
+                add(GlassMenuItem("删除整个歌单") { onDelete() })
+            }
+        }
     }
     Row(
         modifier = modifier.fillMaxWidth().height(52.dp),
@@ -287,7 +302,11 @@ fun SongListTools(
         Box(sortMenu.modifier) {
             TextAction("排列", onClick = { sortMenu.show() })
         }
-        if (showDelete) {
+        if (showEdit) {
+            Box(editMenu.modifier) {
+                TextAction("编辑", onClick = { editMenu.show() })
+            }
+        } else if (showDelete) {
             TextAction("删除歌单", color = MUTED, onClick = onDelete)
         }
     }

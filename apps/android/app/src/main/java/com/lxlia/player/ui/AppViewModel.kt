@@ -279,7 +279,7 @@ class AppViewModel(internal val app: LxMineApp) : ViewModel() {
         }
         viewModelScope.launch {
             try {
-                val info = com.lxlia.player.data.AppUpdater.checkForUpdate(currentAppVersion())
+                val info = com.lxlia.player.data.AppUpdater.checkForUpdate(currentAppVersion(), app)
                 updateInfo = info
                 updateError = ""
                 updateDownloadedApk = null

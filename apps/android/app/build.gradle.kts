@@ -22,7 +22,7 @@ android {
         applicationId = "com.lxlia.player"
         minSdk = 26
         targetSdk = 35
-        versionCode = 16
+        versionCode = 17
         versionName = "1.2.1"
         buildConfigField("long", "BUILD_TIME_MS", "${System.currentTimeMillis()}L")
         vectorDrawables { useSupportLibrary = true }

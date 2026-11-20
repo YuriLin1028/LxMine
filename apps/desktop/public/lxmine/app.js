@@ -2251,16 +2251,20 @@
     node.onclick = () => openFeedPlaylist(item);
     return node;
   }
-  function songCard(song) {
+  function songCard(song, queue) {
     const node = h('div', 'card song-card');
+    const songKey = identity(song);
+    if (songKey) node.dataset.songKey = songKey;
+    if (S.current && identity(S.current) === songKey) node.classList.add('playing');
     const art = h('div', 'art');
-    applyArtSurface(art, rawCoverOf(song), song.name || song.artist || '', 'music', identity(song));
+    applyArtSurface(art, rawCoverOf(song), song.name || song.artist || '', 'music', songKey);
     const badge = srcBadge(song.source);
     if (badge) art.appendChild(badge);
     node.append(art);
     node.appendChild(h('h3', '', song.name || '未知歌曲'));
     node.appendChild(h('p', '', (song.artist || song.singer || platformName(song))));
-    node.onclick = () => playSong(song, [song]);
+    node.onclick = () => playSong(song, Array.isArray(queue) && queue.length ? queue : [song]);
+    node.oncontextmenu = event => { event.preventDefault(); openAddMenu(song); };
     return node;
   }
   function forYouCard(song, queue) {
@@ -2419,20 +2423,14 @@
     }
     root.appendChild(bannerBlock);
     if(S.feed?.error){const error=h('div','empty-hint',S.feed.error);const retry=h('button','pill-btn','重新载入');retry.onclick=()=>{S.feed=null;loadHome(true);renderHome();};error.appendChild(retry);root.appendChild(error);}
-    // 猜你喜欢：基于红心收藏、最近播放与曲库偏好的个性化双行推荐（冷启动为空时自动隐藏）。
+    // 猜你喜欢：对齐鸿蒙与其他横向板块，统一采用单排正方形大封面卡片横向滑动。
     if (Array.isArray(S.feed.forYou) && S.feed.forYou.length) {
-      const forYouBlock = h('section', 'section for-you-section');
+      const forYouBlock = h('section', 'section');
+      forYouBlock.dataset.section = 'forYou';
       const forYouHead = h('div', 'section-head');
       forYouHead.appendChild(h('h2', '', '猜你喜欢'));
-      const topArtistLabel = (S.feed.topArtists || []).slice(0, 3).join(' · ');
-      if (topArtistLabel) {
-        forYouHead.appendChild(h('span', 'note', '基于你的红心与近期常听：' + topArtistLabel));
-      }
+      forYouHead.appendChild(h('span', 'note', '基于你的常听与喜欢歌手'));
       forYouHead.appendChild(h('div', 'spacer'));
-      const playAllForYou = h('button', 'list-tools-play for-you-play-all', '播放全部');
-      playAllForYou.type = 'button';
-      playAllForYou.onclick = () => { if (S.feed.forYou.length) playSong(S.feed.forYou[0], S.feed.forYou); };
-      forYouHead.appendChild(playAllForYou);
       const moreForYou = h('button', 'more-ball glass light');
       moreForYou.type = 'button';
       moreForYou.setAttribute('aria-label', '猜你喜欢，更多');
@@ -2441,13 +2439,8 @@
       forYouHead.appendChild(moreForYou);
       forYouBlock.appendChild(forYouHead);
       const forYouWrap = h('div', 'row-wrap');
-      const forYouRow = h('div', 'row-scroll for-you-row');
-      for (let i = 0; i < S.feed.forYou.length; i += 2) {
-        const col = h('div', 'for-you-col');
-        col.appendChild(forYouCard(S.feed.forYou[i], S.feed.forYou));
-        if (S.feed.forYou[i + 1]) col.appendChild(forYouCard(S.feed.forYou[i + 1], S.feed.forYou));
-        forYouRow.appendChild(col);
-      }
+      const forYouRow = h('div', 'row-scroll');
+      S.feed.forYou.forEach(song => forYouRow.appendChild(songCard(song, S.feed.forYou)));
       forYouWrap.appendChild(forYouRow);
       addRowNav(forYouWrap, forYouRow);
       forYouBlock.appendChild(forYouWrap);

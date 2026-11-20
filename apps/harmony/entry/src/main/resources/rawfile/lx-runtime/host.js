@@ -5,17 +5,44 @@ function __lxParseJson(body) {
   return JSON5.parse(trimmed);
 }
 
+function __lxEapiEncrypt(apiUrl, object) {
+  var text = typeof object === 'object' ? JSON.stringify(object) : String(object);
+  var message = 'nobody' + apiUrl + 'use' + text + 'md5forencrypt';
+  var digest = CryptoJS.MD5(message).toString();
+  var plain = apiUrl + '-36cd479b6b5-' + text + '-36cd479b6b5-' + digest;
+  return CryptoJS.AES.encrypt(
+    CryptoJS.enc.Utf8.parse(plain),
+    CryptoJS.enc.Utf8.parse('e82ckenh8dichen8'),
+    { mode: CryptoJS.mode.ECB, padding: CryptoJS.pad.Pkcs7 }
+  ).ciphertext.toString(CryptoJS.enc.Hex).toUpperCase();
+}
+
 function __lxMakeIo(timeoutMs) {
   return {
-    json: function (url, options) {
+    json: function (url, options, check) {
       return new Promise(function (resolve, reject) {
         window.lx.request(url, Object.assign({ timeout: timeoutMs || 8000 }, options || {}), function (error, response, body) {
           if (error) return reject(error);
           if (response.statusCode !== 200) return reject(new Error('HTTP ' + response.statusCode));
-          try { resolve(__lxParseJson(body)); } catch (e) { reject(e); }
+          try {
+            var data = __lxParseJson(body);
+            if (typeof check === 'function') check(data);
+            resolve(data);
+          } catch (e) { reject(e); }
         });
       });
-    }
+    },
+    page: function (url) {
+      return new Promise(function (resolve, reject) {
+        window.lx.request(url, { timeout: timeoutMs || 9000 }, function (error, response, body) {
+          if (error) return reject(error);
+          var headers = (response && response.headers) || {};
+          resolve({ body: body, location: headers.location || headers.Location });
+        });
+      });
+    },
+    md5: function (text) { return CryptoJS.MD5(text).toString(); },
+    eapiEncrypt: __lxEapiEncrypt
   };
 }
 
@@ -37,13 +64,14 @@ window.__lxImportPlaylist = function (id, input, source) {
       });
     },
     md5: function (text) { return CryptoJS.MD5(text).toString(); },
-    json: function (url, options) {
+    json: function (url, options, check) {
       return new Promise(function (resolve, reject) {
         window.lx.request(url, options || {}, function (error, response, body) {
           if (error) { reject(error); return; }
           if (response.statusCode !== 200) { reject(new Error('HTTP ' + response.statusCode)); return; }
           try {
             const data = __lxParseJson(body);
+            if (typeof check === 'function') check(data);
             window.__lxNative.onResult(id, JSON.stringify({ progress: true }));
             resolve(data);
           } catch (e) { reject(e); }
@@ -54,7 +82,8 @@ window.__lxImportPlaylist = function (id, input, source) {
       return CryptoJS.AES.encrypt(JSON.stringify(payload), CryptoJS.enc.Utf8.parse('rFgB&h#%2?^eDg:Q'), {
         mode: CryptoJS.mode.ECB, padding: CryptoJS.pad.Pkcs7
       }).ciphertext.toString(CryptoJS.enc.Hex).toUpperCase();
-    }
+    },
+    eapiEncrypt: __lxEapiEncrypt
   }).then(function (data) {
     window.__lxNative.onResult(id, JSON.stringify({ ok: true, data: data }));
   }).catch(function (error) {

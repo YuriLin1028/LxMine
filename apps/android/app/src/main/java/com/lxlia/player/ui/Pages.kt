@@ -440,158 +440,6 @@ private fun LazySongsPage(
 }
 
 @Composable
-private fun PlaylistHeroHeader(
-    vm: AppViewModel,
-    playlist: MusicPlaylist,
-    songs: List<Song>,
-    canManage: Boolean,
-) {
-    val coverUrl = playlist.songs.firstOrNull { it.coverUrl.isNotEmpty() }?.coverUrl.orEmpty()
-    val fallbackColors = remember(playlist.name) { gradFor(playlist.name) }
-    val glowPrimary = if (playlist.isFavorite) HEART_RED else fallbackColors.first()
-    val glowSecondary = if (playlist.isFavorite) ACCENT else fallbackColors.last()
-    val cardShape = RoundedCornerShape(22.dp)
-    val coverShape = RoundedCornerShape(16.dp)
-    val metaLine = when {
-        playlist.isFavorite -> "红心珍藏 · ${playlist.songs.size} 首喜欢歌曲"
-        playlist.id == "daily-30" && vm.homeFeed?.daily?.period == "personalized" -> "为你定制 · 融合常听歌手"
-        playlist.id == "daily-30" -> "四平台每日融合精选"
-        playlist.kind == "recent" -> "按最近收听时间排列"
-        canManage -> "曲库歌单 · 支持重命名、批量编辑与拖动排序"
-        else -> "精选曲目 · 共 ${songs.size} 首"
-    }
-
-    Box(
-        modifier = Modifier
-            .fillMaxWidth()
-            .padding(top = 4.dp, bottom = 10.dp)
-            .clip(cardShape)
-            .background(if (AppAppearance.light) Color(0x0B000000) else Color(0x0DFFFFFF))
-            .border(
-                0.75.dp,
-                if (AppAppearance.light) Brush.verticalGradient(listOf(Color(0x1F000000), Color(0x08000000)))
-                else Brush.verticalGradient(listOf(Color(0x28FFFFFF), Color(0x0AFFFFFF))),
-                cardShape,
-            ),
-    ) {
-        // 歌单头图环境光晕（Cover Glow）
-        Canvas(Modifier.matchParentSize()) {
-            drawCircle(
-                brush = Brush.radialGradient(
-                    colors = listOf(glowPrimary.copy(alpha = if (AppAppearance.light) 0.22f else 0.34f), Color.Transparent),
-                    center = Offset(72.dp.toPx(), size.height * 0.48f),
-                    radius = 156.dp.toPx(),
-                ),
-                radius = 156.dp.toPx(),
-                center = Offset(72.dp.toPx(), size.height * 0.48f),
-            )
-            drawCircle(
-                brush = Brush.radialGradient(
-                    colors = listOf(glowSecondary.copy(alpha = if (AppAppearance.light) 0.14f else 0.20f), Color.Transparent),
-                    center = Offset(150.dp.toPx(), size.height * 0.25f),
-                    radius = 130.dp.toPx(),
-                ),
-                radius = 130.dp.toPx(),
-                center = Offset(150.dp.toPx(), size.height * 0.25f),
-            )
-        }
-
-        Column(
-            modifier = Modifier.fillMaxWidth().padding(14.dp),
-            verticalArrangement = Arrangement.spacedBy(12.dp),
-        ) {
-            Row(
-                verticalAlignment = Alignment.CenterVertically,
-                horizontalArrangement = Arrangement.spacedBy(14.dp),
-            ) {
-                Box(
-                    modifier = Modifier
-                        .size(84.dp)
-                        .clip(coverShape)
-                        .background(Brush.linearGradient(fallbackColors))
-                        .border(0.8.dp, Color(0x33FFFFFF), coverShape),
-                    contentAlignment = Alignment.Center,
-                ) {
-                    AssetIcon(
-                        when {
-                            playlist.isFavorite -> "ic_heart_fill.svg"
-                            playlist.kind == "recent" -> "symbol_clock.svg"
-                            else -> "symbol_queue.svg"
-                        },
-                        size = 34.dp,
-                        tint = if (playlist.isFavorite) null else Color(0xFFF2F8FF),
-                        systemSymbol = false,
-                    )
-                    if (coverUrl.isNotEmpty()) {
-                        RemoteImage(coverUrl, modifier = Modifier.fillMaxSize(), contentScale = ContentScale.Crop)
-                    }
-                }
-                Column(
-                    modifier = Modifier.weight(1f),
-                    verticalArrangement = Arrangement.spacedBy(5.dp),
-                ) {
-                    Text(
-                        playlist.name,
-                        fontSize = 19.sp,
-                        fontWeight = FontWeight.Bold,
-                        letterSpacing = (-0.2).sp,
-                        color = TEXT,
-                        maxLines = 2,
-                        overflow = TextOverflow.Ellipsis,
-                    )
-                    Text(
-                        metaLine,
-                        fontSize = 12.sp,
-                        color = MUTED,
-                        maxLines = 2,
-                        overflow = TextOverflow.Ellipsis,
-                    )
-                }
-            }
-            if (canManage) {
-                Row(
-                    modifier = Modifier.fillMaxWidth(),
-                    horizontalArrangement = Arrangement.spacedBy(8.dp),
-                    verticalAlignment = Alignment.CenterVertically,
-                ) {
-                    PlaylistChipAction("编辑歌单", icon = "ic_edit.svg") { vm.openEditPlaylist(playlist) }
-                    PlaylistChipAction("重命名") { vm.openRenamePlaylist(playlist) }
-                    Spacer(Modifier.weight(1f))
-                    PlaylistChipAction("删除歌单", icon = "ic_trash.svg", danger = true) { vm.deleteOpenedPlaylist() }
-                }
-            }
-        }
-    }
-}
-
-@Composable
-private fun PlaylistChipAction(
-    label: String,
-    icon: String? = null,
-    danger: Boolean = false,
-    onClick: () -> Unit,
-) {
-    val shape = RoundedCornerShape(14.dp)
-    val inkColor = if (danger) HEART_RED else TEXT
-    Row(
-        modifier = Modifier
-            .clip(shape)
-            .background(if (AppAppearance.light) Color(0x0E000000) else Color(0x16FFFFFF))
-            .border(0.6.dp, if (danger) HEART_RED.copy(alpha = 0.35f) else Color(0x22FFFFFF), shape)
-            .pressDeform()
-            .clickable(onClick = onClick)
-            .padding(horizontal = 11.dp, vertical = 6.dp),
-        verticalAlignment = Alignment.CenterVertically,
-        horizontalArrangement = Arrangement.spacedBy(5.dp),
-    ) {
-        if (icon != null) {
-            AssetIcon(icon, size = 13.dp, tint = inkColor, systemSymbol = false)
-        }
-        Text(label, fontSize = 12.sp, fontWeight = FontWeight.Medium, color = inkColor, maxLines = 1)
-    }
-}
-
-@Composable
 fun PlaylistDetailPage(vm: AppViewModel, playlist: MusicPlaylist) {
     val songs = remember(playlist.songs, vm.listSortMode, vm.manualOrder, vm.listQuery) { vm.arrangedSongs(playlist.songs) }
     val loading = vm.openedFeedLoading && playlist.songs.isEmpty()
@@ -613,20 +461,20 @@ fun PlaylistDetailPage(vm: AppViewModel, playlist: MusicPlaylist) {
                     Text("正在载入歌单…", fontSize = 13.sp, color = MUTED)
                 }
             } else {
-                PlaylistHeroHeader(vm = vm, playlist = playlist, songs = songs, canManage = canManage)
                 if (vm.listSearchOpen) SearchInListBar(vm)
-                if (playlist.songs.isNotEmpty()) {
-                    SongListTools(
-                        countText = "${songs.size} 首歌曲",
-                        disabled = songs.isEmpty(),
-                        showDelete = false,
-                        onPlayAll = { if (songs.isNotEmpty()) vm.playSong(songs.first(), songs) },
-                        onBatchDownload = { vm.downloadBatch(songs) },
-                        onSort = { vm.setListSort(it) },
-                        onManual = { vm.openManualOrder() },
-                        onDelete = { vm.deleteOpenedPlaylist() },
-                    )
-                }
+                SongListTools(
+                    countText = "${songs.size} 首歌曲",
+                    disabled = songs.isEmpty(),
+                    showDelete = canManage,
+                    showEdit = canManage,
+                    onPlayAll = { if (songs.isNotEmpty()) vm.playSong(songs.first(), songs) },
+                    onBatchDownload = if (songs.isNotEmpty() && playlist.kind != "local") ({ vm.downloadBatch(songs) }) else null,
+                    onSort = { vm.setListSort(it) },
+                    onManual = { vm.openManualOrder() },
+                    onDelete = { vm.deleteOpenedPlaylist() },
+                    onRename = { vm.openRenamePlaylist(playlist) },
+                    onBatchDelete = { vm.openEditPlaylist(playlist) },
+                )
             }
         },
         empty = {

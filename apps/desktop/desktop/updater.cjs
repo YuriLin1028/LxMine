@@ -9,9 +9,12 @@ const { spawn } = require('child_process');
 const REPO = 'YuriLin1028/LxMine';
 const GITHUB_API_URL = `https://api.github.com/repos/${REPO}/releases/latest`;
 const RELEASE_SNAPSHOT_URLS = [
+  `https://yurilin1028.github.io/LxMine/windows-release.json`,
+  `https://gh-proxy.org/https://raw.githubusercontent.com/${REPO}/gh-pages/windows-release.json`,
+  `https://ghfast.top/https://raw.githubusercontent.com/${REPO}/gh-pages/windows-release.json`,
+  `https://yurilin1028.github.io/LxMine/release.json`,
   `https://gh-proxy.org/https://raw.githubusercontent.com/${REPO}/gh-pages/release.json`,
   `https://ghfast.top/https://raw.githubusercontent.com/${REPO}/gh-pages/release.json`,
-  `https://yurilin1028.github.io/LxMine/release.json`,
 ];
 const DOWNLOAD_MIRRORS = [
   { name: 'GH-Proxy', prefix: 'https://gh-proxy.org/' },
@@ -144,13 +147,16 @@ async function fetchLatestRelease() {
 async function checkForUpdate(currentVersion) {
   const current = String(currentVersion || '1.1.0').replace(/^v/i, '');
   const release = await fetchLatestRelease();
-  const latestVersion = String(release.tag_name || '').replace(/^v/i, '');
-  const asset = selectWindowsAsset(release.assets, release.tag_name);
-  const cmp = compareVersions(latestVersion, current);
+  const rawLatest = String(release.tag_name || '').replace(/^v/i, '');
+  const latestVersion = rawLatest.split('.').slice(0, 3).join('.');
+  const baseCurrent = current.split('.').slice(0, 3).join('.');
+  const asset = selectWindowsAsset(release.assets, 'v' + latestVersion);
+  const cmp = compareVersions(latestVersion, baseCurrent);
   let installedMtimeMs = 0;
   if (!process.defaultApp) {
     const candidates = [
       process.resourcesPath ? path.join(process.resourcesPath, 'app.asar') : '',
+      process.resourcesPath ? path.join(process.resourcesPath, 'app', 'desktop', 'updater.cjs') : '',
       process.execPath || '',
     ].filter(Boolean);
     for (const p of candidates) {
@@ -162,19 +168,19 @@ async function checkForUpdate(currentVersion) {
   }
   const remoteTimeMs = Date.parse((asset && asset.updated_at) || release.published_at || '') || 0;
   const sameVersionNewer = cmp === 0 && !!asset && remoteTimeMs > 0 && installedMtimeMs > 0 && remoteTimeMs > installedMtimeMs + 600000;
-  const hasUpdate = cmp > 0 || sameVersionNewer;
+  const hasUpdate = !!asset && (cmp > 0 || sameVersionNewer);
   const digest = asset && typeof asset.digest === 'string' && /^sha256:[a-f\d]{64}$/i.test(asset.digest)
     ? asset.digest.slice(7).toLowerCase()
     : '';
   return {
     ok: true,
-    currentVersion: current,
+    currentVersion: baseCurrent,
     latestVersion,
-    tagName: release.tag_name,
+    tagName: 'v' + latestVersion,
     hasUpdate,
     publishedAt: release.published_at || '',
     notes: String(release.body || '').trim(),
-    releaseUrl: release.html_url || `https://github.com/${REPO}/releases/tag/${release.tag_name}`,
+    releaseUrl: release.html_url || `https://github.com/${REPO}/releases/tag/v${latestVersion}`,
     asset: asset ? {
       name: asset.name,
       size: Number(asset.size) || 0,
@@ -321,17 +327,62 @@ async function downloadAndLaunchInstaller(asset, onProgress, appInstance) {
   // Launch silent overwrite install via NSIS (/S) and automatically restart LxMine after installation completes.
   const psScript = path.join(updateDir, 'apply-update.ps1');
   const escapedInstaller = destPath.replace(/'/g, "''");
+  const execDir = process.execPath ? path.dirname(process.execPath) : '';
+  const hasMarker = execDir && fs.existsSync(path.join(execDir, '.lxmine-install-root'));
+  const escapedExecDir = (hasMarker ? execDir : '').replace(/'/g, "''");
   const scriptContent = [
-    'Start-Sleep -Milliseconds 1200',
-    `$p = Start-Process -FilePath '${escapedInstaller}' -ArgumentList '/S' -PassThru -Wait`,
+    `$oldPid = ${process.pid}`,
+    'Wait-Process -Id $oldPid -Timeout 10 -ErrorAction SilentlyContinue',
+    'Get-Process -Name "LxMine" -ErrorAction SilentlyContinue | Stop-Process -Force -ErrorAction SilentlyContinue',
     'Start-Sleep -Milliseconds 600',
-    '$candidates = @(',
-    '  (Join-Path $env:LOCALAPPDATA "Programs\\LxMine\\LxMine.exe"),',
-    '  (Join-Path $env:LOCALAPPDATA "LxMine\\LxMine.exe"),',
-    '  (Join-Path $env:ProgramFiles "LxMine\\LxMine.exe")',
-    ')',
-    '$exe = $candidates | Where-Object { Test-Path $_ } | Select-Object -First 1',
-    'if ($exe) { Start-Process -FilePath $exe -WorkingDirectory (Split-Path -Parent $exe) }',
+    `$targetDir = '${escapedExecDir}'`,
+    'if (-not $targetDir) {',
+    '  $reg = Get-ItemProperty "HKCU:\\Software\\Microsoft\\Windows\\CurrentVersion\\Uninstall\\*" -ErrorAction SilentlyContinue | Where-Object { $_.DisplayName -match "^LxMine" -and $_.InstallLocation } | Select-Object -First 1',
+    '  if ($reg) { $targetDir = $reg.InstallLocation.TrimEnd("\\") }',
+    '}',
+    'if (-not $targetDir) {',
+    '  if (Test-Path "D:\\") {',
+    '    if (Test-Path "D:\\LxMine\\.lxmine-install-root") {',
+    '      $targetDir = "D:\\LxMine"',
+    '    } else {',
+    '      $targetDir = "D:\\Program Files\\LxMine"',
+    '    }',
+    '  } else {',
+    '    $targetDir = Join-Path $env:LOCALAPPDATA "Programs\\LxMine"',
+    '  }',
+    '}',
+    'if ($targetDir) {',
+    `  $p = Start-Process -FilePath '${escapedInstaller}' -ArgumentList "/S /D=$targetDir" -PassThru -Wait`,
+    '} else {',
+    `  $p = Start-Process -FilePath '${escapedInstaller}' -ArgumentList "/S" -PassThru -Wait`,
+    '}',
+    'Start-Sleep -Milliseconds 600',
+    '$regAfter = Get-ItemProperty "HKCU:\\Software\\Microsoft\\Windows\\CurrentVersion\\Uninstall\\*" -ErrorAction SilentlyContinue | Where-Object { $_.DisplayName -match "^LxMine" -and $_.InstallLocation } | Select-Object -First 1',
+    '$candidates = @()',
+    'if ($regAfter) { $candidates += (Join-Path $regAfter.InstallLocation "LxMine.exe") }',
+    'if ($targetDir) { $candidates += (Join-Path $targetDir "LxMine.exe") }',
+    'if (Test-Path "D:\\LxMine\\.lxmine-install-root") { $candidates += "D:\\LxMine\\LxMine.exe" }',
+    '$candidates += "D:\\Program Files\\LxMine\\LxMine.exe"',
+    '$candidates += (Join-Path $env:LOCALAPPDATA "Programs\\LxMine\\LxMine.exe")',
+    '$candidates += (Join-Path $env:LOCALAPPDATA "LxMine\\LxMine.exe")',
+    '$candidates += (Join-Path $env:ProgramFiles "LxMine\\LxMine.exe")',
+    '$exe = $candidates | Where-Object { $_ -and (Test-Path $_) } | Select-Object -First 1',
+    'if (-not $exe) {',
+    `  Start-Process -FilePath '${escapedInstaller}' -Wait`,
+    '  $regRetry = Get-ItemProperty "HKCU:\\Software\\Microsoft\\Windows\\CurrentVersion\\Uninstall\\*" -ErrorAction SilentlyContinue | Where-Object { $_.DisplayName -match "^LxMine" -and $_.InstallLocation } | Select-Object -First 1',
+    '  if ($regRetry) { $exe = Join-Path $regRetry.InstallLocation "LxMine.exe" }',
+    '}',
+    'if ($exe -and (Test-Path $exe)) {',
+    '  try {',
+    '    $lnk = Join-Path ([Environment]::GetFolderPath("Desktop")) "LxMine.lnk"',
+    '    $ws = New-Object -ComObject WScript.Shell',
+    '    $sc = $ws.CreateShortcut($lnk)',
+    '    $sc.TargetPath = $exe',
+    '    $sc.WorkingDirectory = Split-Path -Parent $exe',
+    '    $sc.Save()',
+    '  } catch {}',
+    '  Start-Process -FilePath $exe -WorkingDirectory (Split-Path -Parent $exe)',
+    '}',
   ].join('\r\n');
   fs.writeFileSync(psScript, scriptContent, 'utf8');
 
@@ -345,8 +396,13 @@ async function downloadAndLaunchInstaller(asset, onProgress, appInstance) {
   child.unref();
 
   setTimeout(() => {
-    try { appInstance && appInstance.quit(); } catch (_) {}
-  }, 450);
+    try {
+      if (appInstance) {
+        appInstance.quit();
+        setTimeout(() => { try { appInstance.exit(0); } catch (_) {} }, 1800);
+      }
+    } catch (_) {}
+  }, 350);
 
   return { ok: true, filePath: destPath };
 }

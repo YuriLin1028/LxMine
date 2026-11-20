@@ -68,10 +68,27 @@ interface ReleaseResult {
   data: RawReleasePayload;
 }
 
-const RELEASE_ENDPOINTS: string[] = [
+interface RawStoreReleasePayload {
+  tag_name?: string;
+  published_at?: string;
+  invite_url?: string;
+  notes?: string;
+  body?: string;
+  draft?: boolean;
+  prerelease?: boolean;
+}
+
+const STORE_RELEASE_ENDPOINTS: string[] = [
+  'https://yurilin1028.github.io/LxMine/store-release.json',
+  `https://gh-proxy.org/https://raw.githubusercontent.com/${UPDATE_REPO}/gh-pages/store-release.json`,
+  `https://ghfast.top/https://raw.githubusercontent.com/${UPDATE_REPO}/gh-pages/store-release.json`,
+];
+
+const HAP_RELEASE_ENDPOINTS: string[] = [
+  'https://yurilin1028.github.io/LxMine/harmony-hap-release.json',
+  `https://gh-proxy.org/https://raw.githubusercontent.com/${UPDATE_REPO}/gh-pages/harmony-hap-release.json`,
+  `https://ghfast.top/https://raw.githubusercontent.com/${UPDATE_REPO}/gh-pages/harmony-hap-release.json`,
   `https://api.github.com/repos/${UPDATE_REPO}/releases/latest`,
-  `https://gh-proxy.org/https://raw.githubusercontent.com/${UPDATE_REPO}/gh-pages/release.json`,
-  `https://ghfast.top/https://raw.githubusercontent.com/${UPDATE_REPO}/gh-pages/release.json`,
   'https://yurilin1028.github.io/LxMine/release.json',
 ];
 
@@ -84,7 +101,7 @@ const DOWNLOAD_MIRRORS: MirrorEntry[] = [
 export function compareVersions(a: string, b: string): number {
   const parse = (raw: string): number[] => {
     const core = raw.trim().replace(/^v/i, '').split(/[-+]/)[0];
-    return core.split('.').map((part: string) => {
+    return core.split('.').slice(0, 3).map((part: string) => {
       const n = parseInt(part, 10);
       return Number.isFinite(n) && n >= 0 ? n : 0;
     });
@@ -129,9 +146,64 @@ async function fetchReleaseEndpoint(url: string): Promise<RawReleasePayload | nu
   }
 }
 
+async function fetchStoreReleaseEndpoint(url: string): Promise<RawStoreReleasePayload | null> {
+  const client = http.createHttp();
+  try {
+    const res = await client.request(url, {
+      method: http.RequestMethod.GET,
+      header: {
+        'User-Agent': 'LxMine-Updater/1.2',
+        'Accept': 'application/json',
+      },
+      connectTimeout: 8000,
+      readTimeout: 8500,
+      expectDataType: http.HttpDataType.STRING,
+    });
+    if (res.responseCode !== 200 || typeof res.result !== 'string') return null;
+    const parsed = JSON.parse(res.result) as RawStoreReleasePayload;
+    if (!parsed || parsed.draft || parsed.prerelease) return null;
+    if (!parsed.tag_name || !parsed.invite_url || !parsed.invite_url.startsWith('https://appgallery.huawei.com/')) return null;
+    return parsed;
+  } catch (_) {
+    return null;
+  } finally {
+    client.destroy();
+  }
+}
+
 export async function checkHarmonyUpdate(): Promise<AppUpdateInfo> {
   const current = currentHarmonyVersion();
-  const tasks = RELEASE_ENDPOINTS.map(async (endpoint: string, idx: number): Promise<ReleaseResult | null> => {
+  if (isStoreEdition()) {
+    const storeTasks = STORE_RELEASE_ENDPOINTS.map(async (endpoint: string): Promise<RawStoreReleasePayload | null> => {
+      return await fetchStoreReleaseEndpoint(endpoint);
+    });
+    const storeSettled = await Promise.all(storeTasks);
+    const validStores: RawStoreReleasePayload[] = [];
+    for (const item of storeSettled) {
+      if (item !== null) validStores.push(item);
+    }
+    if (!validStores.length) {
+      throw new Error('无法连接邀请测试更新渠道，请检查网络');
+    }
+    validStores.sort((a: RawStoreReleasePayload, b: RawStoreReleasePayload) =>
+      compareVersions(b.tag_name ?? '', a.tag_name ?? '')
+    );
+    const bestStore = validStores[0];
+    const storeTag = bestStore.tag_name ?? '';
+    const storeLatest = storeTag.replace(/^v/i, '');
+    return {
+      currentVersion: current,
+      latestVersion: storeLatest,
+      tagName: storeTag,
+      hasUpdate: compareVersions(storeLatest, current) > 0,
+      publishedAt: bestStore.published_at ?? '',
+      notes: ((bestStore.notes ?? bestStore.body) ?? '').trim(),
+      releaseUrl: bestStore.invite_url ?? HARMONY_INVITE_URL,
+      asset: null,
+    };
+  }
+
+  const tasks = HAP_RELEASE_ENDPOINTS.map(async (endpoint: string, idx: number): Promise<ReleaseResult | null> => {
     const data = await fetchReleaseEndpoint(endpoint);
     return data ? { idx, data } : null;
   });
@@ -181,7 +253,7 @@ export async function checkHarmonyUpdate(): Promise<AppUpdateInfo> {
     currentVersion: current,
     latestVersion: latest,
     tagName,
-    hasUpdate: cmp > 0 || sameVersionNewer,
+    hasUpdate: !!picked && (cmp > 0 || sameVersionNewer),
     publishedAt: best.published_at ?? '',
     notes: (best.body ?? '').trim(),
     releaseUrl: best.html_url ?? `https://github.com/${UPDATE_REPO}/releases/tag/${tagName}`,

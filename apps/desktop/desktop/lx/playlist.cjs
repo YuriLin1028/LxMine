@@ -72,7 +72,11 @@ async function mapWithConcurrency(items, concurrency, worker) {
 
 async function importPlaylist(input, source) {
   return core.importPlaylist(input, source, {
-    json: (url, options) => fetchJson(url, options, 20000),
+    json: async (url, options, check) => {
+      const data = await fetchJson(url, options, 20000);
+      if (typeof check === 'function') check(data);
+      return data;
+    },
     page: async url => {
       const response = await request(url);
       return { url: response.url, body: await response.text() };
@@ -81,6 +85,14 @@ async function importPlaylist(input, source) {
     linuxEncrypt(payload) {
       const cipher = crypto.createCipheriv('aes-128-ecb', Buffer.from('rFgB&h#%2?^eDg:Q'), null);
       return Buffer.concat([cipher.update(JSON.stringify(payload)), cipher.final()]).toString('hex').toUpperCase();
+    },
+    eapiEncrypt(apiUrl, object) {
+      const text = typeof object === 'object' ? JSON.stringify(object) : String(object);
+      const message = 'nobody' + apiUrl + 'use' + text + 'md5forencrypt';
+      const digest = crypto.createHash('md5').update(message).digest('hex');
+      const plain = apiUrl + '-36cd479b6b5-' + text + '-36cd479b6b5-' + digest;
+      const cipher = crypto.createCipheriv('aes-128-ecb', Buffer.from('e82ckenh8dichen8'), null);
+      return Buffer.concat([cipher.update(plain), cipher.final()]).toString('hex').toUpperCase();
     },
   });
 }
