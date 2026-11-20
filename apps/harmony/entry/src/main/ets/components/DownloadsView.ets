@@ -9,6 +9,7 @@ export struct DownloadsView {
   onPlay: (song: Song) => void = () => {};
   onCancel: (id: string) => void = () => {};
   onExport: (item: MusicDownload) => void = () => {};
+  onDelete: (id: string) => void = () => {};
   scroller: Scroller = new Scroller();
   onScroll: (offset: number) => void = () => {};
   build() {
@@ -26,6 +27,7 @@ export struct DownloadsView {
               }.layoutWeight(1).alignItems(HorizontalAlign.Start)
               if (item.state === 'downloading') { Button('取消').attributeModifier(musicButtonPress).buttonStyle(ButtonStyleMode.TEXTUAL).backgroundColor(Color.Transparent).fontColor(ACCENT).onClick(() => this.onCancel(item.id)) }
               if (item.state === 'complete') { Button('另存为').attributeModifier(musicButtonPress).buttonStyle(ButtonStyleMode.TEXTUAL).backgroundColor(Color.Transparent).fontColor(ACCENT).onClick(() => this.onExport(item)) }
+              if (item.state !== 'downloading') { Button('删除').attributeModifier(musicButtonPress).buttonStyle(ButtonStyleMode.TEXTUAL).backgroundColor(Color.Transparent).fontColor('#FF6B76').onClick(() => this.onDelete(item.id)) }
             }.width('100%')
             if (item.state === 'downloading') { Progress({ value: item.received, total: Math.max(1, item.total), type: ProgressType.Linear }).width('100%').color(ACCENT) }
           }.width('100%').padding(16).borderRadius(18).backgroundColor($r('app.color.card_surface')).onClick(() => { if (item.state === 'complete') this.onPlay(item.song); })

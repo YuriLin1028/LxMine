@@ -322,10 +322,13 @@ class MusicDownloads(private val context: Context, private val http: OkHttpClien
         File(context.cacheDir, "lxmine-download-$id.part").delete()
     }
 
-    /** 清掉已完成/失败记录（界面只提供取消下载中的任务）。 */
+    /** 清掉已完成/失败记录并同步清理沙盒缓存文件。 */
     fun remove(id: String) {
         val item = items().firstOrNull { it.id == id } ?: return
         if (item.state == "downloading") cancel(id)
+        if (item.path.startsWith(dir.absolutePath + File.separator)) {
+            runCatching { File(item.path).delete() }
+        }
         synchronized(items) { items.removeAll { it.id == id } }
         publish(true)
     }

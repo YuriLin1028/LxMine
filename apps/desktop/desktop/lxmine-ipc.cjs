@@ -27,6 +27,7 @@ function registerLxMineIpc({ userDataPath, trusted, library }) {
   } });
   handle('downloads', () => downloads.snapshot());
   handle('cancel-download', id => downloads.cancel(String(id)));
+  handle('remove-download', id => downloads.remove(String(id)));
   handle('reveal-download', id => {
     const job = downloads.snapshot().find(item => item.id === id && item.state === 'complete');
     if (!job || !fs.existsSync(job.filePath)) throw new Error('下载文件已被移动或删除');

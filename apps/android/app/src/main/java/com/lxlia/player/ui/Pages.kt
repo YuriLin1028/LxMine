@@ -773,8 +773,12 @@ private fun DownloadsPage(vm: AppViewModel) {
                         )
                     }
                     if (item.state == "complete") {
-                        Text("另存为", fontSize = 13.sp, color = TEXT,
+                        Text("另存为", fontSize = 13.sp, color = ACCENT,
                             modifier = Modifier.clickable { vm.requestDownloadExport(item.id) }.padding(8.dp))
+                    }
+                    if (item.state != "downloading") {
+                        Text("删除", fontSize = 13.sp, color = Color(0xFFFF6B76),
+                            modifier = Modifier.clickable { vm.removeDownload(item.id) }.padding(8.dp))
                     }
                 }
                 if (item.state == "downloading") {

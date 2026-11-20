@@ -4108,6 +4108,13 @@
         reveal.onclick = () => window.lxMusic.revealDownload(job.id).catch(error => notify(error.message));
         actions.appendChild(reveal);
       }
+      if (job.state !== 'downloading') {
+        const del = h('button', 'pill-btn', '删除');
+        del.style.marginLeft = '8px';
+        del.style.color = '#ff6b76';
+        del.onclick = () => window.lxMusic.removeDownload(job.id).then(() => notify('已删除下载记录')).catch(error => notify(error.message));
+        actions.appendChild(del);
+      }
       card.appendChild(row);
     });
     if (!(S.downloads || []).length) card.appendChild(h('div', 'empty-hint', '还没有下载任务'));

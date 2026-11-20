@@ -764,6 +764,11 @@ class AppViewModel(internal val app: LxMineApp) : ViewModel() {
         notify("已恢复默认专辑封面背景")
     }
 
+    fun removeDownload(id: String) {
+        app.downloads.remove(id)
+        notify("已删除下载记录")
+    }
+
     internal suspend fun persist() = appDataMutex.withLock {
         settings["lxmine_lyrics"] = lyricPrefs.toJson().toString()
         settings["lxmine_lyric_scale"] = Math.round(lyricPrefs.lyricScale * 100.0) / 100.0

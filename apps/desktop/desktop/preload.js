@@ -18,6 +18,7 @@ contextBridge.exposeInMainWorld('lxMusic', {
   download: (song, quality) => ipcRenderer.invoke('lxmine-download', song, quality),
   downloadBatch: (songs, quality) => ipcRenderer.invoke('lxmine-download-batch', songs, quality),
   cancelDownload: id => ipcRenderer.invoke('lxmine-cancel-download', id),
+  removeDownload: id => ipcRenderer.invoke('lxmine-remove-download', id),
   revealDownload: id => ipcRenderer.invoke('lxmine-reveal-download', id),
   onDownloadsChanged: callback => { const listener = (event, jobs) => callback(jobs); ipcRenderer.on('lxmine-downloads-changed', listener); return () => ipcRenderer.removeListener('lxmine-downloads-changed', listener); },
   sources: () => ipcRenderer.invoke('lxmine-sources'),

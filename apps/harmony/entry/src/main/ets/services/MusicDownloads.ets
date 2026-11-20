@@ -167,4 +167,15 @@ export class MusicDownloads {
       if (this.context) this.cleanTemp(`${this.context.cacheDir}/lxmine-download-${id}.part`);
     }
   }
+
+  async remove(id: string): Promise<void> {
+    const item = this.items.find((entry: MusicDownload) => entry.id === id);
+    if (!item) return;
+    if (item.state === 'downloading') await this.cancel(id);
+    if (this.context && item.path && item.path.startsWith(this.context.filesDir + '/Downloads/')) {
+      this.cleanTemp(item.path);
+    }
+    this.items = this.items.filter((entry: MusicDownload) => entry.id !== id);
+    this.publish(true);
+  }
 }

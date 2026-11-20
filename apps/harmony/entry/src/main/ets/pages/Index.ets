@@ -3036,7 +3036,7 @@ struct Index {
           Column() {
             if (this.tab === '发现') { this.discover() }
             else if (this.tab === '资料库') {
-              if (this.downloadsOpen) { DownloadsView({ onScroll: (offset: number) => this.homeScroll(offset), items: this.downloadItems, contentTop: this.headerHeight(), onExport: (item: MusicDownload) => { this.exportDownload(item); }, onPlay: (song: Song) => this.playSong(song, this.downloadItems.filter((item: MusicDownload) => item.state === 'complete').map((item: MusicDownload) => item.song)), onCancel: (id: string) => { this.downloads.cancel(id).catch((error: Error) => { this.error = error.message; }); } }) }
+              if (this.downloadsOpen) { DownloadsView({ onScroll: (offset: number) => this.homeScroll(offset), items: this.downloadItems, contentTop: this.headerHeight(), onExport: (item: MusicDownload) => { this.exportDownload(item); }, onPlay: (song: Song) => this.playSong(song, this.downloadItems.filter((item: MusicDownload) => item.state === 'complete').map((item: MusicDownload) => item.song)), onCancel: (id: string) => { this.downloads.cancel(id).catch((error: Error) => { this.error = error.message; }); }, onDelete: (id: string) => { this.downloads.remove(id).then(() => this.notify('已删除下载记录')).catch((error: Error) => { this.error = error.message; }); } }) }
               else { this.library() }
             }
             else { this.settingsView() }

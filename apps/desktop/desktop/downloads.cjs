@@ -31,6 +31,14 @@ class MusicDownloads {
     return { ...job };
   }
   cancel(id) { this.active.get(id)?.abort(); }
+  remove(id) {
+    this.active.get(id)?.abort();
+    const index = this.jobs.findIndex(job => job.id === id);
+    if (index < 0) return false;
+    this.jobs.splice(index, 1);
+    this.save();
+    return true;
+  }
   async run(job, url, controller) {
     const temp = job.filePath + '.' + job.id + '.part';
     let output;
