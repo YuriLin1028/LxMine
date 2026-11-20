@@ -330,14 +330,25 @@
       const list = playlist(name, tracks, source); list.id = 'lx-import-kg-' + id; return [list];
     }
     if (source === 'wy') {
+      const wyHeaders = {
+        Referer: 'https://music.163.com/',
+        'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/126.0.0.0 Safari/537.36'
+      };
       const forward = (path, params) => io.json('https://music.163.com/api/linux/forward', {
         method: 'POST',
-        headers: { Referer: 'https://music.163.com/', 'Content-Type': 'application/x-www-form-urlencoded' },
+        headers: { ...wyHeaders, 'Content-Type': 'application/x-www-form-urlencoded' },
         body: 'eparams=' + io.linuxEncrypt({ method: 'POST', url: 'https://music.163.com' + path, params })
       }, data => {
         if (data.code !== 200) throw new Error(data.message || '网易云歌曲资料暂不可访问');
       });
-      const payload = await forward('/api/v3/playlist/detail', { id, n: 100000, s: 0 });
+      let payload;
+      try {
+        payload = await io.json('https://music.163.com/api/v6/playlist/detail?id=' + encodeURIComponent(id) + '&n=1000&s=0', { headers: wyHeaders }, data => {
+          if (data.code !== 200 || !data.playlist) throw new Error(data.message || '网易云歌单暂不可用');
+        });
+      } catch (_) {
+        payload = await forward('/api/v3/playlist/detail', { id, n: 100000, s: 0 });
+      }
       const list = payload.playlist || payload.result;
       if (!list) throw new Error(payload.message || '歌单不可访问，可能为私密或已删除');
       const ids = [...new Set((list.trackIds || []).map(track => str(track.id)).filter(Boolean))];
@@ -347,24 +358,23 @@
       async function loadDetails() {
         while (nextBatch < missing.length) {
           const start = nextBatch;
-          nextBatch += 100;
-          const batch = missing.slice(start, start + 100);
+          nextBatch += 50;
+          const batch = missing.slice(start, start + 50);
           let detail;
           try {
+            detail = await io.json('https://music.163.com/api/song/detail?ids=' + encodeURIComponent(JSON.stringify(batch)) + '&id=' + batch[0], { headers: wyHeaders }, data => {
+              if (data.code !== 200 || !Array.isArray(data.songs)) throw new Error('歌曲详情未完整返回，请稍后重试');
+            });
+          } catch (_) {
             detail = await forward('/api/v3/song/detail', {
               c: JSON.stringify(batch.map(trackId => ({ id: trackId }))), ids: JSON.stringify(batch)
             });
             if (!Array.isArray(detail.songs)) throw new Error('网易云未返回歌曲详情');
-          } catch (_) {
-            // Bounded legacy requests also work through clients that reject linux forwarding.
-            detail = await io.json('https://music.163.com/api/song/detail?ids=' + encodeURIComponent(JSON.stringify(batch)) + '&id=' + batch[0], undefined, data => {
-              if (data.code !== 200 || !Array.isArray(data.songs)) throw new Error('歌曲详情未完整返回，请稍后重试');
-            });
           }
           for (const track of detail.songs) byId.set(str(track.id), track);
         }
       }
-      await Promise.all(Array.from({ length: Math.min(3, Math.ceil(missing.length / 100)) }, loadDetails));
+      await Promise.all(Array.from({ length: Math.min(3, Math.ceil(missing.length / 50)) }, loadDetails));
       const tracks = ids.length ? ids.map(trackId => byId.get(trackId)).filter(Boolean) : list.tracks || [];
       const result = playlist(list.name, tracks, source);
       result.id = 'lx-import-wy-' + id;

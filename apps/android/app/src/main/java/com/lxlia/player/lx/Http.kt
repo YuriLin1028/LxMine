@@ -15,7 +15,7 @@ object Http {
         .retryOnConnectionFailure(true)
         .build()
 
-    private val userAgent = "Mozilla/5.0 LxMine/1.0"
+    private val userAgent = "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/126.0.0.0 Safari/537.36"
 
     fun get(url: String, referer: String = "", timeoutMs: Long = 15000): String {
         val builder = Request.Builder().url(url).header("User-Agent", userAgent)

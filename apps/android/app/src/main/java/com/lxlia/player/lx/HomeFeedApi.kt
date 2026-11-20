@@ -487,7 +487,7 @@ object HomeFeedApi {
 
     /** 网易云歌单详情：曲目 id 可能超出首屏返回数量，按 200 一批补齐元数据。 */
     suspend fun loadFeedPlaylistSongs(id: String, onUnavailable: (Int) -> Unit = {}): List<Song> = withContext(Dispatchers.IO) {
-        val data = JSONObject(Http.get("https://music.163.com/api/v6/playlist/detail?id=$id&n=0", "https://music.163.com/"))
+        val data = JSONObject(Http.get("https://music.163.com/api/v6/playlist/detail?id=$id&n=1000&s=0", "https://music.163.com/"))
         val playlist = data.optJSONObject("playlist")
         val ids = mutableListOf<String>()
         playlist?.optJSONArray("trackIds")?.let { array ->

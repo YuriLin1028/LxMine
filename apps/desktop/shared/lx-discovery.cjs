@@ -4,7 +4,7 @@
 function createDiscovery(io){
  const json=io.json, normalize=io.normalizeSong;
  const collect=io.collectAll;
- const headers=source=>({headers:{Referer:source==='tx'?'https://y.qq.com/':'https://music.163.com/'}});
+ const headers=source=>({headers:{Referer:source==='tx'?'https://y.qq.com/':'https://music.163.com/','User-Agent':'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/126.0.0.0 Safari/537.36'}});
  const qq=(module,method,param)=>json('https://u.y.qq.com/cgi-bin/musicu.fcg?format=json&data='+encodeURIComponent(JSON.stringify({comm:{cv:1602,ct:20},request:{module,method,param}})),headers('tx')).then(r=>{if(r.code||r.request?.code)throw Error('QQ 公开推荐暂不可用');return r.request.data;});
  const clean=v=>String(v||'').replace(/&amp;/g,'&').replace(/&quot;/g,'"').replace(/<[^>]*>/g,'');
  const art=v=>clean(v).replace('{size}','400').replace(/^\/\//,'https://').replace(/^http:/,'https:');
@@ -51,11 +51,16 @@ function createDiscovery(io){
  }
  async function tracks(item){
   const source=item.source||'wy',id=item.id;
-  if(item.kind!=='chart'){
+  if(item.kind!=='chart'||source==='wy'){
    if(source==='wy'){
-    const r=await json('https://music.163.com/api/v6/playlist/detail?id='+encodeURIComponent(id)+'&n=0',headers(source));if(r.code!==200||!r.playlist)throw Error('网易云歌单暂不可用');
+    let r;
+    try{r=await json('https://music.163.com/api/v6/playlist/detail?id='+encodeURIComponent(id)+'&n=1000&s=0',headers(source));}catch(_){r=null;}
+    if((!r||r.code!==200||!r.playlist)&&typeof io.linuxEncrypt==='function'){
+     try{r=await json('https://music.163.com/api/linux/forward',{method:'POST',headers:{...headers(source).headers,'Content-Type':'application/x-www-form-urlencoded'},body:'eparams='+io.linuxEncrypt({method:'POST',url:'https://music.163.com/api/v3/playlist/detail',params:{id,n:100000,s:0}})});}catch(_){}
+    }
+    if(!r||r.code!==200||!r.playlist)throw Error('网易云歌单暂不可用');
     const ids=(r.playlist.trackIds||[]).map(x=>String(x.id)),byId=new Map((r.playlist.tracks||[]).map(x=>[String(x.id),x]));
-    for(let offset=0;offset<ids.length;offset+=200){const batch=ids.slice(offset,offset+200).filter(id=>!byId.has(id));if(!batch.length)continue;const detail=await json('https://music.163.com/api/song/detail?ids='+encodeURIComponent(JSON.stringify(batch)),headers(source));if(detail.code!==200)throw Error('歌曲详情暂不可用');for(const song of detail.songs||[])byId.set(String(song.id),song);}
+    for(let offset=0;offset<ids.length;offset+=50){const batch=ids.slice(offset,offset+50).filter(id=>!byId.has(id));if(!batch.length)continue;const detail=await json('https://music.163.com/api/song/detail?ids='+encodeURIComponent(JSON.stringify(batch)),headers(source));if(detail.code!==200)throw Error('歌曲详情暂不可用');for(const song of detail.songs||[])byId.set(String(song.id),song);}
     const songs=(ids.length?ids.map(id=>byId.get(id)).filter(Boolean):Array.from(byId.values())).map(x=>normalize(x,source));const missing=ids.length-songs.length;
     return {items:songs,total:ids.length,complete:true,unavailable:missing,warning:missing>0?missing+' 首歌曲的平台资料暂不可获取，已显示其余全部歌曲':''};
    }

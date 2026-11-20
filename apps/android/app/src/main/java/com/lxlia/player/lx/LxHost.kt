@@ -238,6 +238,9 @@ class LxHost(private val http: OkHttpClient) {
             }
             val timeout = payload.optLong("timeout").takeIf { it > 0 } ?: 20000L
             val builder = Request.Builder().url(url)
+            if (headers.keys.none { it.equals("user-agent", true) }) {
+                headers["User-Agent"] = "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/126.0.0.0 Safari/537.36"
+            }
             headers.forEach { (name, value) -> runCatching { builder.header(name, value) } }
             val contentTypeHeader = headers.entries.firstOrNull { it.key.equals("content-type", true) }?.value
             val mediaType = contentTypeHeader?.toMediaTypeOrNull() ?: "application/x-www-form-urlencoded".toMediaType()
