@@ -1,6 +1,6 @@
 import { http } from '@kit.NetworkKit';
 import { fileIo, picker } from '@kit.CoreFileKit';
-import { common, Want } from '@kit.AbilityKit';
+import { bundleManager, common, Want } from '@kit.AbilityKit';
 import { PRODUCT_NAME, VERSION_NAME } from 'BuildProfile';
 
 export const UPDATE_REPO: string = 'YuriLin1028/LxMine';
@@ -50,6 +50,7 @@ interface RawReleaseAsset {
   size?: number;
   browser_download_url?: string;
   digest?: string;
+  updated_at?: string;
 }
 
 interface RawReleasePayload {
@@ -163,12 +164,24 @@ export async function checkHarmonyUpdate(): Promise<AppUpdateInfo> {
   const picked = assets.find((a: UpdateAsset) => a.name.toLowerCase() === exactName)
     ?? assets.find((a: UpdateAsset) => a.name.toLowerCase().endsWith('.hap'))
     ?? null;
+  const pickedRaw = picked ? (best.assets ?? []).find((r: RawReleaseAsset) => (r.name ?? '') === picked.name) : undefined;
+  const cmp = compareVersions(latest, current);
+  let sameVersionNewer = false;
+  if (cmp === 0 && picked) {
+    try {
+      const selfInfo = bundleManager.getBundleInfoForSelfSync(bundleManager.BundleFlag.GET_BUNDLE_INFO_DEFAULT);
+      const remoteMs = Date.parse((pickedRaw?.updated_at ?? '') || (best.published_at ?? '')) || 0;
+      if (remoteMs > 0 && selfInfo.updateTime > 0 && remoteMs > selfInfo.updateTime + 120000) {
+        sameVersionNewer = true;
+      }
+    } catch (_) {}
+  }
 
   return {
     currentVersion: current,
     latestVersion: latest,
     tagName,
-    hasUpdate: compareVersions(latest, current) > 0,
+    hasUpdate: cmp > 0 || sameVersionNewer,
     publishedAt: best.published_at ?? '',
     notes: (best.body ?? '').trim(),
     releaseUrl: best.html_url ?? `https://github.com/${UPDATE_REPO}/releases/tag/${tagName}`,

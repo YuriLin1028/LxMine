@@ -9,6 +9,7 @@ import kotlinx.coroutines.withTimeoutOrNull
 import okhttp3.Call
 import okhttp3.Callback
 import okhttp3.MediaType.Companion.toMediaType
+import okhttp3.MediaType.Companion.toMediaTypeOrNull
 import okhttp3.OkHttpClient
 import okhttp3.Request
 import okhttp3.RequestBody.Companion.toRequestBody
@@ -238,8 +239,14 @@ class LxHost(private val http: OkHttpClient) {
             val timeout = payload.optLong("timeout").takeIf { it > 0 } ?: 20000L
             val builder = Request.Builder().url(url)
             headers.forEach { (name, value) -> runCatching { builder.header(name, value) } }
-            val requestBody = body?.toRequestBody(("application/octet-stream").toMediaType())
-            builder.method(method, if (method == "GET" || method == "HEAD") null else requestBody)
+            val contentTypeHeader = headers.entries.firstOrNull { it.key.equals("content-type", true) }?.value
+            val mediaType = contentTypeHeader?.toMediaTypeOrNull() ?: "application/x-www-form-urlencoded".toMediaType()
+            val requestBody = when {
+                method == "GET" || method == "HEAD" -> null
+                body != null -> body.toRequestBody(mediaType)
+                else -> "".toRequestBody(mediaType)
+            }
+            builder.method(method, requestBody)
             val client = http.newBuilder()
                 .connectTimeout(timeout, TimeUnit.MILLISECONDS)
                 .readTimeout(timeout, TimeUnit.MILLISECONDS)
@@ -253,7 +260,15 @@ class LxHost(private val http: OkHttpClient) {
                     response.use { result ->
                         val text = runCatching { result.body?.string() ?: "" }.getOrDefault("")
                         val headerMap = JSONObject()
-                        result.headers.names().forEach { name -> headerMap.put(name, result.headers.values(name).joinToString(", ")) }
+                        result.headers.names().forEach { name ->
+                            val joined = result.headers.values(name).joinToString(", ")
+                            headerMap.put(name, joined)
+                            headerMap.put(name.lowercase(), joined)
+                        }
+                        val finalUrl = result.request.url.toString()
+                        if (!headerMap.has("location") && (result.priorResponse != null || finalUrl != url)) {
+                            headerMap.put("location", finalUrl)
+                        }
                         val parsed: Any = runCatching { JSONObject(text) }.getOrElse { runCatching { org.json.JSONArray(text) }.getOrElse { text } }
                         val payloadOut = JSONObject()
                         val responseJson = JSONObject()

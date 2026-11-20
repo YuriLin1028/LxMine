@@ -108,6 +108,15 @@ object AppUpdater {
         }
     }
 
+    private fun parseIsoMs(iso: String): Long {
+        if (iso.isBlank()) return 0L
+        return runCatching {
+            java.text.SimpleDateFormat("yyyy-MM-dd'T'HH:mm:ss'Z'", java.util.Locale.US).apply {
+                timeZone = java.util.TimeZone.getTimeZone("UTC")
+            }.parse(iso.trim().replace(Regex("\\.\\d+Z$"), "Z"))?.time ?: 0L
+        }.getOrDefault(0L)
+    }
+
     suspend fun checkForUpdate(currentVersion: String): AppUpdateInfo = withContext(Dispatchers.IO) {
         val current = currentVersion.trim().removePrefix("v").removePrefix("V")
         val results = coroutineScope {
@@ -129,7 +138,7 @@ object AppUpdater {
         val tagName = best.optString("tag_name")
         val latest = tagName.removePrefix("v").removePrefix("V")
         val assetsArr = best.optJSONArray("assets")
-        val assets = mutableListOf<UpdateAsset>()
+        val assets = mutableListOf<Pair<UpdateAsset, String>>()
         if (assetsArr != null) {
             for (i in 0 until assetsArr.length()) {
                 val item = assetsArr.optJSONObject(i) ?: continue
@@ -140,18 +149,22 @@ object AppUpdater {
                 val digest = if (rawDigest.startsWith("sha256:", ignoreCase = true) && rawDigest.length == 71) {
                     rawDigest.substring(7).lowercase()
                 } else ""
-                assets.add(UpdateAsset(name, item.optLong("size", 0L), url, digest))
+                assets.add(UpdateAsset(name, item.optLong("size", 0L), url, digest) to item.optString("updated_at", ""))
             }
         }
         val exactName = "lxmine-$latest-android.apk"
-        val picked = assets.firstOrNull { it.name.equals(exactName, ignoreCase = true) }
-            ?: assets.firstOrNull { it.name.endsWith(".apk", ignoreCase = true) }
+        val pickedPair = assets.firstOrNull { it.first.name.equals(exactName, ignoreCase = true) }
+            ?: assets.firstOrNull { it.first.name.endsWith(".apk", ignoreCase = true) }
+        val picked = pickedPair?.first
+        val cmp = compareVersions(latest, current)
+        val remoteTimeMs = parseIsoMs(pickedPair?.second?.ifBlank { best.optString("published_at", "") } ?: best.optString("published_at", ""))
+        val sameVersionNewer = cmp == 0 && picked != null && remoteTimeMs > com.lxlia.player.BuildConfig.BUILD_TIME_MS + 120_000L
 
         AppUpdateInfo(
             currentVersion = current,
             latestVersion = latest,
             tagName = tagName,
-            hasUpdate = compareVersions(latest, current) > 0,
+            hasUpdate = cmp > 0 || sameVersionNewer,
             publishedAt = best.optString("published_at", ""),
             notes = best.optString("body", "").trim(),
             releaseUrl = best.optString("html_url", "https://github.com/$REPO/releases/tag/$tagName"),

@@ -22,8 +22,9 @@ android {
         applicationId = "com.lxlia.player"
         minSdk = 26
         targetSdk = 35
-        versionCode = 13
+        versionCode = 14
         versionName = "1.2.1"
+        buildConfigField("long", "BUILD_TIME_MS", "${System.currentTimeMillis()}L")
         vectorDrawables { useSupportLibrary = true }
         buildConfigField("String", "PRIVATE_TEST_SOURCES_SHA256", "\"$privateTestSourcesHash\"")
     }
