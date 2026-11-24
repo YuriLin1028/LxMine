@@ -1,18 +1,18 @@
 {
   "platform": "android",
-  "tag_name": "v1.2.1",
-  "html_url": "https://github.com/YuriLin1028/LxMine/releases/tag/v1.2.1",
-  "published_at": "2026-11-20T01:44:06Z",
-  "body": "## LxMine v1.2.1 更新日志\n\n### 新增与优化\n- **播放页背景自定义（三端同步）**：设置 → 播放新增「播放页背景透明度（0%–100% 实时滑动 + 一键恢复默认）」与「播放页自定义背景图（选择本地图片 / 一键恢复默认专辑封面）」，所有动效模式（含音乐回响工坊）及关闭动效模式均实时生效。\n- **自定义背景图实时取色**：切换自定义背景图后，音乐回响工坊、地形、粒子、星云及取色歌词均自动提取自定义图主色板；恢复默认后切回专辑封面取色。\n- **音乐回响工坊稳定性彻底修复**：修复二次进入画布错位/歪斜与旋转卡顿，支持 WebGL 视口与 ResizeObserver 双重重建恢复。\n- **Windows 细节修复**：首页置顶栏激活态统一天蓝色、切歌列表高亮实时同步、浅色模式提示条高对比度适配、搜索图标恢复显示。\n\n### 华为应用市场邀请测试（HarmonyOS 手机/平板/PC 推荐）\n- 邀测链接：https://appgallery.huawei.com/link/invite-test-wap?taskId=829a9176e89afda4703cbcc9273a0bfb&invitationCode=1Klp9jEJXOp",
+  "tag_name": "v1.3.0",
+  "html_url": "https://github.com/YuriLin1028/LxMine/releases/tag/v1.3.0",
+  "published_at": "2026-11-24T05:58:04Z",
+  "body": "## LxMine v1.3.0 更新日志\n\n### 全端新增与核心升级\n- **全新 Folia 实时 3D 舞台动效与智能切场**：三端同步新增 Folia 舞台动效与智能场景推荐，全面优化 120Hz 渲染性能与移动端 DPR 像素预算。\n- **专业音频与聆听能力**：新增多段均衡器与空间音效预设（AudioFX）、无缝交叉淡化（AutoMix）、低延迟耳返实时监听（移动端）、蓝牙车机歌词同步与批量下载。\n- **交互与自定义增强**：新增自定义歌单封面、播放详情「更多」独立面板、完整颜色选择器与深浅色全域自适应优化。\n\n### 平台专属对齐与重点修复\n- **HarmonyOS（手机 / 平板 / PC 2in1 / HiCar）**：鸿蒙 PC（`2in1`）全面对齐 Windows 桌面歌词、壁纸沉浸舞台、右键上下文菜单、宽屏行内操作与快捷键；优化横竖屏丝滑切换与滚动零掉帧。\n- **Android**：全面重构为固定式半透毛玻璃独立页（主窗口 `GlassModalHost`），彻底消除列表上滑撞顶抽搐与实心遮罩；全页统一「上模糊、下穿透」、滚动 `px → dp` 坐标换算、子独立页返回闭环与首页融合板块对齐鸿蒙。\n- **Windows**：深化壁纸模式与 Wallpaper Engine 共存宿主稳定性，强化独立更新通道与静默安装校验。\n\n### 华为应用市场邀请测试（HarmonyOS 手机 / 平板 / PC 2in1 推荐）\n- 邀测链接：https://appgallery.huawei.com/link/invite-test-wap?taskId=4bce68afbce8009046507ba1485a6273&invitationCode=1Klp9jEJXOp\n- 本轮测试至：**2027-02-22 10:45（北京时间）**（邀请码有效至 2026-12-16 12:46）\n- 所有公开安装包均不含任何内置音源（`BadSources = 0`），音源由用户自行导入。\n",
   "draft": false,
   "prerelease": false,
   "assets": [
     {
-      "name": "LxMine-1.2.1-Android.apk",
-      "size": 24051237,
-      "browser_download_url": "https://github.com/YuriLin1028/LxMine/releases/download/v1.2.1/LxMine-1.2.1-Android.apk",
-      "digest": "sha256:80816e36561760571f04a0c52c346a6fa0bf505263719a12dd48b0a173fc3614",
-      "updated_at": "2026-11-20T04:41:04Z"
+      "name": "LxMine-1.3.0-Android.apk",
+      "size": 35772237,
+      "browser_download_url": "https://github.com/YuriLin1028/LxMine/releases/download/v1.3.0/LxMine-1.3.0-Android.apk",
+      "digest": "sha256:92369ce728366e88a6b259b5a920a2d7095ef5241f50549ba68b5fdc9b59689d",
+      "updated_at": "2026-11-24T05:57:27Z"
     }
   ]
 }

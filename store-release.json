@@ -1,6 +1,6 @@
 {
-  "tag_name": "v1.2.1",
-  "published_at": "2026-11-20T02:08:41Z",
-  "invite_url": "https://appgallery.huawei.com/link/invite-test-wap?taskId=829a9176e89afda4703cbcc9273a0bfb&invitationCode=1Klp9jEJXOp",
-  "notes": "## LxMine v1.2.1 邀请测试更新\n- 支持播放页背景透明度（0%–100% 实时滑动 + 恢复默认）与自定义背景图\n- 自定义背景图支持实时提取主色板，音乐回响工坊与取色歌词同步跟随\n- 修复音乐回响工坊二次进入画布错位/歪斜问题\n- 下载管理支持删除单条记录与清理本地缓存"
+  "tag_name": "v1.3.0",
+  "published_at": "2026-11-24T05:45:00Z",
+  "invite_url": "https://appgallery.huawei.com/link/invite-test-wap?taskId=4bce68afbce8009046507ba1485a6273&invitationCode=1Klp9jEJXOp",
+  "notes": "## LxMine v1.3.0 邀请测试更新\n- **新动效与智能切场**：新增 Folia 实时 3D 舞台动效与智能场景推荐，全面优化 120Hz 渲染性能与移动端像素预算\n- **专业音频与聆听体验**：新增多段均衡器与空间音效预设、耳返实时监听、无缝交叉淡化 AutoMix、蓝牙车机歌词同步与批量下载\n- **鸿蒙 PC 与跨端深度对齐**：鸿蒙 PC（2in1）全面对齐 Windows 桌面歌词、壁纸沉浸舞台、右键菜单与宽屏操作；优化横竖屏丝滑切换与滚动零掉帧\n- **交互与细节打磨**：新增自定义歌单封面、播放详情「更多」独立面板、完整颜色选择器与深浅色全域自适应优化"
 }
