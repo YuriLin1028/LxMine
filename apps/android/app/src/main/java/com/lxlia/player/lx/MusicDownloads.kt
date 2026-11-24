@@ -22,6 +22,13 @@ import org.json.JSONObject
 import java.io.File
 import java.util.concurrent.ConcurrentHashMap
 
+data class DownloadRemoveResult(
+    val removedPaths: List<String> = emptyList(),
+    val removedSongKeys: List<String> = emptyList(),
+    val deletedFileCount: Int = 0,
+    val failedFileCount: Int = 0,
+)
+
 data class MusicDownload(
     val id: String,
     val song: Song,
@@ -34,6 +41,7 @@ data class MusicDownload(
     val publicUri: String = "",
     val exportError: String = "",
     val publicLocation: String = "",
+    val exportedUris: List<String> = emptyList(),
 ) {
     fun toJson(): JSONObject = JSONObject()
         .put("id", id)
@@ -47,10 +55,19 @@ data class MusicDownload(
         .put("publicUri", publicUri)
         .put("exportError", exportError)
         .put("publicLocation", publicLocation)
+        .put("exportedUris", JSONArray().apply { exportedUris.forEach { put(it) } })
 
     companion object {
         fun fromJson(json: JSONObject): MusicDownload? {
             val song = Song.fromJson(json.optJSONObject("song")) ?: return null
+            val uris = mutableListOf<String>()
+            val rawArr = json.optJSONArray("exportedUris")
+            if (rawArr != null) {
+                for (i in 0 until rawArr.length()) {
+                    val v = rawArr.optString(i).trim()
+                    if (v.isNotEmpty() && v !in uris) uris.add(v)
+                }
+            }
             return MusicDownload(
                 id = json.optString("id"),
                 song = song,
@@ -63,6 +80,7 @@ data class MusicDownload(
                 publicUri = json.optString("publicUri"),
                 exportError = json.optString("exportError"),
                 publicLocation = json.optString("publicLocation"),
+                exportedUris = uris,
             )
         }
     }
@@ -127,7 +145,7 @@ class MusicDownloads(private val context: Context, private val http: OkHttpClien
 
     fun items(): List<MusicDownload> = synchronized(items) { items.toList() }
 
-    fun start(song: Song, quality: String, url: String) {
+    fun start(song: Song, quality: String, url: String, targetTreeUri: Uri? = null) {
         if (!url.startsWith("http://", true) && !url.startsWith("https://", true)) throw IllegalStateException("无法开始下载")
         val id = "${System.currentTimeMillis()}-${(0..1_000_000).random().toString(36)}"
         val extension = if (quality.contains("flac")) "flac" else "mp3"
@@ -156,7 +174,12 @@ class MusicDownloads(private val context: Context, private val http: OkHttpClien
                     )
                     if (!temp.renameTo(File(finalItem.path))) throw IllegalStateException("保存文件失败")
                     replace(updated, persist = true)
-                    if (Build.VERSION.SDK_INT >= 29) exportPublic(id)
+                    if (targetTreeUri != null) {
+                        runCatching { exportToTree(id, targetTreeUri) }
+                            .onFailure { if (Build.VERSION.SDK_INT >= 29) exportPublic(id) }
+                    } else if (Build.VERSION.SDK_INT >= 29) {
+                        exportPublic(id)
+                    }
                 }
             } catch (error: Throwable) {
                 val current = items().firstOrNull { it.id == id }
@@ -169,6 +192,34 @@ class MusicDownloads(private val context: Context, private val http: OkHttpClien
                 jobs.remove(id)
             }
         }
+    }
+
+    suspend fun exportToTree(id: String, treeUri: Uri) = withContext(Dispatchers.IO) {
+        exportLock.withLock {
+            val item = items().firstOrNull { it.id == id && it.state == "complete" } ?: return@withLock
+            val treeDocId = android.provider.DocumentsContract.getTreeDocumentId(treeUri)
+            val parentDocUri = android.provider.DocumentsContract.buildDocumentUriUsingTree(treeUri, treeDocId)
+            val (ext, mime) = audioFormat(item)
+            val displayName = exportName(item).let { if (it.endsWith(".$ext", true)) it else "$it.$ext" }
+            val createdUri = android.provider.DocumentsContract.createDocument(
+                context.contentResolver,
+                parentDocUri,
+                mime,
+                displayName,
+            ) ?: throw IllegalStateException("无法在所选目录创建文件")
+            context.contentResolver.openOutputStream(createdUri, "w")?.use { output ->
+                File(item.path).inputStream().use { it.copyTo(output, 65536) }
+            } ?: throw IllegalStateException("无法写入所选目录")
+            val nextUris = (item.exportedUris + createdUri.toString()).distinct()
+            replace(item.copy(publicUri = createdUri.toString(), publicLocation = "系统所选目录", exportError = "", exportedUris = nextUris), true)
+        }
+    }
+
+    suspend fun exportOfflineToTree(song: Song, treeUri: Uri): Boolean {
+        val item = items().firstOrNull { it.song.key == song.key && it.state == "complete" } ?: return false
+        if (!File(item.path).exists()) return false
+        exportToTree(item.id, treeUri)
+        return true
     }
 
     /** Completed files keep their offline cache while a public copy is indexed by Android. */
@@ -210,7 +261,8 @@ class MusicDownloads(private val context: Context, private val http: OkHttpClien
                     file.inputStream().use { it.copyTo(output, 65536) }
                 } ?: throw IllegalStateException("无法写入系统音乐文件")
                 context.contentResolver.update(uri, ContentValues().apply { put(MediaStore.Audio.Media.IS_PENDING, 0) }, null, null)
-                replace(item.copy(publicUri = uri.toString(), publicLocation = "Music/LxMine", exportError = ""), true)
+                val nextUris = (item.exportedUris + uri.toString()).distinct()
+                replace(item.copy(publicUri = uri.toString(), publicLocation = "Music/LxMine", exportError = "", exportedUris = nextUris), true)
             } catch (error: Exception) {
                 uri?.let { runCatching { context.contentResolver.delete(it, null, null) } }
                 replace(item.copy(exportError = error.message ?: "保存到系统失败"), true)
@@ -248,7 +300,8 @@ class MusicDownloads(private val context: Context, private val http: OkHttpClien
             context.contentResolver.openOutputStream(uri, "w")?.use { output ->
                 File(item.path).inputStream().use { it.copyTo(output, 65536) }
             } ?: throw IllegalStateException("无法写入所选位置")
-            replace(item.copy(publicUri = uri.toString(), publicLocation = "系统所选位置", exportError = ""), true)
+            val nextUris = (item.exportedUris + uri.toString()).distinct()
+            replace(item.copy(publicUri = uri.toString(), publicLocation = "系统所选位置", exportError = "", exportedUris = nextUris), true)
         }
     }
 
@@ -291,7 +344,7 @@ class MusicDownloads(private val context: Context, private val http: OkHttpClien
                             output.write(buffer, 0, read)
                             received += read
                             val now = System.currentTimeMillis()
-                            if (now - lastPublish > 200) {
+                            if (now - lastPublish > 450) {
                                 lastPublish = now
                                 update(item.copy(received = received, total = if (total > 0) total else received))
                             }
@@ -322,14 +375,127 @@ class MusicDownloads(private val context: Context, private val http: OkHttpClien
         File(context.cacheDir, "lxmine-download-$id.part").delete()
     }
 
-    /** 清掉已完成/失败记录并同步清理沙盒缓存文件。 */
-    fun remove(id: String) {
-        val item = items().firstOrNull { it.id == id } ?: return
-        if (item.state == "downloading") cancel(id)
-        if (item.path.startsWith(dir.absolutePath + File.separator)) {
-            runCatching { File(item.path).delete() }
+    fun updateCovers(covers: Map<String, String>) {
+        if (covers.isEmpty()) return
+        var changed = false
+        synchronized(items) {
+            for (i in items.indices) {
+                val cur = items[i]
+                if (cur.song.coverUrl.isNotEmpty()) continue
+                val found = covers[cur.song.key].orEmpty().trim()
+                if (found.isNotEmpty()) {
+                    items[i] = cur.copy(song = cur.song.copy(coverUrl = found))
+                    changed = true
+                }
+            }
         }
-        synchronized(items) { items.removeAll { it.id == id } }
+        if (changed) publish(true)
+    }
+
+    private fun isUriAccessible(uri: Uri): Boolean {
+        if (uri.scheme == "file") {
+            val path = uri.path ?: return false
+            return File(path).exists()
+        }
+        return runCatching {
+            context.contentResolver.openAssetFileDescriptor(uri, "r")?.use { true } ?: false
+        }.getOrDefault(false)
+    }
+
+    /** 返回 1 表示已删除，0 表示原本已不存在，-1 表示仍存在且删除失败。 */
+    private fun deletePublicCopy(publicUriText: String): Int {
+        if (publicUriText.isBlank()) return 0
+        val uri = runCatching { Uri.parse(publicUriText) }.getOrNull() ?: return 0
+        if (uri.scheme == "file") {
+            val f = uri.path?.let { File(it) } ?: return 0
+            if (!f.exists()) return 0
+            runCatching { f.delete() }
+            return if (!f.exists()) 1 else -1
+        }
+        val existedBefore = isUriAccessible(uri)
+        val deletedByDoc = runCatching {
+            android.provider.DocumentsContract.deleteDocument(context.contentResolver, uri)
+        }.getOrDefault(false)
+        var deletedRows = 0
+        if (!deletedByDoc) {
+            deletedRows = runCatching { context.contentResolver.delete(uri, null, null) }.getOrDefault(0)
+        }
+        val stillExists = isUriAccessible(uri)
+        return when {
+            !stillExists && (deletedByDoc || deletedRows > 0 || existedBefore) -> 1
+            !stillExists -> 0
+            else -> -1
+        }
+    }
+
+    /** 兜底按 DISPLAY_NAME + Music/LxMine 清理本应用写入 MediaStore 的公共音频副本。 */
+    private fun deleteMediaStoreFallback(item: MusicDownload): Int {
+        if (Build.VERSION.SDK_INT < 29) return 0
+        var removed = 0
+        val expectedName = exportName(item)
+        val baseWithoutExt = expectedName.substringBeforeLast('.')
+        runCatching {
+            val projection = arrayOf(MediaStore.Audio.Media._ID, MediaStore.Audio.Media.DISPLAY_NAME)
+            val selection = "${MediaStore.Audio.Media.RELATIVE_PATH} LIKE ? AND (${MediaStore.Audio.Media.DISPLAY_NAME} = ? OR ${MediaStore.Audio.Media.DISPLAY_NAME} LIKE ?)"
+            val args = arrayOf("%Music/LxMine%", expectedName, "$baseWithoutExt%")
+            context.contentResolver.query(MediaStore.Audio.Media.EXTERNAL_CONTENT_URI, projection, selection, args, null)?.use { cursor ->
+                val idCol = cursor.getColumnIndexOrThrow(MediaStore.Audio.Media._ID)
+                while (cursor.moveToNext()) {
+                    val rowId = cursor.getLong(idCol)
+                    val rowUri = android.content.ContentUris.withAppendedId(MediaStore.Audio.Media.EXTERNAL_CONTENT_URI, rowId)
+                    val rows = runCatching { context.contentResolver.delete(rowUri, null, null) }.getOrDefault(0)
+                    if (rows > 0) removed += rows
+                }
+            }
+        }
+        return removed
+    }
+
+    /** 清掉已完成/失败记录；仅当 deleteSourceFile 为 true 时一并删除本地音频与已导出文件。 */
+    fun remove(id: String, deleteSourceFile: Boolean = false): DownloadRemoveResult =
+        removeBatch(listOf(id), deleteSourceFile)
+
+    fun removeBatch(ids: List<String>, deleteSourceFile: Boolean = false): DownloadRemoveResult {
+        if (ids.isEmpty()) return DownloadRemoveResult()
+        val targetSet = ids.toSet()
+        val snapshot = items().filter { it.id in targetSet }
+        if (snapshot.isEmpty()) return DownloadRemoveResult()
+        val removedPaths = mutableListOf<String>()
+        val removedSongKeys = mutableListOf<String>()
+        var deletedFileCount = 0
+        var failedFileCount = 0
+        for (item in snapshot) {
+            if (item.state == "downloading") cancel(item.id)
+            removedSongKeys.add(item.song.key)
+            if (deleteSourceFile) {
+                if (item.path.startsWith(dir.absolutePath + File.separator)) {
+                    val f = File(item.path)
+                    val existed = f.exists()
+                    if (existed) runCatching { f.delete() }
+                    if (!f.exists()) {
+                        if (existed) deletedFileCount += 1
+                        removedPaths.add(item.path)
+                    } else {
+                        failedFileCount += 1
+                    }
+                }
+                val allPublicUris = (item.exportedUris + item.publicUri).filter { it.isNotBlank() }.distinct()
+                for (uriText in allPublicUris) {
+                    when (deletePublicCopy(uriText)) {
+                        1 -> deletedFileCount += 1
+                        -1 -> failedFileCount += 1
+                    }
+                }
+                deletedFileCount += deleteMediaStoreFallback(item)
+            }
+        }
+        synchronized(items) { items.removeAll { it.id in targetSet } }
         publish(true)
+        return DownloadRemoveResult(
+            removedPaths = removedPaths,
+            removedSongKeys = removedSongKeys,
+            deletedFileCount = deletedFileCount,
+            failedFileCount = failedFileCount,
+        )
     }
 }

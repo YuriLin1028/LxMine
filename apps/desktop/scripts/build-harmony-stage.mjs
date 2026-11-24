@@ -16,21 +16,33 @@ const paths = vm.runInNewContext(match[1]);
 const modules = paths.map(name => fs.readFileSync(path.join(stage, name), 'utf8'));
 const revisionHash = crypto.createHash('sha256').update(modules.join('\n;\n'));
 for (const name of ['index.html', 'plain-stage.html', 'mine-stage-lyrics.js', 'mine-stage-appearance.js', 'mine-stage-bridge.js', 'mine-stage-touch.js', 'mine-stage-gestures.js', 'sonic-topography-preset.js', 'sonic-workshop-preset.js', 'vendor/sonic-workshop/mineradio-power.js']) revisionHash.update(fs.readFileSync(path.join(stage, name)));
+const foliaStageSrc = path.join(stage, 'folia-stage');
+if (fs.existsSync(path.join(foliaStageSrc, 'index.html'))) {
+  revisionHash.update(fs.readFileSync(path.join(foliaStageSrc, 'index.html')));
+  const foliaLicense = path.resolve(desktop, '../../packages/folia-stage/LICENSE');
+  if (fs.existsSync(foliaLicense)) fs.copyFileSync(foliaLicense, path.join(foliaStageSrc, 'LICENSE'));
+}
 const revision = revisionHash.digest('hex').slice(0, 16);
+if (fs.existsSync(path.join(output, 'folia-stage'))) fs.rmSync(path.join(output, 'folia-stage'), { recursive: true, force: true });
 fs.cpSync(stage, output, { recursive: true });
 fs.writeFileSync(path.join(output, 'mine-stage-engine.js'), modules.join('\n;\n'));
 let html = fs.readFileSync(path.join(stage, 'index.html'), 'utf8');
 if (!html.includes('id="canvas-container"') || !html.includes('js/index-loader.js')) throw new Error('MineRadio stage entry is missing its canvas or engine loader');
 html = html.replace(/<link\s+href="https:\/\/fonts\.googleapis\.com[^>]+>/, '');
-html = html.replace('<script src="js/preload-mode.js"></script>', `<script>window.__LXMINE_NATIVE_STAGE=true;window.__lxmineStagePresentation={visible:false,detail:false};window.lxMusic={};window.__lxmineFetch=window.fetch.bind(window);window.fetch=function(url,options){if(new URL(typeof url==='string'?url:url.url,location.href).pathname.startsWith('/api/'))return Promise.resolve({ok:false,status:503,json:async function(){return {}},text:async function(){return ''}});return window.__lxmineFetch(url,options)};</script>`);
+html = html.replace('<script src="js/preload-mode.js"></script>', `<script>window.__LXMINE_NATIVE_STAGE=true;var __wpHost=location.search.indexOf('wallpaper=1')>=0;window.__lxmineStagePresentation={visible:__wpHost,detail:__wpHost};window.lxMusic={};window.__lxmineFetch=window.fetch.bind(window);window.fetch=function(url,options){if(new URL(typeof url==='string'?url:url.url,location.href).pathname.startsWith('/api/'))return Promise.resolve({ok:false,status:503,json:async function(){return {}},text:async function(){return ''}});return window.__lxmineFetch(url,options)};</script>`);
 html = html.replace('<script src="js/index-loader.js"></script>', '<script src="mine-stage-appearance.js"></script><script src="mine-stage-engine.js"></script><script src="mine-stage-bridge.js"></script><script src="mine-stage-touch.js"></script><script src="mine-stage-gestures.js"></script><script>if(typeof renderer!=="undefined"&&renderer)LxMineGestures.bind(renderer.domElement, false)</script>');
-html = html.replace('window.__LXMINE_NATIVE_STAGE=true;', `window.__LXMINE_NATIVE_STAGE=true;window.__LXMINE_STAGE_REVISION='${revision}';`);
+html = html.replace('window.__LXMINE_NATIVE_STAGE=true;', `window.__LXMINE_NATIVE_STAGE=true;window.__LXMINE_STAGE_REVISION='${revision}';if(location.search.indexOf('wallpaper=1')>=0)document.documentElement.classList.add('wallpaper-host');`);
 html = html.replace(/(src|href)="((?!https?:|data:)[^"]+\.(?:js|css)(?:\?[^"]*)?)"/g, (_, attribute, url) => `${attribute}="${url}${url.includes('?') ? '&' : '?'}revision=${revision}"`);
 html = html.replace('</head>', `<style>
 html,body,#desktop-window-shell,#canvas-container{width:100%;height:100%;margin:0;overflow:hidden;background:transparent!important}
 html,body{width:100vw;height:100vh}
 /* Native shells own the cover and theme wash beneath the transparent effects. */
 #album-bg,#album-bg-next,#custom-bg{display:none!important}
+html.wallpaper-host{background:transparent!important}
+html.wallpaper-host body{background:rgba(9,11,16,var(--wp-bg-opacity,0.42))!important}
+html.wallpaper-host.light-theme body{background:rgba(220,224,229,var(--wp-bg-opacity,0.42))!important}
+html.wallpaper-host #album-bg,html.wallpaper-host #album-bg-next,html.wallpaper-host #custom-bg{display:block!important;opacity:var(--wp-bg-opacity,0.42)!important}
+html.wallpaper-host #canvas-container,html.wallpaper-host #sonic-workshop-layer{opacity:var(--wp-overall-opacity,0.95)!important}
 body>:not(#desktop-window-shell){display:none!important}
 #desktop-window-shell>:not(#canvas-container):not(#sonic-workshop-layer):not(#album-bg):not(#album-bg-next):not(#custom-bg):not(#wallpaper-engine-layer){display:none!important}
 #sonic-workshop-layer{position:fixed!important;inset:0!important;width:100%!important;height:100%!important;z-index:1!important;pointer-events:none!important}
@@ -46,10 +58,30 @@ fs.copyFileSync(path.join(stage, 'mine-stage-gestures.js'), path.join(output, 'm
 for (const name of ['LICENSE', 'NOTICE.md']) fs.copyFileSync(path.join(desktop, name), path.join(output, name));
 const presetSource = fs.readFileSync(path.join(stage, 'js/modules/07-fx/00-preset-archive-data.js'), 'utf8');
 const presets = vm.runInNewContext(presetSource.match(/var presetMeta = (\[[\s\S]*?\]);/)[1]);
-const modes = [{ id: 'off', label: '关闭动效' }, ...presets.map((preset, index) => ({ id: `mine-${index}`, label: preset.name + (index === 7 ? ' · 地形' : index === 8 ? ' · 工坊' : '') }))];
-fs.writeFileSync(path.join(harmony, 'entry/src/main/ets/model/MineRadioModes.ets'), `// Generated from MineRadio's actual preset registry.\nexport const MINE_STAGE_REVISION: string = '${revision}';\nexport interface MineRadioMode { id: string; label: string; }\nexport const MINE_RADIO_MODES: MineRadioMode[] = ${JSON.stringify(modes, null, 2)};\n`);
-fs.writeFileSync(path.join(output, 'manifest.json'), JSON.stringify({ engine: 'MineRadio', upstreamCommit: 'd43de565acabfdc1a9c9820a27e81a98ccbebcef', modules: paths.length, presets: modes, sha256: crypto.createHash('sha256').update(modules.join('\n;\n')).digest('hex') }, null, 2));
-console.log(`LxMine Harmony stage: ${paths.length} shared MineRadio modules, ${modes.length} presets`);
+const foliaModes = [
+  { id: 'folia-partita', label: 'Folia · 云阶' },
+  { id: 'folia-pendolo', label: 'Folia · Pendolo' },
+  { id: 'folia-diorama', label: 'Folia · 镜台' },
+  { id: 'folia-fume', label: 'Folia · Fume' },
+  { id: 'folia-sonnet', label: 'Folia · 商籁' },
+  { id: 'folia-tempera', label: 'Folia · 凝彩' },
+  { id: 'folia-lumiere', label: 'Folia · 绘光' },
+  { id: 'folia-monet', label: 'Folia · Monet' },
+  { id: 'folia-cadenza', label: 'Folia · Mindscape' },
+  { id: 'folia-claddagh', label: 'Folia · Claddagh' },
+  { id: 'folia-tilt', label: 'Folia · Tilt' },
+  { id: 'folia-classic', label: 'Folia · Luminous' },
+  { id: 'folia-cappella', label: 'Folia · Cappella' },
+];
+const modes = [
+  { id: 'smart-auto', label: '随声绘色' },
+  { id: 'off', label: '关闭动效' },
+  ...presets.map((preset, index) => ({ id: `mine-${index}`, label: preset.name + (index === 7 ? ' · 地形' : index === 8 ? ' · 工坊' : '') })),
+  ...foliaModes,
+];
+fs.writeFileSync(path.join(harmony, 'entry/src/main/ets/model/MineRadioModes.ets'), `// Generated from MineRadio & Folia stage preset registry.\nexport const MINE_STAGE_REVISION: string = '${revision}';\nexport interface MineRadioMode { id: string; label: string; }\nexport const MINE_RADIO_MODES: MineRadioMode[] = ${JSON.stringify(modes, null, 2)};\n`);
+fs.writeFileSync(path.join(output, 'manifest.json'), JSON.stringify({ engine: 'MineRadio+Folia', upstreamCommit: 'd43de565acabfdc1a9c9820a27e81a98ccbebcef', modules: paths.length, presets: modes, sha256: crypto.createHash('sha256').update(modules.join('\n;\n')).digest('hex') }, null, 2));
+console.log(`LxMine Harmony stage: ${paths.length} shared MineRadio modules, ${modes.length} presets (incl. ${foliaModes.length} Folia modes)`);
 
 const runtime = path.join(harmony, 'entry/src/main/resources/rawfile/lx-runtime');
 fs.copyFileSync(path.join(desktop, 'shared/lx-discovery.cjs'), path.join(runtime, 'lx-discovery.js'));
@@ -62,8 +94,8 @@ for (const directory of [runtime, path.resolve(desktop, '../android/app/src/main
     const file = path.join(directory, name);
     if (fs.existsSync(file)) {
       const source = fs.readFileSync(file, 'utf8');
-      if (!source.includes('src="lx-song-assets.js"')) {
-        if (!source.includes('<script src="host.js">')) throw new Error('Runtime host script is missing from ' + file);
+      if (!/src="lx-song-assets\.js(?:\?[^"]*)?"/.test(source)) {
+        if (!/<script src="host\.js(?:\?[^"]*)?">/.test(source)) throw new Error('Runtime host script is missing from ' + file);
         fs.writeFileSync(file, source.replace('<script src="host.js">', '<script src="lx-song-assets.js"></script>\n    <script src="host.js">'));
       }
     }
@@ -77,6 +109,7 @@ fs.copyFileSync(path.join(stage, 'startup.html'), path.join(output, 'harmony-sta
 const androidAssets = path.resolve(desktop, '../android/app/src/main/assets');
 if (fs.existsSync(androidAssets)) {
   fs.writeFileSync(path.resolve(desktop, '../android/app/src/main/java/com/lxlia/player/model/MineRadioModes.kt'), `package com.lxlia.player.model\n\nconst val MINE_STAGE_REVISION = "${revision}"\n\ndata class MineRadioMode(val id: String, val label: String)\n\nval MINE_RADIO_MODES: List<MineRadioMode> = listOf(\n` + modes.map(mode => `    MineRadioMode(${JSON.stringify(mode.id)}, ${JSON.stringify(mode.label)}),`).join('\n') + '\n)\n');
+  if (fs.existsSync(path.join(androidAssets, 'mine-stage/folia-stage'))) fs.rmSync(path.join(androidAssets, 'mine-stage/folia-stage'), { recursive: true, force: true });
   fs.cpSync(output, path.join(androidAssets, 'mine-stage'), { recursive: true });
   fs.cpSync(runtime, path.join(androidAssets, 'lx-runtime'), { recursive: true });
 }

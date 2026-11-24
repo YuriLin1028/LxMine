@@ -18,6 +18,11 @@ function lyricCustomLineCountValue() {
 }
 function lyricDisplayLineCountForMode(mode) {
   mode = normalizeLyricDisplayMode(mode);
+  if (window.__LXMINE_NATIVE_STAGE && mode === 'cinema') {
+    var rowHeight = Math.max(32, Math.min(innerWidth, innerHeight) * 0.10);
+    var count = Math.min(31, Math.max(11, Math.ceil(innerHeight / rowHeight) + 4));
+    return count % 2 ? count : count + 1;
+  }
   if (mode === 'single') return 1;
   if (mode === 'dual') return 2;
   if (mode === 'triple') return 3;
@@ -50,24 +55,34 @@ function lyricTranslationGapValue() {
 function lyricTranslationVisualGapValue() {
   var gap = lyricTranslationGapValue();
   var scale = lyricTranslationScaleValue();
-  return clampRange(0.98 + (gap - 0.28) * 0.36 + Math.max(0, scale - 0.66) * 0.12, 0.92, 2.20);
+  // Clear separation between main lyric descenders and translation/romaji glyphs.
+  return clampRange(0.72 + (gap - 0.28) * 0.24 + Math.max(0, scale - 0.54) * 0.12, 0.66, 1.24);
 }
 function lyricTranslationLayoutActive() {
   return normalizeLyricTranslationMode(fx && fx.lyricTranslationMode) !== 'off';
 }
 function lyricPrimarySlotStepValue() {
   if (!lyricTranslationLayoutActive()) return 1;
-  return clampRange(lyricTranslationVisualGapValue() + 0.82 + lyricTranslationScaleValue() * 0.14, 1.78, 2.88);
+  return clampRange(lyricTranslationVisualGapValue() + 0.94 + lyricTranslationScaleValue() * 0.08, 1.58, 2.26);
 }
 function lyricLineHasTranslationAt(index) {
   if (!lyricTranslationLayoutActive()) return false;
   var n = Math.max(0, Math.round(Number(index) || 0));
   return !!lyricLineTranslationTextAt(n);
 }
+function lyricLineTranslationSubLineCountAt(index) {
+  if (!lyricTranslationLayoutActive()) return 0;
+  var n = Math.max(0, Math.round(Number(index) || 0));
+  var text = lyricLineTranslationTextAt(n);
+  if (!text) return 0;
+  return text.indexOf('\n') >= 0 ? 2 : 1;
+}
 function lyricLineSlotStepValue(index) {
   if (!lyricTranslationLayoutActive()) return 1;
   var n = Math.round(Number(index) || 0);
-  var needsTranslationSlot = lyricLineHasTranslationAt(n) || (n >= 0 && lyricLineHasTranslationAt(n + 1));
+  var subLines = n >= 0 ? lyricLineTranslationSubLineCountAt(n) : 0;
+  if (subLines >= 2) return clampRange(lyricPrimarySlotStepValue() + 0.42, 1.92, 2.60);
+  var needsTranslationSlot = subLines > 0 || (n >= 0 && lyricLineHasTranslationAt(n + 1));
   return needsTranslationSlot ? lyricPrimarySlotStepValue() : clampRange(1.04 + (lyricContextSpreadValue() - 1) * 0.10, 0.96, 1.24);
 }
 var lyricPrimaryVirtualPrefixCache = { key: '', values: [0] };

@@ -28,6 +28,15 @@ val CONTROL_BLUE: Color get() = ACCENT
 val BLUE: Color get() = ACCENT
 // Solid liked heart tint across dock, lists, and player controls.
 val HEART_RED = Color(0xFFFF4D5A)
+// Light/dark adaptive surfaces so sheets, cards, chips, inputs, and sliders stay crisp in both themes.
+val CARD_SURFACE: Color get() = if (AppAppearance.light) Color(0x0B000000) else Color(0x0EFFFFFF)
+val CARD_SURFACE_STRONG: Color get() = if (AppAppearance.light) Color(0x10000000) else Color(0x12FFFFFF)
+val CHIP_BG: Color get() = if (AppAppearance.light) Color(0x12000000) else Color(0x18FFFFFF)
+val INPUT_BG: Color get() = if (AppAppearance.light) Color(0x0E000000) else Color(0x14FFFFFF)
+val ROW_ACTIVE_BG: Color get() = if (AppAppearance.light) Color(0x0E000000) else Color(0x12FFFFFF)
+val DIVIDER_COLOR: Color get() = if (AppAppearance.light) Color(0x14000000) else Color(0x12FFFFFF)
+val BORDER_SUBTLE: Color get() = if (AppAppearance.light) Color(0x18000000) else Color(0x22FFFFFF)
+val TRACK_BG: Color get() = if (AppAppearance.light) Color(0x26000000) else Color(0x38FFFFFF)
 
 private val GLACIAL_FALLBACK_GRADS = listOf(
     listOf(Color(0xFF0B2B5B), Color(0xFF38BDF8)),
@@ -48,11 +57,6 @@ val MULTICOLOR_ASSET_ICONS = setOf(
     "ic_heart_fill.svg",
     "ic_style_wand.svg",
     "ic_sparkle.svg",
-    "chip_music_on.svg",
-    "chip_library_on.svg",
-    "chip_queue_on.svg",
-    "chip_play_on.svg",
-    "chip_more_on.svg",
 )
 
 fun playModeIcon(mode: String): String = when (mode) {
@@ -90,6 +94,7 @@ fun platformName(source: String): String = when (source) {
     "kw" -> "酷我"
     "mg" -> "咪咕"
     "qishui" -> "汽水"
+    "local" -> "本地"
     else -> "聚合"
 }
 
@@ -157,8 +162,24 @@ fun RemoteImage(
 ) {
     if (url.isNullOrEmpty()) return
     val context = LocalContext.current
+    val request = remember(context, url) {
+        val isLocalPath = url.startsWith("/") || url.startsWith("file://")
+        if (isLocalPath) {
+            val cleanPath = url.removePrefix("file://").substringBefore('?')
+            ImageRequest.Builder(context)
+                .data(java.io.File(cleanPath))
+                .memoryCacheKey(url)
+                .crossfade(false)
+                .build()
+        } else {
+            ImageRequest.Builder(context)
+                .data(url)
+                .crossfade(false)
+                .build()
+        }
+    }
     AsyncImage(
-        model = ImageRequest.Builder(context).data(url).crossfade(false).build(),
+        model = request,
         contentDescription = null,
         contentScale = contentScale,
         modifier = modifier,

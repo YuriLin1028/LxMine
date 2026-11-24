@@ -50,28 +50,67 @@ export struct LandscapeDock {
     return this.mode === '单曲循环' || this.mode === '顺序播放';
   }
   private songChanged(): void { this.scrubbing = false; this.seekSong = ''; this.seekValue = 0; }
-  private seekChanged(value: number, mode: SliderChangeMode): void {
-    const key = this.song ? `${this.song.source}:${this.song.id}` : '';
-    this.seekValue = value;
-    if (mode === SliderChangeMode.Begin) { this.scrubbing = true; this.seekSong = key; }
-    if (mode === SliderChangeMode.Click || (mode === SliderChangeMode.End && this.scrubbing && this.seekSong === key)) this.onSeek(value);
-    if (mode === SliderChangeMode.End || mode === SliderChangeMode.Click) this.scrubbing = false;
+  @State private trackWidth: number = 240;
+  private timelineRatio(): number {
+    const dur = Math.max(1, this.duration);
+    const pos = Math.max(0, Math.min(this.scrubbing ? this.seekValue : this.positionMs, dur));
+    return this.duration > 0 ? Math.max(0, Math.min(1, pos / dur)) : 0;
+  }
+  private handleLandscapeTrackTouch(event: TouchEvent): void {
+    if (!this.song || this.duration <= 0 || this.busy) return;
+    event.stopPropagation();
+    const touch = (event.changedTouches && event.changedTouches.length > 0 ? event.changedTouches[0] : null)
+      ?? (event.touches && event.touches.length > 0 ? event.touches[0] : null);
+    if (!touch) return;
+    const ratio = Math.max(0, Math.min(1, touch.x / Math.max(1, this.trackWidth)));
+    const targetMs = Math.round(ratio * Math.max(1, this.duration));
+    const key = `${this.song.source}:${this.song.id}`;
+    if (event.type === TouchType.Down) {
+      this.scrubbing = true;
+      this.seekSong = key;
+      this.seekValue = targetMs;
+    } else if (event.type === TouchType.Move) {
+      if (!this.scrubbing) { this.scrubbing = true; this.seekSong = key; }
+      this.seekValue = targetMs;
+    } else if (event.type === TouchType.Up) {
+      const shouldCommit = this.scrubbing && this.seekSong === key;
+      this.seekValue = targetMs;
+      this.scrubbing = false;
+      if (shouldCommit) this.onSeek(targetMs);
+    } else if (event.type === TouchType.Cancel) {
+      this.scrubbing = false;
+    }
   }
   @LocalBuilder private timeline() {
     Row({ space: 8 }) {
       Text(formatTime(this.scrubbing ? this.seekValue : this.positionMs)).fontSize(10).fontColor(TEXT).width(34)
-      Slider({ value: this.scrubbing ? this.seekValue : this.positionMs, min: 0, max: Math.max(1, this.duration), style: SliderStyle.OutSet })
-        .layoutWeight(1).height(30).trackThickness(3).blockSize({ width: this.scrubbing ? 11 : 7, height: this.scrubbing ? 11 : 7 })
-        .selectedColor(new LinearGradient([{ color: this.colorFirst, offset: 0 }, { color: this.colorLast, offset: 1 }]))
-        .blockColor(this.colorLast).trackColor('#38FFFFFF').enabled(!!this.song && this.duration > 0 && !this.busy)
-        .accessibilityText('播放进度')
-        .onChange((value: number, mode: SliderChangeMode) => this.seekChanged(value, mode))
-        .onTouch((event: TouchEvent) => { if (event.type === TouchType.Cancel) this.scrubbing = false; })
+      Stack({ alignContent: Alignment.Start }) {
+        Row().width('100%').height(4).borderRadius(999).backgroundColor('#38FFFFFF').hitTestBehavior(HitTestMode.None)
+        if (this.timelineRatio() > 0.001) {
+          Row().width(`${(this.timelineRatio() * 100).toFixed(3)}%`).height(4).borderRadius(999)
+            .linearGradient({ angle: 90, colors: [[this.colorFirst, 0], [this.colorLast, 1]] })
+            .hitTestBehavior(HitTestMode.None)
+        }
+        if (this.song && this.duration > 0) {
+          Row()
+            .width(this.scrubbing ? 14 : 11).height(this.scrubbing ? 14 : 11).borderRadius(999)
+            .backgroundColor(this.colorLast)
+            .position({
+              x: Math.max(0, Math.min(this.trackWidth - (this.scrubbing ? 14 : 11), this.trackWidth * this.timelineRatio() - (this.scrubbing ? 7 : 5.5))),
+              y: (34 - (this.scrubbing ? 14 : 11)) / 2
+            })
+            .hitTestBehavior(HitTestMode.None)
+        }
+      }
+        .layoutWeight(1).height(34).clip(false).accessibilityText('播放进度')
+        .onAreaChange((_oldVal: Area, newVal: Area) => { const w = Number(newVal.width); if (w > 0) this.trackWidth = w; })
+        .onTouch((event: TouchEvent) => this.handleLandscapeTrackTouch(event))
       Text(formatTime(this.duration)).fontSize(10).fontColor(TEXT).width(34).textAlign(TextAlign.End)
     }.width(this.playbackWidth()).height(34).id('landscape-timeline')
       .position({ x: this.playbackX(), y: 0 })
+      .zIndex(5)
       .opacity(this.detail ? 1 : 0)
-      .hitTestBehavior(this.detail ? HitTestMode.Default : HitTestMode.Block)
+      .hitTestBehavior(this.detail ? HitTestMode.Default : HitTestMode.None)
   }
   @Builder private navButton(target: string, label: string, icon: Resource) {
     Button({ type: ButtonType.Normal }) {
@@ -147,7 +186,7 @@ export struct LandscapeDock {
       MaterialIcon({ icon: $r('app.media.ic_previous'), label: '上一首', diameter: 28, grouped: true, disabled: !this.song || this.busy, action: () => this.onNext(-1) })
       MaterialIcon({ icon: this.playing ? $r('app.media.ic_pause') : $r('app.media.ic_play'), label: this.playing ? '暂停' : '播放', diameter: 34, grouped: true, disabled: this.busy || !this.song, action: () => this.onToggle() }).id('landscape-play-toggle')
       MaterialIcon({ icon: $r('app.media.ic_next'), label: '下一首', diameter: 28, grouped: true, disabled: !this.song || this.busy, action: () => this.onNext(1) })
-      MaterialIcon({ icon: this.liked ? $r('app.media.ic_heart_fill') : $r('app.media.ic_heart'), raw: this.liked, tint: !this.liked, label: this.liked ? '取消喜欢' : '喜欢', diameter: 28, grouped: true, selected: this.liked, disabled: !this.song, action: () => this.onLike() }).id('landscape-like')
+      MaterialIcon({ icon: this.liked ? $r('app.media.ic_heart_fill') : $r('app.media.ic_heart'), raw: this.liked, tint: !this.liked, label: this.liked ? '取消收藏' : '收藏', diameter: 28, grouped: true, selected: this.liked, disabled: !this.song, action: () => this.onLike() }).id('landscape-like')
       MaterialIcon({ icon: this.modeIcon(), raw: this.modeIconRaw(), label: '播放顺序：' + this.mode, diameter: 28, grouped: true, action: () => this.onMode() })
       MaterialIcon({ icon: $r('app.media.ic_download'), label: '下载歌曲', diameter: 28, grouped: true, disabled: !this.song, action: () => this.onDownload() })
       MaterialIcon({ icon: $r('app.media.ic_queue'), label: '播放队列', diameter: 30, grouped: true, action: () => this.onQueue() })
@@ -163,7 +202,6 @@ export struct LandscapeDock {
   }
   build() {
     Stack({ alignContent: Alignment.TopStart }) {
-      this.timeline()
       Navigation() { Column() {} }
         .title({ builder: this.navContent, height: 96 }, { barStyle: BarStyle.STACK, backgroundColor: Color.Transparent, backgroundBlurStyle: BlurStyle.NONE })
         .titleMode(NavigationTitleMode.Mini).hideBackButton(true).hideToolBar(true).mode(NavigationMode.Stack)
@@ -177,9 +215,13 @@ export struct LandscapeDock {
         .title({ builder: this.playbackContent, height: 96 }, { barStyle: BarStyle.STACK, backgroundColor: Color.Transparent, backgroundBlurStyle: BlurStyle.NONE })
         .titleMode(NavigationTitleMode.Mini).hideBackButton(true).hideToolBar(true).mode(NavigationMode.Stack)
         .width(this.playbackWidth() + 32).height(96).backgroundColor(Color.Transparent).clip(false)
+        .responseRegion({ x: 16, y: 16, width: this.playbackWidth(), height: 56 })
         .position({ x: this.playbackX() - 16, y: (this.detail ? 34 : 0) - 16 })
         .geometryTransition('lxmine-playback')
         .animation({ curve: curves.springMotion(0.46, 0.82) })
+      if (this.detail) {
+        this.timeline()
+      }
     }.width('100%').height(this.detail ? 90 : 56).clip(false).animation({ curve: curves.springMotion(0.46, 0.82) })
   }
 }

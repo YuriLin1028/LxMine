@@ -213,6 +213,8 @@
     var dragPointerId = null;
     var dragLast = { x:0, y:0 };
     var lastDrawAt = 0;
+    var drawRafId = 0;
+    var pausedSettleFrames = 0;
     var layoutKey = '';
     var hoverInside = false;
     var hintVisible = false;
@@ -566,6 +568,7 @@
       canvas.style.height = innerHeight + 'px';
       ctx.setTransform(dpr,0,0,dpr,0,0);
       fitLyricText(true);
+      wakeDrawLoop();
     }
     function measureLineWidth(fontSize) {
       ctx.save();
@@ -727,7 +730,7 @@
           document.fonts.add(loadedFace);
           if (state && state.fontFamily && state.fontFamily.indexOf(String(font.family)) !== -1) {
             fitLyricText(true);
-            drawFrame(performance.now(), true);
+            wakeDrawLoop();
           }
         }).catch(function(e){
           console.warn('[DesktopLyrics] custom font load failed', e);
@@ -809,6 +812,11 @@
         replayLineAnimation();
       }
       fitLyricText(false);
+      if (state.enabled) {
+        wakeDrawLoop();
+      } else {
+        stopDrawLoop();
+      }
     }
     function currentDisplayProgress() {
       var target = clamp(state.progress, 0, 1, 0);
@@ -1015,33 +1023,52 @@
       }
       ctx.restore();
     }
+    function stopDrawLoop() {
+      if (drawRafId) {
+        cancelAnimationFrame(drawRafId);
+        drawRafId = 0;
+      }
+    }
+    function wakeDrawLoop() {
+      if (!state.enabled) {
+        stopDrawLoop();
+        return;
+      }
+      pausedSettleFrames = state.playing ? 0 : 45;
+      if (!drawRafId) {
+        lastDrawAt = 0;
+        drawRafId = requestAnimationFrame(draw);
+      }
+    }
     function draw(nowMs){
-      if (state.enabled) {
-        var interval = frameIntervalMs();
-        if (interval > 0 && lastDrawAt && nowMs - lastDrawAt < Math.max(4, interval - 1.25)) {
-          scheduleNextDraw();
-          return;
-        }
+      drawRafId = 0;
+      if (!state.enabled) return;
+      var interval = frameIntervalMs();
+      if (interval > 0 && lastDrawAt && nowMs - lastDrawAt < Math.max(4, interval - 1.25)) {
+        scheduleNextDraw();
+        return;
       }
       var dt = lastDrawAt ? Math.min(.12, Math.max(.001, (nowMs - lastDrawAt) / 1000)) : 1 / 60;
       lastDrawAt = nowMs;
       var now = nowMs * .001;
-      if (state.enabled) {
-        var progress = currentDisplayProgress();
-        setRootVar('--lyric-progress', (progress * 100).toFixed(2) + '%');
-        var offlineMotion = tickDesktopBeatMap(currentDesktopPlaybackTime(nowMs), dt);
-        var motion = updateMotion(now, offlineMotion);
-        applyStageMotion(now);
-        updateLyricScroll(nowMs, progress);
+      var progress = currentDisplayProgress();
+      setRootVar('--lyric-progress', (progress * 100).toFixed(2) + '%');
+      var offlineMotion = tickDesktopBeatMap(currentDesktopPlaybackTime(nowMs), dt);
+      var motion = updateMotion(now, offlineMotion);
+      applyStageMotion(now);
+      updateLyricScroll(nowMs, progress);
+      if (!state.playing && !scrollState.needed) {
+        if (pausedSettleFrames > 0) {
+          pausedSettleFrames -= 1;
+        } else {
+          return;
+        }
       }
       scheduleNextDraw();
     }
     function scheduleNextDraw() {
-      if (!state.enabled) {
-        setTimeout(function(){ requestAnimationFrame(draw); }, 250);
-        return;
-      }
-      requestAnimationFrame(draw);
+      if (!state.enabled || drawRafId) return;
+      drawRafId = requestAnimationFrame(draw);
     }
     function normalizeFrameRate(value) {
       var n = Number(value);
@@ -1207,6 +1234,7 @@
         evt.preventDefault();
         evt.stopPropagation();
         state.enabled = false;
+        stopDrawLoop();
         document.body.classList.remove('show');
         setPointerCapture(false);
         if (window.desktopOverlay && window.desktopOverlay.closeLyrics) {
@@ -1231,7 +1259,7 @@
     if (window.desktopOverlay && window.desktopOverlay.onLyricsState) {
       window.desktopOverlay.onLyricsState(applyState);
     }
-    requestAnimationFrame(draw);
+    if (state.enabled) wakeDrawLoop();
   </script>
 </body>
 </html>

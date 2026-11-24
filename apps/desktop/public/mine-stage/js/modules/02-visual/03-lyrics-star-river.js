@@ -149,6 +149,11 @@ function disposeOwnedLyricTexture(texture) {
   if (!texture || !texture.userData || !texture.userData.__mineradioLyricOwned || texture.userData.__mineradioDisposed) return;
   texture.userData.__mineradioDisposed = true;
   texture.dispose();
+  if (texture.image && typeof HTMLCanvasElement !== 'undefined' && texture.image instanceof HTMLCanvasElement) {
+    texture.image.width = 1;
+    texture.image.height = 1;
+    texture.image = null;
+  }
 }
 
 function disposeLyricMaterial(material) {

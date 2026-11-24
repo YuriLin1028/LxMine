@@ -425,7 +425,16 @@ function parseLyricText(text) {
   return finalizeLyricLineDurations(lines);
 }
 function normalizeLyricTranslationText(text) {
-  text = normalizeStageLyricText(text);
+  var raw = String(text || '');
+  if (raw.indexOf('\n') >= 0 || raw.indexOf('\r') >= 0) {
+    var parts = raw.split(/\r?\n/).map(function (part) {
+      return normalizeStageLyricText(part);
+    }).filter(function (part) {
+      return part && !isNoLyricText(part);
+    }).slice(0, 2);
+    return parts.join('\n');
+  }
+  text = normalizeStageLyricText(raw);
   if (!text || isNoLyricText(text)) return '';
   return text;
 }

@@ -55,6 +55,8 @@ function desktopWindowDetachScript(input = {}) {
   const y = Math.round(Number(input.y) || 0);
   const width = Math.max(1, Math.round(Number(input.width) || 1));
   const height = Math.max(1, Math.round(Number(input.height) || 1));
+  const hideOnDetach = input.hideOnDetach === true;
+  const swpFlags = hideOnDetach ? '0x00B4' : '0x0030';
   return `
 $ErrorActionPreference = "Stop"
 if (-not ("MineradioFullDesktopNative" -as [type])) {
@@ -64,10 +66,15 @@ using System.Runtime.InteropServices;
 public static class MineradioFullDesktopNative {
   [StructLayout(LayoutKind.Sequential)] public struct RECT { public int Left; public int Top; public int Right; public int Bottom; }
   [DllImport("user32.dll", SetLastError=true)] [return: MarshalAs(UnmanagedType.Bool)] public static extern bool IsWindow(IntPtr hWnd);
+  [DllImport("user32.dll", SetLastError=true)] [return: MarshalAs(UnmanagedType.Bool)] public static extern bool ShowWindow(IntPtr hWnd, int cmd);
   [DllImport("user32.dll", SetLastError=true)] public static extern IntPtr SetParent(IntPtr child, IntPtr parent);
   [DllImport("user32.dll", SetLastError=true)] public static extern IntPtr GetParent(IntPtr child);
   [DllImport("user32.dll", SetLastError=true)] [return: MarshalAs(UnmanagedType.Bool)] public static extern bool SetWindowPos(IntPtr hWnd, IntPtr insertAfter, int x, int y, int width, int height, uint flags);
   [DllImport("user32.dll", SetLastError=true)] [return: MarshalAs(UnmanagedType.Bool)] public static extern bool GetWindowRect(IntPtr hWnd, out RECT rect);
+  [DllImport("user32.dll", CharSet=CharSet.Unicode)] public static extern IntPtr FindWindow(string className, string title);
+  [DllImport("user32.dll", CharSet=CharSet.Unicode)] public static extern IntPtr FindWindowEx(IntPtr parent, IntPtr after, string className, string title);
+  [DllImport("user32.dll", SetLastError=true)] [return: MarshalAs(UnmanagedType.Bool)] public static extern bool RedrawWindow(IntPtr hWnd, IntPtr rc, IntPtr rgn, uint flags);
+  [DllImport("dwmapi.dll")] public static extern int DwmFlush();
   [DllImport("user32.dll", EntryPoint="GetWindowLongPtrW", SetLastError=true)] private static extern IntPtr GetWindowLongPtr64(IntPtr hWnd, int index);
   [DllImport("user32.dll", EntryPoint="GetWindowLongW", SetLastError=true)] private static extern IntPtr GetWindowLong32(IntPtr hWnd, int index);
   [DllImport("user32.dll", EntryPoint="SetWindowLongPtrW", SetLastError=true)] private static extern IntPtr SetWindowLongPtr64(IntPtr hWnd, int index, IntPtr value);
@@ -83,6 +90,8 @@ try {
   try { $previousDpiContext = [MineradioFullDesktopNative]::SetThreadDpiAwarenessContext([IntPtr]::new([Int64]-4)) } catch { }
   $target = [IntPtr]::new([Int64]${hwnd})
   if (-not [MineradioFullDesktopNative]::IsWindow($target)) { throw "FULL_DESKTOP_TARGET_NOT_FOUND" }
+  $prevParent = [MineradioFullDesktopNative]::GetParent($target)
+  ${hideOnDetach ? '[MineradioFullDesktopNative]::ShowWindow($target, 0) | Out-Null' : ''}
   [MineradioFullDesktopNative]::SetParent($target, [IntPtr]::Zero) | Out-Null
   $GWL_STYLE = -16
   $WS_POPUP = [Int64]0x80000000
@@ -96,13 +105,33 @@ try {
   # still set. Validate the parent only after converting to WS_POPUP.
   $parent = [MineradioFullDesktopNative]::GetParent($target)
   if ($parent -ne [IntPtr]::Zero) { throw "FULL_DESKTOP_DETACH_FAILED" }
-  if (-not [MineradioFullDesktopNative]::SetWindowPos($target, [IntPtr]::Zero, ${x}, ${y}, ${width}, ${height}, 0x0030)) { throw "FULL_DESKTOP_POSITION_FAILED" }
+  if (-not [MineradioFullDesktopNative]::SetWindowPos($target, [IntPtr]::Zero, ${x}, ${y}, ${width}, ${height}, ${swpFlags})) { throw "FULL_DESKTOP_POSITION_FAILED" }
   $rect = New-Object MineradioFullDesktopNative+RECT
   if (-not [MineradioFullDesktopNative]::GetWindowRect($target, [ref]$rect)) { throw "FULL_DESKTOP_BOUNDS_ACK_FAILED" }
   $actualWidth = $rect.Right - $rect.Left
   $actualHeight = $rect.Bottom - $rect.Top
   if ($actualWidth -le 0 -or $actualHeight -le 0) { throw "FULL_DESKTOP_BOUNDS_ACK_FAILED" }
-  if ([Math]::Abs($actualWidth - ${width}) -gt 16 -or [Math]::Abs($actualHeight - ${height}) -gt 16) { throw "FULL_DESKTOP_BOUNDS_ACK_FAILED" }
+  ${hideOnDetach ? '' : `if ([Math]::Abs($actualWidth - ${width}) -gt 16 -or [Math]::Abs($actualHeight - ${height}) -gt 16) { throw "FULL_DESKTOP_BOUNDS_ACK_FAILED" }`}
+  # Cleanly settle Progman / SHELLDLL_DefView / WorkerW + flush DWM so no residual desktop composition flicker remains.
+  try {
+    $rdwFlags = [uint32](0x0001 -bor 0x0004 -bor 0x0080 -bor 0x0400)
+    if ($prevParent -ne [IntPtr]::Zero -and [MineradioFullDesktopNative]::IsWindow($prevParent)) {
+      [MineradioFullDesktopNative]::RedrawWindow($prevParent, [IntPtr]::Zero, [IntPtr]::Zero, $rdwFlags) | Out-Null
+    }
+    $progman = [MineradioFullDesktopNative]::FindWindow("Progman", $null)
+    if ($progman -ne [IntPtr]::Zero) {
+      [MineradioFullDesktopNative]::RedrawWindow($progman, [IntPtr]::Zero, [IntPtr]::Zero, $rdwFlags) | Out-Null
+      $defView = [MineradioFullDesktopNative]::FindWindowEx($progman, [IntPtr]::Zero, "SHELLDLL_DefView", $null)
+      if ($defView -ne [IntPtr]::Zero) {
+        [MineradioFullDesktopNative]::RedrawWindow($defView, [IntPtr]::Zero, [IntPtr]::Zero, $rdwFlags) | Out-Null
+      }
+      $childWorker = [MineradioFullDesktopNative]::FindWindowEx($progman, [IntPtr]::Zero, "WorkerW", $null)
+      if ($childWorker -ne [IntPtr]::Zero) {
+        [MineradioFullDesktopNative]::RedrawWindow($childWorker, [IntPtr]::Zero, [IntPtr]::Zero, $rdwFlags) | Out-Null
+      }
+    }
+    [MineradioFullDesktopNative]::DwmFlush() | Out-Null
+  } catch { }
   [pscustomobject]@{
     ok = $true
     targetWindowId = $target.ToInt64().ToString()
@@ -463,6 +492,7 @@ class FullDesktopModeRuntime {
     this.nativeTempPath = String(options.nativeTempPath || '');
     this.attachTimeoutMs = options.attachTimeoutMs;
     this.detachTimeoutMs = options.detachTimeoutMs;
+    this.isDisposableHost = options.isDisposableHost === true;
     this.attachNative = typeof options.attachNative === 'function'
       ? options.attachNative
       : (input) => attachWallpaperWindowToDesktop({
@@ -1488,7 +1518,7 @@ class FullDesktopModeRuntime {
     return this.attachment;
   }
 
-  async detach(win, physicalBounds) {
+  async detach(win, physicalBounds, extraOptions = {}) {
     const bounds = normalizeBounds(physicalBounds);
     const result = await this.nativeCall(this.detachNative, {
       hwnd: nativeWindowHandleDecimal(win),
@@ -1496,6 +1526,7 @@ class FullDesktopModeRuntime {
       y: bounds.y,
       width: bounds.width,
       height: bounds.height,
+      hideOnDetach: extraOptions && extraOptions.hideOnDetach === true,
     });
     if (!result || result.ok !== true
       || (Object.prototype.hasOwnProperty.call(result, 'parentWindowId') && String(result.parentWindowId) !== '0')
@@ -1625,16 +1656,24 @@ class FullDesktopModeRuntime {
     safeCall(win, 'setMovable', null, false);
   }
 
-  applyPassive(win) {
-    // Do not forward synthetic pointer events: the real Windows cursor and
-    // desktop icons remain authoritative in passive mode.
+  applyPassiveBeforeAttach(win) {
     safeCall(win, 'setIgnoreMouseEvents', null, true);
     this.pointerIgnoreMouseEvents = null;
     safeCall(win && win.webContents, 'setBackgroundThrottling', null, false);
     safeCall(win, 'setFocusable', null, false);
     safeCall(win, 'setResizable', null, false);
     safeCall(win, 'setMovable', null, false);
-    safeCall(win, 'showInactive', null);
+  }
+
+  applyPassive(win) {
+    // CRITICAL: Do NOT call setIgnoreMouseEvents/setFocusable/setResizable/setMovable/showInactive
+    // AFTER SetParent! On Windows 11 24H2+, those Electron calls re-invoke SetWindowLongPtr and
+    // SetWindowPos(HWND_TOP), jumping the wallpaper child in front of SHELLDLL_DefView & DeskBox
+    // and triggering an endless flicker/Z-order war with desktop widgets and Wallpaper Engine.
+    // The native attach script already applies WS_CHILD|WS_CLIPSIBLINGS|WS_VISIBLE and
+    // WS_EX_NOACTIVATE|WS_EX_TOOLWINDOW|WS_EX_TRANSPARENT atomically in the exact Z-order slot.
+    this.pointerIgnoreMouseEvents = null;
+    safeCall(win && win.webContents, 'setBackgroundThrottling', null, false);
   }
 
   applyInteractive(win, bounds) {
@@ -1744,6 +1783,7 @@ class FullDesktopModeRuntime {
           this.applyInteractive(win, display.bounds);
           await this.ensureIconLayerOrder();
         } else {
+          this.applyPassiveBeforeAttach(win);
           await this.attach(win, display);
           this.enabled = true;
           this.interactive = false;
@@ -2010,12 +2050,18 @@ class FullDesktopModeRuntime {
     } catch (_) { }
     if (!knownInteractiveTopLevel) {
       try {
-        await this.detach(win, snapshot.physicalBounds || snapshot.bounds);
+        await this.detach(win, snapshot.physicalBounds || snapshot.bounds, { hideOnDetach: this.isDisposableHost });
       } catch (error) {
-        return this.recoverAfterDetachFailure(win, display, snapshot, error, reason + '-detach-failed');
+        if (this.isDisposableHost) {
+          this.lastError = String(error && error.message || error || '');
+        } else {
+          return this.recoverAfterDetachFailure(win, display, snapshot, error, reason + '-detach-failed');
+        }
       }
     }
-    this.restoreWindow(win, snapshot);
+    if (!this.isDisposableHost) {
+      this.restoreWindow(win, snapshot);
+    }
     this.enabled = false;
     this.interactive = false;
     this.window = null;

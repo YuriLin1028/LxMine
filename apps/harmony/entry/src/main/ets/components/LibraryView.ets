@@ -66,7 +66,7 @@ export struct LibraryView {
     if (favorite) {
       out.push({ kind: 'playlist', id: favorite.id, name: favorite.name,
         count: `${favorite.songs?.length ?? favorite.songIds?.length ?? 0} 首歌曲`,
-        detail: '你收藏的歌曲', cover: this.firstCover(favorite.songs), iconKind: 'heart' });
+        detail: '你收藏的歌曲', cover: (favorite.customCover || '').trim() || this.firstCover(favorite.songs), iconKind: 'heart' });
     }
     out.push({ kind: 'recent', id: 'recent-local', name: '最近播放',
       count: `${this.recentSongs.length} 首歌曲`, detail: '按最近播放时间排列',
@@ -76,7 +76,7 @@ export struct LibraryView {
       const count = playlist.songs?.length ?? playlist.songIds?.length ?? 0;
       out.push({ kind: 'playlist', id: playlist.id, name: playlist.name,
         count: playlist.kind === 'lx' ? `${count} 首歌曲` : '本地文件歌单',
-        detail: '歌单', cover: this.firstCover(playlist.songs), iconKind: 'music' });
+        detail: '歌单', cover: (playlist.customCover || '').trim() || this.firstCover(playlist.songs), iconKind: 'music' });
     }
     out.push({ kind: 'local', id: 'local-hm', name: '本地音乐',
       count: `${this.localCount} 首本地歌曲`, detail: '智能识别手机里的音频',
@@ -84,16 +84,31 @@ export struct LibraryView {
     return out;
   }
 
-  private spanFor(index: number, columns: number, total: number): number[] {
-    // 4 张：2x2 + 2x1 + 1x1 + 1x1，四列/两列都能填满；
-    // 其余用固定变化序列（6 张时四列正好填满 4x3），避免常见数量下的大空洞。
-    const four: number[][] = [[2, 2], [2, 1], [1, 1], [1, 1]];
-    const five: number[][] = [[2, 2], [2, 2], [2, 1], [1, 1], [1, 1]];
-    const patterns: number[][] = [
-      [2, 2], [1, 1], [1, 2], [2, 1], [1, 1], [2, 1],
-      [1, 2], [1, 1], [2, 2], [1, 2], [2, 1], [1, 1]
+  private spanFor(index: number, columns: number, total: number, shapeSeed: number): number[] {
+    // 多套 Bento 形状模板按 mosaicSeed 轮换，刷新时同时随机变化方块形状与卡片位置。
+    const fourVariants: number[][][] = [
+      [[2, 2], [2, 1], [1, 1], [1, 1]],
+      [[2, 1], [1, 2], [1, 2], [2, 1]],
+      [[1, 1], [1, 1], [2, 2], [2, 1]],
+      [[1, 2], [1, 1], [1, 1], [2, 2]],
+      [[2, 1], [2, 1], [1, 1], [1, 1]],
     ];
-    const pattern = total === 4 ? four[index] : total === 5 ? five[index] : patterns[index % patterns.length];
+    const fiveVariants: number[][][] = [
+      [[2, 2], [2, 2], [2, 1], [1, 1], [1, 1]],
+      [[2, 1], [1, 2], [1, 1], [1, 1], [2, 2]],
+      [[1, 2], [2, 1], [1, 1], [2, 2], [1, 1]],
+      [[2, 2], [1, 1], [1, 2], [2, 1], [1, 1]],
+    ];
+    const generalVariants: number[][][] = [
+      [[2, 2], [1, 1], [1, 2], [2, 1], [1, 1], [2, 1], [1, 2], [1, 1], [2, 2], [1, 2], [2, 1], [1, 1]],
+      [[2, 1], [1, 2], [2, 2], [1, 1], [1, 1], [1, 2], [2, 1], [1, 1], [1, 2], [2, 1], [1, 1], [2, 2]],
+      [[1, 2], [2, 1], [1, 1], [2, 2], [2, 1], [1, 1], [1, 1], [2, 2], [1, 2], [1, 1], [2, 1], [1, 1]],
+      [[1, 1], [2, 2], [1, 1], [1, 2], [2, 1], [2, 1], [1, 1], [1, 2], [2, 1], [1, 1], [2, 2], [1, 1]],
+      [[2, 2], [2, 1], [1, 1], [1, 1], [1, 2], [1, 2], [2, 1], [2, 2], [1, 1], [1, 1], [2, 1], [1, 2]],
+    ];
+    const variantIdx = Math.abs(shapeSeed) % (total === 4 ? fourVariants.length : total === 5 ? fiveVariants.length : generalVariants.length);
+    const seq = total === 4 ? fourVariants[variantIdx] : total === 5 ? fiveVariants[variantIdx] : generalVariants[variantIdx];
+    const pattern = seq[(index + (Math.abs(shapeSeed >> 3) % seq.length)) % seq.length];
     return [Math.min(pattern[0], columns), pattern[1]];
   }
 
@@ -130,7 +145,7 @@ export struct LibraryView {
     let maxRow = 0;
     for (let i = 0; i < tiles.length; i += 1) {
       const tile = tiles[i];
-      const span = this.spanFor(i, columns, tiles.length);
+      const span = this.spanFor(i, columns, tiles.length, this.mosaicSeed);
       const cs = span[0];
       const rs = span[1];
       let placed = false;
@@ -190,7 +205,7 @@ export struct LibraryView {
   @Builder private tileView(slot: MosaicSlot) {
     Stack({ alignContent: Alignment.TopStart }) {
       if (slot.tile.cover) {
-        Image(slot.tile.cover).width('100%').height('100%').objectFit(ImageFit.Cover)
+        Image(slot.tile.cover).sourceSize({ width: 384, height: 384 }).autoResize(true).width('100%').height('100%').objectFit(ImageFit.Cover)
       } else {
         if (slot.tile.iconKind === 'heart') {
           Column() { Image($r('app.media.ic_heart_fill')).width(52).height(52) }
@@ -230,10 +245,10 @@ export struct LibraryView {
         Stack({ alignContent: Alignment.TopStart }) {
           ForEach(this.slots, (slot: MosaicSlot) => {
             this.tileView(slot)
-          }, (slot: MosaicSlot) => slot.tile.kind + ':' + slot.tile.id + ':' + slot.x + ':' + slot.y)
+          }, (slot: MosaicSlot) => `${slot.tile.kind}:${slot.tile.id}:${slot.tile.cover}:${Math.round(slot.x)}:${Math.round(slot.y)}:${Math.round(slot.w)}:${Math.round(slot.h)}`)
         }.width('100%').height(this.mosaicHeight)
       }.width('100%').padding({ top: this.contentTop + 12, bottom: 180 })
-    }.width('100%').height('100%').align(Alignment.TopStart).scrollBar(BarState.Off)
+    }.width('100%').height('100%').align(Alignment.TopStart).scrollBar(BarState.Off).fadingEdge(false)
       .onDidScroll((x: number, y: number, state: ScrollState) => { if (state !== ScrollState.Idle) this.onScroll(this.scroller.currentOffset().yOffset); })
   }
 }

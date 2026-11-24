@@ -22,7 +22,7 @@
           offset += word.text.length;
           return { text: word.text, t: word.timeMs / 1000, d: Math.max(.06, word.durationMs / 1000), c0, c1: offset };
         });
-        return { t: line.timeMs / 1000, text: line.text, words, charCount: Array.from(line.text || '').length,
+        return { t: line.timeMs / 1000, text: line.text, translation: String(line.translation || '').trim(), words, charCount: Array.from(line.text || '').length,
           duration: Math.max(.1, ((lines[index + 1] ? lines[index + 1].timeMs : durationMs || line.timeMs + 4800) - line.timeMs) / 1000) };
       });
     },

@@ -2,8 +2,12 @@ package com.lxlia.player.ui
 
 import androidx.compose.foundation.Canvas
 import androidx.compose.foundation.background
+import androidx.compose.foundation.border
 import androidx.compose.foundation.selection.toggleable
 import androidx.compose.animation.core.animateFloatAsState
+import androidx.compose.foundation.gestures.awaitEachGesture
+import androidx.compose.foundation.gestures.awaitFirstDown
+import androidx.compose.foundation.gestures.detectHorizontalDragGestures
 import androidx.compose.foundation.gestures.detectTapGestures
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.BoxWithConstraints
@@ -26,6 +30,7 @@ import androidx.compose.runtime.snapshotFlow
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.draw.drawBehind
+import androidx.compose.ui.draw.shadow
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.geometry.CornerRadius
 import androidx.compose.ui.geometry.Offset
@@ -175,60 +180,138 @@ fun GlassSlider(
     modifier: Modifier = Modifier,
     step: Float = 0f,
 ) {
-    if (!supportsFullLiquidGlass()) {
-        androidx.compose.material3.Slider(
-            value = value.coerceIn(valueRange), onValueChange = onValueChange, valueRange = valueRange,
-            steps = if (step > 0f) ((valueRange.endInclusive - valueRange.start) / step).roundToInt().minus(1).coerceAtLeast(0) else 0,
-            modifier = modifier,
-            colors = androidx.compose.material3.SliderDefaults.colors(
-                thumbColor = CONTROL_BLUE, activeTrackColor = CONTROL_BLUE, inactiveTrackColor = MUTED.copy(alpha = .25f),
-            ),
-        )
-        return
-    }
     val currentValue = rememberUpdatedState(value)
     val currentOnChange = rememberUpdatedState(onValueChange)
     val isLtr = LocalLayoutDirection.current == LayoutDirection.Ltr
+    val span = (valueRange.endInclusive - valueRange.start).coerceAtLeast(0.0001f)
+    fun snap(raw: Float): Float {
+        val clamped = raw.coerceIn(valueRange)
+        return if (step > 0f) {
+            (valueRange.start + ((clamped - valueRange.start) / step).roundToInt() * step).coerceIn(valueRange)
+        } else clamped
+    }
+    if (!supportsFullLiquidGlass()) {
+        var dragging by remember { mutableStateOf(false) }
+        var dragValue by remember(valueRange) { mutableFloatStateOf(value.coerceIn(valueRange)) }
+        var trackWidth by remember { mutableFloatStateOf(1f) }
+        LaunchedEffect(value) {
+            if (!dragging) dragValue = value.coerceIn(valueRange)
+        }
+        fun commit(raw: Float) {
+            val snapped = snap(raw)
+            dragValue = snapped
+            currentOnChange.value(snapped)
+        }
+        val activeValue = if (dragging) dragValue else value.coerceIn(valueRange)
+        val progress = ((activeValue - valueRange.start) / span).coerceIn(0f, 1f)
+        val thumbScale by animateFloatAsState(if (dragging) 1.18f else 1f, label = "basic-slider-thumb")
+        BoxWithConstraints(
+            modifier.fillMaxWidth().height(40.dp).semantics {
+                contentDescription = "滑动条"
+                progressBarRangeInfo = ProgressBarRangeInfo(
+                    activeValue,
+                    valueRange,
+                    steps = if (step > 0f) (span / step).roundToInt().minus(1).coerceAtLeast(0) else 0,
+                )
+                setProgress { commit(it); true }
+            },
+            contentAlignment = Alignment.CenterStart,
+        ) {
+            val density = LocalDensity.current
+            val width = with(density) { maxWidth.toPx() }
+            val thumb = with(density) { 16.dp.toPx() }
+            trackWidth = (width - thumb).coerceAtLeast(1f)
+            Canvas(
+                Modifier.fillMaxWidth().height(40.dp)
+                    .pointerInput(width, isLtr, valueRange, step) {
+                        awaitEachGesture {
+                            val down = awaitFirstDown(requireUnconsumed = false)
+                            down.consume()
+                            dragging = true
+                            fun rawFromX(x: Float): Float {
+                                val frac = ((x - thumb / 2f) / trackWidth).coerceIn(0f, 1f)
+                                return (valueRange.start + span * if (isLtr) frac else 1f - frac).coerceIn(valueRange)
+                            }
+                            var raw = rawFromX(down.position.x)
+                            dragValue = raw
+                            var lastLiveAt = android.os.SystemClock.uptimeMillis()
+                            var lastEmitted = snap(raw)
+                            currentOnChange.value(lastEmitted)
+                            val pointerId = down.id
+                            while (true) {
+                                val event = awaitPointerEvent()
+                                val change = event.changes.firstOrNull { it.id == pointerId } ?: event.changes.firstOrNull() ?: break
+                                raw = rawFromX(change.position.x)
+                                change.consume()
+                                if (!change.pressed) break
+                                // 拖动期视觉严格连续跟随手指，不按 step 跳格，彻底消除一顿一顿。
+                                dragValue = raw
+                                val now = android.os.SystemClock.uptimeMillis()
+                                val snapped = snap(raw)
+                                if (snapped != lastEmitted && now - lastLiveAt >= 28L) {
+                                    lastLiveAt = now
+                                    lastEmitted = snapped
+                                    currentOnChange.value(snapped)
+                                }
+                            }
+                            val finalSnapped = snap(raw)
+                            dragValue = finalSnapped
+                            dragging = false
+                            if (finalSnapped != lastEmitted) {
+                                currentOnChange.value(finalSnapped)
+                            }
+                        }
+                    },
+            ) {
+                val thickness = 4.dp.toPx()
+                val start = thumb / 2f
+                val top = (size.height - thickness) / 2f
+                val radius = CornerRadius(thickness / 2f)
+                drawRoundRect(TRACK_BG, Offset(start, top), Size(trackWidth, thickness), radius)
+                val left = if (isLtr) start else start + trackWidth * (1f - progress)
+                drawRoundRect(ACCENT, Offset(left, top), Size(trackWidth * progress, thickness), radius)
+            }
+            Box(
+                Modifier.graphicsLayer {
+                    val frac = if (isLtr) progress else 1f - progress
+                    translationX = trackWidth * frac.coerceIn(0f, 1f)
+                    scaleX = thumbScale
+                    scaleY = thumbScale
+                }
+                    .size(16.dp)
+                    .shadow(3.dp, CircleShape, ambientColor = Color.Black.copy(alpha = 0.25f), spotColor = Color.Black.copy(alpha = 0.25f))
+                    .clip(CircleShape)
+                    .background(Color(0xFFF6F6F6))
+                    .border(0.75.dp, Color.White.copy(alpha = 0.72f), CircleShape),
+            )
+        }
+        return
+    }
     val animationScope = rememberCoroutineScope()
-    val span = valueRange.endInclusive - valueRange.start
-    var didDrag by remember { mutableStateOf(false) }
+    var dragging by remember { mutableStateOf(false) }
     var dragValue by remember(valueRange) { mutableFloatStateOf(value.coerceIn(valueRange)) }
     var trackWidth by remember { mutableFloatStateOf(1f) }
     fun commit(next: Float) {
-        val stepped = if (step > 0f) valueRange.start + ((next - valueRange.start) / step).roundToInt() * step else next
-        currentOnChange.value(stepped.coerceIn(valueRange))
+        val stepped = snap(next)
+        dragValue = stepped
+        currentOnChange.value(stepped)
     }
     val animation = remember(animationScope, valueRange, isLtr, step) {
         DampedDragAnimation(
             animationScope = animationScope,
             initialValue = value.coerceIn(valueRange),
             valueRange = valueRange,
-            visibilityThreshold = if (step > 0f) step * 0.01f else 0.001f,
+            visibilityThreshold = 0.0005f,
             initialScale = 1f,
             pressedScale = LIQUID_THUMB_PRESS_SCALE,
-            onDragStarted = {
-                didDrag = false
-                dragValue = currentValue.value.coerceIn(valueRange)
-            },
-            onDragStopped = {
-                if (didDrag) commit(dragValue)
-                didDrag = false
-            },
-            onDrag = { _, amount ->
-                if (amount.x != 0f) didDrag = true
-                val delta = span * amount.x / trackWidth
-                dragValue = (dragValue + if (isLtr) delta else -delta).coerceIn(valueRange)
-                updateValue(dragValue)
-            },
-            onDragCancelled = {
-                dragValue = currentValue.value.coerceIn(valueRange)
-                updateValue(dragValue)
-                didDrag = false
-            },
+            onDragStarted = {},
+            onDragStopped = {},
+            onDrag = { _, _ -> },
+            onDragCancelled = {},
         )
     }
     LaunchedEffect(value) {
-        if (!didDrag) {
+        if (!dragging) {
             dragValue = value.coerceIn(valueRange)
             animation.updateValue(dragValue)
         }
@@ -244,9 +327,9 @@ fun GlassSlider(
     )
     BoxWithConstraints(
         modifier.fillMaxWidth().height(40.dp).semantics {
-            contentDescription = "时间偏移"
+            contentDescription = "滑动条"
             progressBarRangeInfo = ProgressBarRangeInfo(
-                value.coerceIn(valueRange),
+                if (dragging) dragValue else value.coerceIn(valueRange),
                 valueRange,
                 steps = if (step > 0f) (span / step).roundToInt().minus(1).coerceAtLeast(0) else 0,
             )
@@ -258,33 +341,73 @@ fun GlassSlider(
         val width = with(density) { maxWidth.toPx() }
         val thumb = with(density) { 16.dp.toPx() }
         trackWidth = (width - thumb).coerceAtLeast(1f)
+        val visualFraction = if (dragging) {
+            ((dragValue - valueRange.start) / span).coerceIn(0f, 1f)
+        } else {
+            animation.progress.coerceIn(0f, 1f)
+        }
         Canvas(
             Modifier.fillMaxWidth().height(40.dp).layerBackdrop(trackBackdrop)
-                .pointerInput(width, isLtr, valueRange) {
-                    detectTapGestures { offset ->
-                        val fraction = ((offset.x - thumb / 2f) / trackWidth).coerceIn(0f, 1f)
-                        val target = valueRange.start + span * if (isLtr) fraction else 1f - fraction
-                        animation.animateToValue(target)
-                        commit(target)
+                .pointerInput(width, isLtr, valueRange, step) {
+                    awaitEachGesture {
+                        val down = awaitFirstDown(requireUnconsumed = false)
+                        down.consume()
+                        dragging = true
+                        animation.press()
+                        fun rawFromX(x: Float): Float {
+                            val frac = ((x - thumb / 2f) / trackWidth).coerceIn(0f, 1f)
+                            return (valueRange.start + span * if (isLtr) frac else 1f - frac).coerceIn(valueRange)
+                        }
+                        var raw = rawFromX(down.position.x)
+                        dragValue = raw
+                        animation.updateValue(raw)
+                        var lastLiveAt = android.os.SystemClock.uptimeMillis()
+                        var lastEmitted = snap(raw)
+                        currentOnChange.value(lastEmitted)
+                        val pointerId = down.id
+                        while (true) {
+                            val event = awaitPointerEvent()
+                            val change = event.changes.firstOrNull { it.id == pointerId } ?: event.changes.firstOrNull() ?: break
+                            raw = rawFromX(change.position.x)
+                            change.consume()
+                            if (!change.pressed) break
+                            dragValue = raw
+                            animation.updateValue(raw)
+                            val now = android.os.SystemClock.uptimeMillis()
+                            val snapped = snap(raw)
+                            if (snapped != lastEmitted && now - lastLiveAt >= 28L) {
+                                lastLiveAt = now
+                                lastEmitted = snapped
+                                currentOnChange.value(snapped)
+                            }
+                        }
+                        val finalSnapped = snap(raw)
+                        dragValue = finalSnapped
+                        animation.updateValue(finalSnapped)
+                        animation.release()
+                        dragging = false
+                        if (finalSnapped != lastEmitted) {
+                            currentOnChange.value(finalSnapped)
+                        }
                     }
                 },
         ) {
             val thickness = 4.dp.toPx()
             val start = thumb / 2f
-            val fraction = animation.progress.coerceIn(0f, 1f)
             val top = (size.height - thickness) / 2f
             val radius = CornerRadius(thickness / 2f)
-            drawRoundRect(Color(0x38FFFFFF), Offset(start, top), Size(trackWidth, thickness), radius)
-            val left = if (isLtr) start else start + trackWidth * (1f - fraction)
-            drawRoundRect(ACCENT, Offset(left, top), Size(trackWidth * fraction, thickness), radius)
+            drawRoundRect(TRACK_BG, Offset(start, top), Size(trackWidth, thickness), radius)
+            val left = if (isLtr) start else start + trackWidth * (1f - visualFraction)
+            drawRoundRect(ACCENT, Offset(left, top), Size(trackWidth * visualFraction, thickness), radius)
         }
         LiquidControlThumb(
             animation = animation,
             backdrop = knobBackdrop,
             diameter = 16.dp,
             velocityDivisor = 10f,
+            attachDrag = false,
             modifier = Modifier.graphicsLayer {
-                val fraction = if (isLtr) animation.progress else 1f - animation.progress
+                val fraction = if (isLtr) visualFraction else 1f - visualFraction
                 translationX = trackWidth * fraction.coerceIn(0f, 1f)
             },
         )
@@ -299,9 +422,10 @@ private fun LiquidControlThumb(
     width: Dp = diameter,
     velocityDivisor: Float,
     modifier: Modifier = Modifier,
+    attachDrag: Boolean = true,
 ) {
     Box(
-        modifier.then(animation.modifier).drawBackdrop(
+        (if (attachDrag) modifier.then(animation.modifier) else modifier).drawBackdrop(
             backdrop = backdrop,
             shape = { CircleShape },
             effects = {

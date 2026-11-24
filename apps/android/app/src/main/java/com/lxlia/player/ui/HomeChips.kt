@@ -1,9 +1,6 @@
 package com.lxlia.player.ui
 
 import androidx.compose.foundation.background
-import androidx.compose.foundation.border
-import androidx.compose.foundation.horizontalScroll
-import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Row
@@ -13,17 +10,15 @@ import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
-import androidx.compose.runtime.mutableIntStateOf
+import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableFloatStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
-import androidx.compose.runtime.getValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
-import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.layout.onSizeChanged
 import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.text.font.FontWeight
-import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 
@@ -38,22 +33,28 @@ private val CHIPS = listOf(
 )
 
 /**
- * 首页快捷胶囊：5 枚各自独立的毛玻璃胶囊（鸿蒙端每枚 Button 自带 systemMaterial），
- * 当前板块为不透明白色胶囊。点击滚动到对应板块。
+ * 首页快捷胶囊（严格对齐鸿蒙 HomeChips.ets）：
+ * 5 枚等宽独立液态玻璃胶囊，高度 40dp、图标 16dp、文字 14sp；
+ * 窄窗（可用宽度 < 370dp）自动隐藏文字仅留图标，防止 3 字标签截断。
  */
 @Composable
 fun HomeChips(active: String, onChip: (String) -> Unit) {
-    // 五个胶囊等宽，均匀铺满整行横向宽度。
+    val density = LocalDensity.current.density.coerceAtLeast(1f)
+    var barWidthDp by remember { mutableFloatStateOf(0f) }
+    val hideLabels = barWidthDp > 0f && barWidthDp < 370f
+
     Row(
-        modifier = Modifier.fillMaxWidth(),
-        horizontalArrangement = Arrangement.spacedBy(5.dp),
+        modifier = Modifier
+            .fillMaxWidth()
+            .onSizeChanged { barWidthDp = it.width / density },
+        horizontalArrangement = Arrangement.spacedBy(if (hideLabels) 8.dp else 10.dp),
         verticalAlignment = Alignment.CenterVertically,
     ) {
         CHIPS.forEach { chip ->
             val selected = chip.anchor == active
             val content: @Composable () -> Unit = {
                 Box(
-                    Modifier.fillMaxWidth().height(36.dp),
+                    Modifier.fillMaxWidth().height(40.dp),
                     contentAlignment = Alignment.Center,
                 ) {
                     Row(
@@ -63,18 +64,20 @@ fun HomeChips(active: String, onChip: (String) -> Unit) {
                     ) {
                         AssetIcon(
                             if (selected) chip.iconOn else chip.icon,
-                            size = 14.dp,
+                            size = 16.dp,
                             tint = if (selected) ON_ACCENT else LocalGlassInk.current,
                             systemSymbol = false,
                         )
-                        Text(
-                            chip.label,
-                            fontSize = 12.sp,
-                            color = if (selected) ON_ACCENT else LocalGlassInk.current,
-                            fontWeight = if (selected) FontWeight.SemiBold else FontWeight.Normal,
-                            maxLines = 1,
-                            modifier = Modifier.padding(start = 4.dp),
-                        )
+                        if (!hideLabels) {
+                            Text(
+                                chip.label,
+                                fontSize = 14.sp,
+                                color = if (selected) ON_ACCENT else LocalGlassInk.current,
+                                fontWeight = if (selected) FontWeight.SemiBold else FontWeight.Normal,
+                                maxLines = 1,
+                                modifier = Modifier.padding(start = 5.dp),
+                            )
+                        }
                     }
                 }
             }
@@ -82,13 +85,14 @@ fun HomeChips(active: String, onChip: (String) -> Unit) {
                 Box(
                     Modifier
                         .weight(1f)
-                        .height(36.dp)
+                        .height(40.dp)
+                        .pressDeform()
                         .background(ACCENT, CircleShape)
                         .tapNoRipple { onChip(chip.anchor) },
                 ) { content() }
             } else {
                 GlassSurface(
-                    modifier = Modifier.weight(1f).height(36.dp).tapNoRipple { onChip(chip.anchor) },
+                    modifier = Modifier.weight(1f).height(40.dp).tapNoRipple { onChip(chip.anchor) },
                     shape = CircleShape,
                     tone = GlassTone.UltraThin,
                     interactive = true,

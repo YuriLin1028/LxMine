@@ -59,6 +59,19 @@ test('QQ switches a failed gateway once and keeps the working gateway for subseq
   assert.deepEqual(offsets, [0, 1]);
 });
 
+test('QQ finishes gracefully when total_song_num exceeds visible songs due to deleted/hidden tracks', async () => {
+  const visible = Array.from({ length: 120 }, (_, i) => ({ mid: 'vis-' + i, name: '可见歌' + i }));
+  const result = await core.importPlaylist('54321', 'tx', { json: async (url, options) => {
+    if (url.includes('getcdinfo')) return { code: 0, cdlist: [{ dissname: '含下架歌单', total_song_num: 125, songlist: visible.slice(0, 50) }] };
+    const { song_begin: offset, song_num: limit } = JSON.parse(options.body).req_1.param;
+    return { code: 0, req_1: { code: 0, data: { total_song_num: 125, dirinfo: { title: '含下架歌单' },
+      songlist: visible.slice(offset, offset + limit) } } };
+  } });
+  assert.equal(result[0].songs.length, 120);
+  assert.equal(result[0].name, '含下架歌单');
+  assert.match(result[0].warning, /5 条重复、隐藏或不可用曲目已跳过/);
+});
+
 test('large Netease imports only fetch missing details in bounded POST batches and retain playlist order', async () => {
   const ids = Array.from({ length: 1457 }, (_, i) => 10000000 + i);
   const rawSong = id => ({ id, name: '歌' + id, ar: [{ name: '歌手' }], al: { name: '专辑' }, dt: 180000 });

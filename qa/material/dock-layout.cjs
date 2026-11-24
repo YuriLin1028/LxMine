@@ -21,17 +21,17 @@ const out=path.resolve('qa/material/artifacts/dock-20261019');fs.mkdirSync(out,{
    await page.locator('#search-node').click();await page.waitForTimeout(700);const search=await geometry();assert.equal(search.cover.width,44);assert.equal(search.inner.width,38);assert.equal(search.cover.height,44);
    await page.screenshot({path:path.join(out,`search-${width}.png`)});await page.locator('#search-back').click();await page.waitForTimeout(650);
    await page.locator('#dock-copy').click();await page.waitForTimeout(900);const detail=await geometry();
-   if(detail.phone){assert.equal(detail.dock.height,68);assert.equal(detail.cover.width,48);}
+   if(detail.phone){assert.equal(detail.dock.height,56);assert.equal(detail.cover.width,44);}
    for(const b of detail.buttons)assert(b.x>=detail.dock.x-1&&b.right<=detail.dock.right+1,'Button clipped/overflowing: '+b.action);
    assert(detail.copy.width>=45,'Song title was squeezed out');
-   if(detail.dock.width<=440&&detail.phone)assert(detail.buttons.some(b=>b.action==='more'));
-   const quality=await page.locator('#quality-btn').boundingBox(),comments=await page.locator('#comments-btn').boundingBox(),style=await page.locator('#style-btn').boundingBox();
-   assert(quality.x>width/2&&quality.x<comments.x&&comments.x<style.x,'Quality button moved out of its original right-side toolbar');
-   await page.locator('#quality-btn').click();await page.waitForTimeout(850);
-   const origin=await page.locator('.anchored-menu:not(.closing)').evaluate(n=>{const r=document.querySelector('#quality-btn').getBoundingClientRect(),o=getComputedStyle(n).transformOrigin.split(' ').map(parseFloat);return {dx:parseFloat(n.style.left)+o[0]-(r.x+r.width/2),dy:parseFloat(n.style.top)+o[1]-(r.y+r.height/2)};});assert(Math.abs(origin.dx)<1&&Math.abs(origin.dy)<1);
+   assert.deepEqual(detail.buttons.map(b=>b.action),['mode','prev','toggle','next','queue','more']);
+   const style=await page.locator('#style-btn').boundingBox(),immersive=await page.locator('#immersive-btn').boundingBox();
+   assert(style.x>width/2&&style.x<immersive.x,'Style and immersive buttons moved out of the right-side toolbar');
+   await page.locator('#style-btn').click();await page.waitForTimeout(850);
+   const origin=await page.locator('.anchored-menu:not(.closing)').evaluate(n=>{const r=document.querySelector('#style-btn').getBoundingClientRect(),o=getComputedStyle(n).transformOrigin.split(' ').map(parseFloat);return {dx:parseFloat(n.style.left)+o[0]-(r.x+r.width/2),dy:parseFloat(n.style.top)+o[1]-(r.y+r.height/2)};});assert(Math.abs(origin.dx)<1&&Math.abs(origin.dy)<1);
    await page.keyboard.press('Escape');await page.waitForTimeout(200);
    await page.screenshot({path:path.join(out,`detail-${width}.png`)});
-   reports.push({width,height,compact,search,detail,quality,origin});await page.locator('#detail-back').click();await page.waitForTimeout(700);
+   reports.push({width,height,compact,search,detail,style,immersive,origin});await page.locator('#detail-back').click();await page.waitForTimeout(700);
   }
   fs.writeFileSync(path.join(out,'report.json'),JSON.stringify({status:'PASS',reports},null,2));console.log(JSON.stringify(reports.map(r=>({width:r.width,detailHeight:r.detail.dock.height,cover:r.detail.cover.width,buttons:r.detail.buttons.map(b=>b.action),titleWidth:r.detail.copy.width}))));
  }finally{await app.close()}

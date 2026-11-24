@@ -12,7 +12,7 @@ LxMine 以 [Mineradio](#上游与致谢) 2.2.0 的沉浸视觉与桌面体验为
 [LX Music](#上游与致谢) 的自定义音源协议与音乐资料库能力，统一 PC 与鸿蒙端的首页、
 歌单、搜索、本地音乐与播放详情体验，并提供 Android 原生客户端。
 
-当前版本 **1.2.1**（2026-11-20），安装包见 [Releases](https://github.com/YuriLin1028/LxMine/releases/latest)。
+当前版本 **1.3.0**（2026-11-24），安装包见 [Releases](https://github.com/YuriLin1028/LxMine/releases/latest)。
 版本内容见 [RELEASE_NOTES](docs/RELEASE_NOTES.md)，构建与发布记录见 [RELEASE](docs/RELEASE.md)。
 
 ## 界面预览
@@ -60,20 +60,20 @@ LxMine 不是 LX Music 或 Mineradio 的官方版本，与两位作者无隶属�
 ### Windows
 
 从 [Releases](https://github.com/YuriLin1028/LxMine/releases/latest) 下载
-`LxMine-1.2.1-Setup.exe` 安装，或下载 `LxMine-1.2.1-Portable.exe` 运行。
+`LxMine-1.3.0-Setup.exe` 安装，或下载 `LxMine-1.3.0-Portable.exe` 运行。
 安装包没有商业代码签名，SmartScreen 可能提示
 “未知发布者”，选择“更多信息 → 仍要运行”即可。
 
 ### Android
 
-从 Releases 下载 `LxMine-1.2.1-Android.apk` 安装，最低支持 Android 8.0。
+从 Releases 下载 `LxMine-1.3.0-Android.apk` 安装，最低支持 Android 8.0。
 Android 13 及以上提供液态玻璃与水球导航交互，Android 12 及以下适配普通点击反馈。
 首次使用可在「设置 → 音源」多选导入自行获得的 JS/TXT 脚本。
 
 ### HarmonyOS（未签名 HAP）
 
-从 Releases 下载 `LxMine-1.2.1-HiCar-unsigned.hap`，`bundleName` 为
-`cn.migu.music`，支持 phone / tablet / car，versionName 1.2.1。
+从 Releases 下载 `LxMine-1.3.0-HiCar-unsigned.hap`，`bundleName` 为
+`cn.migu.music`，支持 phone / tablet / car，versionName 1.3.0。
 
 未签名 HAP **不能直接安装**，需要先完成签名：
 
@@ -91,10 +91,10 @@ Android 13 及以上提供液态玻璃与水球导航交互，Android 12 及以�
 
 ### HarmonyOS（应用市场邀请测试）
 
-[**加入 LxMine 1.2.1 邀请测试**](https://appgallery.huawei.com/link/invite-test-wap?taskId=829a9176e89afda4703cbcc9273a0bfb&invitationCode=1Klp9jEJXOp)
+[**加入 LxMine 1.3.0 邀请测试**](https://appgallery.huawei.com/link/invite-test-wap?taskId=4bce68afbce8009046507ba1485a6273&invitationCode=1Klp9jEJXOp)
 
 使用鸿蒙系统自带浏览器打开完整链接，点击「开始测试」，首次参与时点击「同意」加入
-测试群组，然后点击「安装」。1.2.1 沿用同一测试群组，已有用户可从应用市场「应用尝鲜」
+测试群组，然后点击「安装」。1.3.0 沿用同一测试群组，已有用户可从应用市场「应用尝鲜」
 查看可用版本并更新。转发时请保留完整的
 `&invitationCode=1Klp9jEJXOp` 参数。
 
@@ -102,7 +102,7 @@ Android 13 及以上提供液态玻璃与水球导航交互，Android 12 及以�
 再点击网页里的「开始测试」。
 
 ```text
-https://appgallery.huawei.com/link/invite-test-wap?taskId=829a9176e89afda4703cbcc9273a0bfb&invitationCode=1Klp9jEJXOp
+https://appgallery.huawei.com/link/invite-test-wap?taskId=4bce68afbce8009046507ba1485a6273&invitationCode=1Klp9jEJXOp
 ```
 
 当前测试包最低兼容 API 26.0.0，支持手机、平板和 PC/2in1，包名为 `com.lxmine.player`。
@@ -110,7 +110,7 @@ https://appgallery.huawei.com/link/invite-test-wap?taskId=829a9176e89afda4703cbc
 （`cn.migu.music`）通过上方的未签名 HAP 安装方式分发。
 
 邀请名额上限为 **10000 人**，邀请码有效至 **2026-12-16 12:46（北京时间）**。
-本轮测试至 **2027-02-18 10:05（北京时间）**。
+本轮测试至 **2027-02-22 10:45（北京时间）**。
 
 出包与 AGC 操作见 [docs/INVITE_TEST.md](docs/INVITE_TEST.md)，命令为
 `npm run build:store`。

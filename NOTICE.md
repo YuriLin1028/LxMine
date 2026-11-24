@@ -36,6 +36,16 @@ search, track metadata, lyric and playlist interchange behavior. LxMine is not a
 fork of LX Music, is not its official release, and is not affiliated with or
 endorsed by its author.
 
+### Folia Visualizer Stage (`packages/folia-stage`)
+
+- License: GNU Affero General Public License v3.0 (AGPL-3.0), full text kept at
+  `packages/folia-stage/LICENSE` and bundled alongside `folia-stage/LICENSE`.
+- Scope: The standalone visualizer bundle in `packages/folia-stage` adapts Folia's
+  open-source lyric & audio visualizer themes (`Partita`, `Pendolo`, `Diorama`,
+  `Fume`, `Sonnet`, `Tempera`, `Lumiere`, `Monet`, `Cadenza`, `Claddagh`, `Tilt`,
+  `Classic`, `Cappella`) behind the `window.lxmineStage` bridge for Windows,
+  Android, and HarmonyOS. Complete source code is maintained in `packages/folia-stage`.
+
 ## Third-party components
 
 Third-party libraries, ports and adapted community modules remain the property of

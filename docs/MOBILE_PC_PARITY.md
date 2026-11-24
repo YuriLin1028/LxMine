@@ -1,4 +1,16 @@
-# LxMine PC / HarmonyOS 对齐清单
+# LxMine PC / HarmonyOS / Android 对齐清单
+
+## 2026-11-24 v1.3.0 全端定案与 Android 架构对齐补充
+
+- **独立页固定式毛玻璃架构（Android 强制）**：废除 Material 3 `ModalBottomSheet` 与独立系统 `Dialog` 窗口；统一经根宿主 `GlassModalHost` 渲染固定式半透毛玻璃 `GlassSurface(tone = GlassTone.Menu, nested = true, floating = true)`，出现后容器位置锁死、内部禁用拉伸过滚（`LocalOverscrollFactory provides null`），彻底消除上滑撞顶抽搐与实心遮罩。锚点菜单统一交由置于其上的 `GlassOverlayHost` 承载。
+- **全端「上模糊、下穿透」规范**：主页面、板块详情、评论页与所有大型独立页（播放队列、更多、耳返、音效、批量下载、排序、编辑歌单、切换平台、自定义封面、本地扫描）仅保留顶部悬浮标题区下方的单向渐进模糊（鸿蒙 `linearGradientBlur`；Android `topProgressiveFade` + 轻盈 `TopProgressiveBlur`），**删除主页面底部模糊遮罩**，禁止重度不透明暗膜。
+- **滚动坐标 `px → dp` 统一**：Android 首页、曲库拼贴、歌曲列表、下载页、目录结果与设置页向 ViewModel 上报滚动位置和板块锚点前全部除以 `density` 转为 `dp`，快捷胶囊滚动跳转乘回 `density`，与鸿蒙 `px2vp` 语义完全一致。
+- **子独立页返回闭环**：`播放队列 → 播放队列排序 / 切换歌曲平台`、`更多 → 音效 / 定时关闭` 统一先收起父独立页并在子页关闭/完成/返回键后自动回到父独立页（`returnSheetAfterSub`），杜绝双层 Sheet 叠罗汉。
+- **细节统一**：首页补齐 `forYou` / `bannerCharts` / `topArtists`、长按歌曲卡菜单与底部相似推荐，移除首页与板块页多余的批量下载按钮；歌单顶栏仅保留搜索球（移除重复管理球）；首页快捷胶囊恢复 40dp/16dp/14sp 与窄屏纯图标适配并修复 `chip_*_on.svg` 着色；播放页与设置页「选择动效」统一为锚点式半透毛玻璃滚动菜单；全面引入浅色/深色自适应语义 token（`CARD_SURFACE` / `CHIP_BG` / `INPUT_BG` / `TRACK_BG` / `BORDER_SUBTLE` / `DIVIDER_COLOR`）。
+- **多端更新通道与发版次序**：`store-release.json` / `harmony-hap-release.json` / `android-release.json` / `windows-release.json`（及后续苹果端独立分发/更新通道）严格物理隔离；涉及 AGC 邀测更新时须先审过再同步推送 GitHub 与官网（详见仓库根 `AGENTS.md` 十条铁律）。
+- **桌面形态双向对齐与后续苹果端规范**：
+  - 在三端统一基础上，**鸿蒙 PC（`2in1`）与 Windows 端**必须保持桌面级体验双向对齐（桌面歌词、壁纸模式、宽屏行内操作、右键菜单、桌面音量与窗口化布局，仅操作系统底层专属能力保留合理边界）。
+  - 后续开发苹果全生态时按设备形态严格对标鸿蒙：**iOS ↔ 鸿蒙手机、iPadOS ↔ 鸿蒙平板、macOS ↔ 鸿蒙 PC（`2in1`）& Windows**；页面结构、布局、交互、3D 舞台与局域网同步协议完全复用既有基准，**仅将材质与交互控件切换为苹果原生 Liquid Glass（SwiftUI 原生液态玻璃体系）**，严禁擅自改版。
 
 ## 2026-11-17 交互与配色补充
 

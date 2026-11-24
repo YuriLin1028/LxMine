@@ -15,10 +15,10 @@ export struct AmbientBackdrop {
   build() {
     Stack() {
       if (this.bgImage.length > 0) {
-        Image(this.bgImage).width('100%').height('100%').objectFit(ImageFit.Cover)
+        Image(this.bgImage).sourceSize({ width: 1080, height: 1920 }).autoResize(true).width('100%').height('100%').objectFit(ImageFit.Cover)
           .opacity(Math.max(0, Math.min(1, this.bgOpacity)))
       } else if (this.coverUrl) {
-        Image(this.coverUrl).sourceSize({ width: 512, height: 512 }).width('100%').height('100%').objectFit(ImageFit.Cover).blur(36)
+        Image(this.coverUrl).sourceSize({ width: 128, height: 128 }).autoResize(true).width('100%').height('100%').objectFit(ImageFit.Cover).blur(24)
           .opacity(Math.max(0, Math.min(1, this.bgOpacity)))
       }
       Column().width('100%').height('100%').backgroundColor(
@@ -26,6 +26,6 @@ export struct AmbientBackdrop {
           ? (this.light ? '#38EBF0F6' : '#420C0E12')
           : (this.light ? '#59C8CDD4' : '#9E151619')
       )
-    }.width('100%').height('100%').backgroundColor(this.light ? '#D0D4DB' : INK).hitTestBehavior(HitTestMode.None)
+    }.width('100%').height('100%').backgroundColor(this.light ? '#D0D4DB' : INK).hitTestBehavior(HitTestMode.None).renderGroup(true)
   }
 }

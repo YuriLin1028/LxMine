@@ -1,6 +1,23 @@
 /* Public discovery protocols referenced from LX Music musicSdk (Apache-2.0).
  * Independent normalization; no provider account or playback URL is used. */
 (function(root){'use strict';
+const _discCache = new Map();
+function _cached(key, ttlMs, fn){
+ const now=Date.now();
+ const hit=_discCache.get(key);
+ if(hit&&hit.exp>now)return hit.promise;
+ const p=Promise.resolve().then(fn).then(val=>{
+  _discCache.set(key,{promise:Promise.resolve(val),exp:Date.now()+ttlMs});
+  if(_discCache.size>120)_discCache.delete(_discCache.keys().next().value);
+  return val;
+ }).catch(err=>{
+  const cur=_discCache.get(key);
+  if(cur&&cur.promise===p)_discCache.delete(key);
+  throw err;
+ });
+ _discCache.set(key,{promise:p,exp:now+15000});
+ return p;
+}
 function createDiscovery(io){
  const json=io.json, normalize=io.normalizeSong;
  const collect=io.collectAll;
@@ -15,6 +32,8 @@ function createDiscovery(io){
  }
  async function section({source='wy',type='hot',category='',page=1,limit=36}){
   if(!['wy','tx','kw','kg'].includes(source))throw Error('未知首页平台');
+  const cacheKey=`sec:${source}:${type}:${category}:${page}:${limit}`;
+  return _cached(cacheKey, type==='charts'?180000:120000, async()=>{
   let items=[],total=0;
   if(type==='charts'){
    if(source==='wy'){const r=await json('https://music.163.com/api/toplist/detail',headers(source));items=(r.list||[]).map(x=>playlist(x,source));}
@@ -41,13 +60,16 @@ function createDiscovery(io){
    const id=Number(category)||(type==='latest'?2:3),r=await qq('playlist.PlayListCategoryServer','get_category_content',{titleid:id,caller:'0',category_id:id,size:limit,page:page-1,use_page:1});items=(r.content?.v_item||[]).map(x=>playlist(x,source));total=Number(r.content?.total_cnt)||items.length;
   }
   return {items:items.filter(x=>x.id&&x.name),total,page,limit};
+  });
  }
  async function categories(source){
   if(source==='wy')return ['华语','欧美','粤语','流行','民谣','电子','轻音乐','古风'].map(name=>({id:name,name}));
-  if(source==='tx'){const r=await qq('playlist.PlaylistAllCategoriesServer','get_all_categories',{qq:''});return (r.v_group||[]).flatMap(g=>g.v_item||[]).filter(x=>x.id&&x.name).map(x=>({id:String(x.id),name:clean(x.name)}));}
-  if(source==='kw'){const r=await json('http://wapi.kuwo.cn/api/pc/classify/playlist/getTagList?cmd=rcm_keyword_playlist&user=0&prod=kwplayer_pc_9.0.5.0&vipver=9.0.5.0&source=kwplayer_pc_9.0.5.0&loginUid=0&loginSid=0&appUid=76039576');return (r.data||[]).flatMap(g=>g.data||[]).filter(x=>x.id&&x.name&&String(x.digest)!=='43').map(x=>({id:String(x.id),name:clean(x.name)}));}
-  const r=await json('http://www2.kugou.kugou.com/yueku/v9/special/getSpecial?is_smarty=1&cdn=cdn&t=5');
-  const list=[];function walk(x){if(!x||typeof x!=='object')return;if(x.special_id&&x.special_name)list.push({id:String(x.special_id),name:clean(x.special_name)});for(const v of Object.values(x))if(typeof v==='object')if(Array.isArray(v))v.forEach(walk);else walk(v);}walk(r);return list;
+  return _cached(`cat:${source}`, 600000, async()=>{
+   if(source==='tx'){const r=await qq('playlist.PlaylistAllCategoriesServer','get_all_categories',{qq:''});return (r.v_group||[]).flatMap(g=>g.v_item||[]).filter(x=>x.id&&x.name).map(x=>({id:String(x.id),name:clean(x.name)}));}
+   if(source==='kw'){const r=await json('http://wapi.kuwo.cn/api/pc/classify/playlist/getTagList?cmd=rcm_keyword_playlist&user=0&prod=kwplayer_pc_9.0.5.0&vipver=9.0.5.0&source=kwplayer_pc_9.0.5.0&loginUid=0&loginSid=0&appUid=76039576');return (r.data||[]).flatMap(g=>g.data||[]).filter(x=>x.id&&x.name&&String(x.digest)!=='43').map(x=>({id:String(x.id),name:clean(x.name)}));}
+   const r=await json('http://www2.kugou.kugou.com/yueku/v9/special/getSpecial?is_smarty=1&cdn=cdn&t=5');
+   const list=[];function walk(x){if(!x||typeof x!=='object')return;if(x.special_id&&x.special_name)list.push({id:String(x.special_id),name:clean(x.special_name)});for(const v of Object.values(x))if(typeof v==='object')if(Array.isArray(v))v.forEach(walk);else walk(v);}walk(r);return list;
+  });
  }
  async function tracks(item){
   const source=item.source||'wy',id=item.id;
@@ -63,7 +85,12 @@ function createDiscovery(io){
     }
     if(!r||r.code!==200||!r.playlist)throw Error('网易云歌单暂不可用');
     const ids=(r.playlist.trackIds||[]).map(x=>String(x.id)),byId=new Map((r.playlist.tracks||[]).map(x=>[String(x.id),x]));
-    for(let offset=0;offset<ids.length;offset+=50){const batch=ids.slice(offset,offset+50).filter(id=>!byId.has(id));if(!batch.length)continue;const detail=await json('https://music.163.com/api/song/detail?ids='+encodeURIComponent(JSON.stringify(batch)),headers(source));if(detail.code!==200)throw Error('歌曲详情暂不可用');for(const song of detail.songs||[])byId.set(String(song.id),song);}
+    const missingBatches=[];
+    for(let offset=0;offset<ids.length;offset+=50){const batch=ids.slice(offset,offset+50).filter(id=>!byId.has(id));if(batch.length)missingBatches.push(batch);}
+    for(let bi=0;bi<missingBatches.length;bi+=3){
+     const group=await Promise.all(missingBatches.slice(bi,bi+3).map(batch=>json('https://music.163.com/api/song/detail?ids='+encodeURIComponent(JSON.stringify(batch)),headers(source))));
+     for(const detail of group){if(detail.code!==200)throw Error('歌曲详情暂不可用');for(const song of detail.songs||[])byId.set(String(song.id),song);}
+    }
     const songs=(ids.length?ids.map(id=>byId.get(id)).filter(Boolean):Array.from(byId.values())).map(x=>normalize(x,source));const missing=ids.length-songs.length;
     return {items:songs,total:ids.length,complete:true,unavailable:missing,warning:missing>0?missing+' 首歌曲的平台资料暂不可获取，已显示其余全部歌曲':''};
    }
@@ -89,24 +116,120 @@ function createDiscovery(io){
   sections.splice(1,0,{id:'newSongs',title:source==='wy'?'新歌速递':source==='tx'?'巅峰榜精选':source==='kg'?'TOP500 精选':'酷我榜单精选',kind:'song',items:newSongs});
   return {source,sections,playlists:sections[0].items,newSongs,charts:sections.find(x=>x.id==='charts').items,similar:[]};
  }
- // 合并首页用的轻量协议：只要推荐/热门/榜单/新歌/分类，不带分类标签分区。
+ // 合并首页用的轻量协议：并发拉取推荐/热门/榜单/分类与网易云新歌，减少串行往返延迟。
  async function homeLite(source){
   if(!['wy','tx','kw','kg'].includes(source))throw Error('未知首页平台');
+  const catsPromise=categories(source).catch(()=>[]);
+  const wyNewPromise=source==='wy'
+   ? _cached('wy:newsong',120000,()=>json('https://music.163.com/api/personalized/newsong?limit=30',headers(source)).then(r=>(r.result||[]).map(x=>normalize(x.song||x,source)))).catch(()=>[])
+   : null;
   const sections=await Promise.all([['recommend','recommend',''],['hot','hot',''],['charts','charts','']].map(async([id,type,category])=>{
    try{const r=await section({source,type,category});return {id,items:r.items.filter(x=>x.id&&x.name)};}
    catch(e){return {id,items:[]};}
   }));
   const pick=id=>(sections.find(x=>x.id===id)||{items:[]}).items;
   let newSongs=[];
-  try{
-   if(source==='wy'){const r=await json('https://music.163.com/api/personalized/newsong?limit=30',headers(source));newSongs=(r.result||[]).map(x=>normalize(x.song||x,source));}
-   else{const first=pick('charts')[0];if(first){const r=await tracks(first);newSongs=r.items.slice(0,30);}}
-  }catch(_){}
-  let cats=[];
-  try{cats=await categories(source);}catch(_){}
+  if(wyNewPromise){
+   newSongs=await wyNewPromise;
+  }else{
+   try{const first=pick('charts')[0];if(first){const r=await tracks(first);newSongs=r.items.slice(0,30);}}catch(_){}
+  }
+  const cats=await catsPromise;
   return {source,recommend:pick('recommend'),hot:pick('hot'),charts:pick('charts'),newSongs,categories:cats.slice(0,8)};
  }
- return {home,homeLite,section,categories,tracks};
+ async function similarSongs(song){
+  const target=song&&typeof song==='object'?song:{};
+  const name=clean(target.name||'').trim();
+  const singer=clean(target.singer||target.artist||'').trim();
+  const primaryArtist=singer.split(/[、/,，;&]+/).map(s=>s.trim()).find(Boolean)||'';
+  const origKey=`${target.source||''}:${target.id||''}`;
+  const normKey=(n,s)=>clean(n).toLowerCase().replace(/[\s\-_()（）【】[\]·.,!?'"`]+/g,'')+'|'+clean(s).split(/[、/,，;&]+/)[0].toLowerCase().replace(/\s+/g,'');
+  const origNorm=normKey(name,singer);
+  const seenKey=new Set([origKey]);
+  const seenNorm=new Set(origNorm!=='|'?[origNorm]:[]);
+  const out=[];
+  const pushSongs=(list,src)=>{
+   for(const raw of list||[]){
+    const item=raw&&raw.source&&raw.id?raw:normalize(raw,src||'wy');
+    if(!item||!item.id||!item.name)continue;
+    const k=`${item.source}:${item.id}`;
+    const nk=normKey(item.name,item.singer);
+    if(seenKey.has(k)||seenNorm.has(nk))continue;
+    seenKey.add(k);seenNorm.add(nk);
+    out.push(item);
+    if(out.length>=30)break;
+   }
+  };
+  let wyId=(target.source==='wy'&&/^\d+$/.test(String(target.id||'')))?String(target.id):'';
+  if(!wyId&&name){
+   try{
+    const q=primaryArtist?`${name} ${primaryArtist}`:name;
+    const r=await json('https://music.163.com/api/cloudsearch/pc?'+new URLSearchParams({s:q,type:'1',offset:'0',limit:'6'}),headers('wy'));
+    const list=r?.result?.songs||[];
+    const exact=list.find(x=>normKey(x.name,(x.ar||x.artists||[]).map(a=>a.name).join('、'))===origNorm)||list[0];
+    if(exact&&exact.id)wyId=String(exact.id);
+   }catch(_){}
+  }
+  if(wyId){
+   try{
+    const r=await json('https://music.163.com/api/discovery/simiSong?'+new URLSearchParams({id:wyId,limit:'30'}),headers('wy'));
+    if(Array.isArray(r?.songs)&&r.songs.length)pushSongs(r.songs,'wy');
+   }catch(_){}
+  }
+  if(out.length<18&&(primaryArtist||name)){
+   try{
+    const q=primaryArtist||name;
+    const r=await json('https://music.163.com/api/cloudsearch/pc?'+new URLSearchParams({s:q,type:'1',offset:'0',limit:'30'}),headers('wy'));
+    if(Array.isArray(r?.result?.songs))pushSongs(r.result.songs,'wy');
+   }catch(_){}
+  }
+  return {items:out,total:out.length};
+ }
+ // 协同过滤+风格混排个性推荐：基于多首种子歌曲的相似推荐并发融合，并去重/按歌手多样性重排。
+ async function personalizedMix(seeds, excludeKeys){
+  const list=Array.isArray(seeds)?seeds.filter(s=>s&&s.name).slice(0,4):[];
+  if(!list.length)return {items:[],total:0};
+  const blocked=new Set(Array.isArray(excludeKeys)?excludeKeys:[]);
+  const seenKey=new Set();
+  const seenNorm=new Set();
+  const artistCounts=new Map();
+  const normKey=(n,s)=>clean(n).toLowerCase().replace(/[\s\-_()（）【】[\]·.,!?'"`]+/g,'')+'|'+clean(s).split(/[、/,，;&]+/)[0].toLowerCase().replace(/\s+/g,'');
+  list.forEach(s=>{
+   seenKey.add(`${s.source||''}:${s.id||''}`);
+   const nk=normKey(s.name,s.singer||s.artist||'');
+   if(nk!=='|')seenNorm.add(nk);
+  });
+  const batches=await Promise.allSettled(list.map(seed=>similarSongs(seed)));
+  const buckets=batches.map((res,idx)=>res.status==='fulfilled'&&Array.isArray(res.value?.items)?{seed:list[idx],items:res.value.items}:null).filter(Boolean);
+  const out=[];
+  let cursor=0;
+  while(out.length<36){
+   let progressed=false;
+   for(const b of buckets){
+    while(cursor<b.items.length){
+     const item=b.items[cursor];
+     if(!item||!item.id||!item.name)break;
+     const k=`${item.source}:${item.id}`;
+     const nk=normKey(item.name,item.singer||item.artist||'');
+     const artKey=clean(item.singer||item.artist||'').split(/[、/,，;&]+/)[0].toLowerCase();
+     if(blocked.has(k)||blocked.has(nk)||seenKey.has(k)||seenNorm.has(nk)||(artKey&&(artistCounts.get(artKey)||0)>=2)){
+      b.items.splice(cursor,1);
+      continue;
+     }
+     seenKey.add(k);seenNorm.add(nk);
+     if(artKey)artistCounts.set(artKey,(artistCounts.get(artKey)||0)+1);
+     out.push(Object.assign({},item,{recommendationReason:b.seed&&b.seed.name?`因为你听过「${b.seed.name}」`:'猜你喜欢'}));
+     b.items.splice(cursor,1);
+     progressed=true;
+     break;
+    }
+    if(out.length>=36)break;
+   }
+   if(!progressed)break;
+  }
+  return {items:out,total:out.length};
+ }
+ return {home,homeLite,section,categories,tracks,similarSongs,personalizedMix};
 }
 const api={createDiscovery};if(typeof module!=='undefined'&&module.exports)module.exports=api;else root.LxDiscovery=api;
 })(typeof window!=='undefined'?window:globalThis);

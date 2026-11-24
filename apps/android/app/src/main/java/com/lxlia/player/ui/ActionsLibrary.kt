@@ -24,8 +24,8 @@ fun AppViewModel.listBaseSongs(): List<Song> =
     if (openedPlaylist?.kind == "local") localTracks else openedPlaylist?.songs.orEmpty()
 
 /** 列表内搜索 + 排序（添加顺序/歌名/歌手/专辑/手动）。只在展示层重排，不改原歌单。 */
-fun AppViewModel.arrangedSongs(songs: List<Song>): List<Song> =
-    orderSongList(songs, listSortMode, manualOrder, listQuery)
+fun AppViewModel.arrangedSongs(songs: List<Song>, applyQuery: Boolean = true): List<Song> =
+    orderSongList(songs, listSortMode, manualOrder, if (applyQuery) listQuery else "")
 
 fun AppViewModel.openManualOrder() {
     openManualOrderFor(arrangedSongs(listBaseSongs()))
@@ -70,6 +70,7 @@ fun AppViewModel.openPlaylist(list: MusicPlaylist) {
     resetListTools()
     playlistReturnTab = "资料库"
     playlistReturnFeed = ""
+    playlistReturnSearch = false
     openedPlaylist = list
     tab = "资料库"
     discoveryCompact = false
@@ -80,6 +81,7 @@ fun AppViewModel.openLocalPlaylist() {
     resetListTools()
     playlistReturnTab = "资料库"
     playlistReturnFeed = ""
+    playlistReturnSearch = false
     openedPlaylist = MusicPlaylist(
         id = "local-android",
         name = "本地音乐",
@@ -98,6 +100,7 @@ fun AppViewModel.openLibraryPlaylist(list: MusicPlaylist, returnTab: String, ret
     resetListTools()
     playlistReturnTab = returnTab
     playlistReturnFeed = returnFeed
+    playlistReturnSearch = searchOpen
     playlistReturnFeedOffset = 0
     playlistReturnHomeOffset = 0
     openedPlaylist = list
@@ -110,18 +113,69 @@ fun AppViewModel.openLibraryPlaylist(list: MusicPlaylist, returnTab: String, ret
 fun AppViewModel.closeOpenedPlaylist() {
     val returnTab = playlistReturnTab
     val returnFeed = playlistReturnFeed
+    val returnSearch = playlistReturnSearch
+    val returnToPlayer = playlistReturnToPlayer
     openedPlaylist = null
     openedFeedSourceId = ""
     playlistReturnFeed = ""
-    if (returnFeed.isNotEmpty()) {
-        tab = returnTab.ifEmpty { "发现" }
-        feedSection = returnFeed
-        feedClosing = false
-        feedReveal = 1f
-        discoveryCompact = false
+    playlistReturnSearch = false
+    playlistReturnToPlayer = false
+    when {
+        returnSearch -> {
+            tab = "发现"
+            searchOpen = true
+            discoveryCompact = false
+        }
+        returnFeed.isNotEmpty() -> {
+            tab = returnTab.ifEmpty { "发现" }
+            feedSection = returnFeed
+            feedClosing = false
+            feedReveal = 1f
+            discoveryCompact = false
+        }
+        returnTab.isNotEmpty() -> {
+            tab = returnTab
+        }
+    }
+    if (returnToPlayer && selected != null) {
+        showPlayer = true
+    }
+}
+
+fun AppViewModel.isCollectionSavedToLibrary(name: String, songs: List<Song>): Boolean {
+    val clean = name.trim()
+    if (clean.isEmpty()) return false
+    return playlists.any { !it.isFavorite && it.kind == "lx" && it.name.trim() == clean && it.songs.size == songs.size }
+}
+
+fun AppViewModel.canCollectOpenedPlaylist(playlist: MusicPlaylist? = openedPlaylist): Boolean {
+    val list = playlist ?: return false
+    if (list.songs.isEmpty() || list.kind == "local" || list.kind == "recent") return false
+    return playlists.none { it.id == list.id }
+}
+
+fun AppViewModel.collectToLibrary(name: String, songs: List<Song>, cover: String = "") {
+    val valid = songs.filter { it.id.isNotEmpty() }
+    if (valid.isEmpty()) {
+        notify("当前列表暂无可收藏的歌曲", 1800)
         return
     }
-    if (returnTab.isNotEmpty()) tab = returnTab
+    val cleanName = name.trim().ifEmpty { "收藏歌单" }
+    if (isCollectionSavedToLibrary(cleanName, valid)) {
+        notify("「$cleanName」已在你的曲库中", 1800)
+        return
+    }
+    val firstCover = cover.trim().ifEmpty { valid.firstOrNull { it.coverUrl.isNotBlank() }?.coverUrl.orEmpty() }
+    val created = createPlaylist(cleanName, false).copy(
+        songs = valid.toList(),
+        songIds = valid.map { it.key },
+        customCover = firstCover,
+        updatedAt = System.currentTimeMillis(),
+    )
+    playlists = playlists + created
+    save()
+    scheduleAutoPlaylistSync()
+    notify("已收藏「$cleanName」（${valid.size} 首）到曲库", 2200)
 }
 
 /** 单曲移除对曲库中持久化的所有 LX 歌单（含「我喜欢的」与自建/导入歌单）开放。 */
@@ -140,6 +194,20 @@ fun AppViewModel.canManageOpenedPlaylist(): Boolean {
 fun AppViewModel.canDeleteOpenedPlaylist(): Boolean = canManageOpenedPlaylist()
 
 fun AppViewModel.removeSongFromPlaylist(playlistId: String, song: Song) {
+    if (playlistId == "recent-local") {
+        val next = recentSongs.filterNot { it.key == song.key }
+        recentSongs = next
+        store.saveRecentSongs(Song.listToJson(next))
+        if (openedPlaylist?.kind == "recent") {
+            openedPlaylist = openedPlaylist?.copy(
+                songs = next,
+                songIds = next.map { it.key },
+                updatedAt = System.currentTimeMillis(),
+            )
+        }
+        notify("已从「最近播放」移除", 1500)
+        return
+    }
     val current = playlists.firstOrNull { it.id == playlistId && it.kind == "lx" } ?: return
     val updated = playlistWithSong(current, song, remove = true)
     playlists = playlists.map { if (it.id == updated.id) updated else it }
@@ -164,6 +232,63 @@ fun AppViewModel.openEditPlaylist(playlist: MusicPlaylist? = openedPlaylist) {
     val target = playlist ?: return
     if (target.isFavorite || target.kind != "lx" || playlists.none { it.id == target.id }) return
     editPlaylistTarget = playlists.firstOrNull { it.id == target.id } ?: target
+}
+
+/** 打开自定义歌单封面选择器（支持自建/导入歌单及「我喜欢的」，#15）。 */
+fun AppViewModel.openPlaylistCoverPicker(playlist: MusicPlaylist? = openedPlaylist) {
+    val target = playlist ?: return
+    if (target.kind != "lx" || playlists.none { it.id == target.id }) return
+    coverPickerPlaylist = playlists.firstOrNull { it.id == target.id } ?: target
+}
+
+fun AppViewModel.applyPlaylistCover(playlistId: String, coverUrl: String) {
+    val current = playlists.firstOrNull { it.id == playlistId && it.kind == "lx" } ?: return
+    val updated = current.copy(customCover = coverUrl, updatedAt = System.currentTimeMillis())
+    playlists = playlists.map { if (it.id == playlistId) updated else it }
+    if (openedPlaylist?.id == playlistId) openedPlaylist = updated
+    coverPickerPlaylist = null
+    save()
+    notify(if (coverUrl.isEmpty()) "已恢复默认歌单封面" else "已更新歌单封面", 1800)
+}
+
+fun AppViewModel.requestPickLocalPlaylistCover(playlistId: String) {
+    pendingCoverPickPlaylistId = playlistId
+    playlistCoverPickRequest = System.nanoTime()
+}
+
+fun AppViewModel.importPlaylistCoverImage(uri: Uri) {
+    val targetId = pendingCoverPickPlaylistId
+    pendingCoverPickPlaylistId = ""
+    if (targetId.isEmpty()) return
+    viewModelScope.launch(Dispatchers.IO) {
+        try {
+            val raw = app.contentResolver.openInputStream(uri)?.use { it.readBytes() } ?: return@launch
+            val decoded = android.graphics.BitmapFactory.decodeByteArray(raw, 0, raw.size) ?: return@launch
+            val maxDim = 1024
+            val scale = minOf(1f, maxDim.toFloat() / maxOf(decoded.width, decoded.height).coerceAtLeast(1))
+            val bmp = if (scale < 0.99f) {
+                android.graphics.Bitmap.createScaledBitmap(
+                    decoded,
+                    (decoded.width * scale).toInt().coerceAtLeast(1),
+                    (decoded.height * scale).toInt().coerceAtLeast(1),
+                    true,
+                )
+            } else decoded
+            val out = java.io.ByteArrayOutputStream()
+            bmp.compress(android.graphics.Bitmap.CompressFormat.JPEG, 88, out)
+            if (bmp !== decoded) bmp.recycle()
+            decoded.recycle()
+            val safeId = targetId.replace(Regex("[^a-zA-Z0-9_-]"), "_")
+            val file = java.io.File(app.filesDir, "playlist_cover_$safeId.jpg")
+            file.writeBytes(out.toByteArray())
+            val stampedPath = "${file.absolutePath}?t=${System.currentTimeMillis()}"
+            withContext(Dispatchers.Main) {
+                applyPlaylistCover(targetId, stampedPath)
+            }
+        } catch (_: Throwable) {
+            withContext(Dispatchers.Main) { notify("封面图片读取失败", 2000) }
+        }
+    }
 }
 
 fun AppViewModel.saveEditedPlaylist(playlistId: String, newName: String, newSongs: List<Song>) {
@@ -302,6 +427,33 @@ fun AppViewModel.openDownloads(fromTab: String = tab) {
     tab = "资料库"
     downloadsOpen = true
     openedPlaylist = null
+    hydrateDownloadCovers()
+}
+
+private fun AppViewModel.hydrateDownloadCovers() {
+    val missing = downloadItems.filter { it.song.coverUrl.isEmpty() && it.song.name.isNotBlank() }
+    if (missing.isEmpty()) return
+    viewModelScope.launch {
+        val found = linkedMapOf<String, String>()
+        val known = hashMapOf<String, String>()
+        playlists.forEach { pl -> pl.songs.forEach { if (it.coverUrl.isNotEmpty()) known[it.key] = it.coverUrl } }
+        recentSongs.forEach { if (it.coverUrl.isNotEmpty()) known[it.key] = it.coverUrl }
+        queue.forEach { if (it.coverUrl.isNotEmpty()) known[it.key] = it.coverUrl }
+        val needRemote = mutableListOf<Song>()
+        for (item in missing) {
+            val hit = known[item.song.key]
+            if (!hit.isNullOrEmpty()) found[item.song.key] = hit
+            else needRemote.add(item.song)
+        }
+        if (needRemote.isNotEmpty()) {
+            val batch = needRemote.take(30)
+            val remote = runCatching { engine.fetchSongCovers(batch) }.getOrDefault(emptyMap())
+            found.putAll(remote)
+        }
+        if (found.isNotEmpty()) {
+            downloads.updateCovers(found)
+        }
+    }
 }
 
 fun AppViewModel.closeDownloads() {

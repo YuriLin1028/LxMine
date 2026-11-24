@@ -37,6 +37,8 @@ data class LyricPreferences(
     val showTranslation: Boolean = true,
     val showRomaji: Boolean = false,
     val lyricScale: Float = 1f,
+    val lyricLineSpacing: Float = 1.2f,
+    val lyricMaxLines: Int = 0,
 ) {
     fun toJson(): JSONObject = JSONObject()
         .put("colorMode", colorMode)
@@ -44,7 +46,9 @@ data class LyricPreferences(
         .put("secondary", secondary)
         .put("showTranslation", showTranslation)
         .put("showRomaji", showRomaji)
-        .put("lyricScale", Math.round(lyricScale.coerceIn(0.75f, 1.40f) * 100.0) / 100.0)
+        .put("lyricScale", Math.round(lyricScale.coerceIn(0.55f, 1.50f) * 100.0) / 100.0)
+        .put("lyricLineSpacing", Math.round(lyricLineSpacing.coerceIn(0.85f, 1.80f) * 100.0) / 100.0)
+        .put("lyricMaxLines", lyricMaxLines.coerceIn(0, 10))
 
     companion object {
         private val modes = listOf("cover-solid", "cover-gradient", "custom-solid", "custom-gradient")
@@ -56,6 +60,8 @@ data class LyricPreferences(
             if (value.isNullOrBlank()) return LyricPreferences()
             val json = runCatching { JSONObject(value) }.getOrNull() ?: return LyricPreferences()
             val rawScale = json.optDouble("lyricScale", 1.0)
+            val rawSpacing = json.optDouble("lyricLineSpacing", 1.2)
+            val rawMaxLines = json.optInt("lyricMaxLines", 0)
             val parsedMode = json.optString("colorMode").takeIf { modes.contains(it) } ?: "cover-gradient"
             val rawPrimary = json.optString("primary").takeIf { hex.matches(it) } ?: "#7DD3FC"
             val rawSecondary = json.optString("secondary").takeIf { hex.matches(it) } ?: "#A5B4FC"
@@ -72,7 +78,9 @@ data class LyricPreferences(
                 secondary = resolvedSecondary,
                 showTranslation = json.optBoolean("showTranslation", true),
                 showRomaji = json.optBoolean("showRomaji", false),
-                lyricScale = if (rawScale.isFinite()) rawScale.toFloat().coerceIn(0.75f, 1.40f) else 1f,
+                lyricScale = if (rawScale.isFinite()) rawScale.toFloat().coerceIn(0.55f, 1.50f) else 1f,
+                lyricLineSpacing = if (rawSpacing.isFinite()) rawSpacing.toFloat().coerceIn(0.85f, 1.80f) else 1.2f,
+                lyricMaxLines = rawMaxLines.coerceIn(0, 10),
             )
         }
     }
@@ -171,7 +179,7 @@ class AppViewModel(internal val app: LxMineApp) : ViewModel() {
     /** 响应式红心集合：任何列表项直接读取此状态即可在点击喜欢当帧立即重组变红。 */
     val likedKeys: Set<String> by derivedStateOf {
         playlists.asSequence()
-            .filter { it.isFavorite || it.name == "我喜欢的" }
+            .filter { it.isFavorite || it.name == "我喜欢的" || it.name == "我的收藏" }
             .flatMap { it.songs.asSequence() }
             .map { it.key }
             .toSet()
@@ -190,14 +198,33 @@ class AppViewModel(internal val app: LxMineApp) : ViewModel() {
     var settingsScrollOffset by mutableStateOf(0)
     var downloadItems by mutableStateOf<List<com.lxlia.player.lx.MusicDownload>>(emptyList())
     private var adoptedDownloads: List<String> = emptyList()
+    private var lastDownloadUiAt: Long = 0L
     var downloadExportRequest by mutableStateOf(0L)
     var pendingDownloadExportId: String? = null
+    var batchExportFolderPickRequest by mutableStateOf(0L)
+    var pendingBatchExportDownloadIds: List<String> = emptyList()
+    var batchDownloadPickerSongs by mutableStateOf<List<Song>?>(null)
+    var batchDownloadPickerTitle by mutableStateOf("选择要下载的歌曲")
+    var pendingBatchDownloadSongs: List<Song> = emptyList()
+    var queueOrderOpen by mutableStateOf(false)
+    var moreSubSheet by mutableStateOf("")
+    var returnSheetAfterSub by mutableStateOf("")
+    var batchFolderPickRequest by mutableStateOf(0L)
+    var coverPickerPlaylist by mutableStateOf<MusicPlaylist?>(null)
+    var pendingCoverPickPlaylistId: String = ""
+    var playlistCoverPickRequest by mutableStateOf(0L)
+    var colorPickerTarget by mutableStateOf("") // "" | "primary" | "secondary"
     var libraryMosaicSeed by mutableStateOf(0)
     var libraryRestoreOffset by mutableStateOf(0)
     var playlistReturnTab = "资料库"
     var playlistReturnFeed = ""
+    var playlistReturnSearch = false
     var playlistReturnFeedOffset = 0
     var playlistReturnHomeOffset = 0
+    var searchReturnToPlayer by mutableStateOf(false)
+    var playlistReturnToPlayer by mutableStateOf(false)
+    internal var playingFromSearch: Boolean = false
+    internal val searchAddedPlaylistMap = mutableMapOf<String, String>()
 
     // ---- 列表工具 ----
     var listSearchOpen by mutableStateOf(false)
@@ -211,13 +238,28 @@ class AppViewModel(internal val app: LxMineApp) : ViewModel() {
     var selected by mutableStateOf<Song?>(null)
     var queue by mutableStateOf<List<Song>>(emptyList())
     var playing by mutableStateOf(false)
+    var stageFadingOut by mutableStateOf(false)
     var foreground by mutableStateOf(true)
     var positionMs by mutableStateOf(0L)
     var duration by mutableStateOf(0L)
     var lyrics by mutableStateOf<List<LyricLine>>(emptyList())
+    var lyricsSongKey by mutableStateOf("")
+    internal var lyricsExactMatched = false
+    internal var lyricLoadToken = 0
     var translatedLyrics: List<LyricLine> = emptyList()
     var romajiLyrics: List<LyricLine> = emptyList()
     var stageTranslations by mutableStateOf<List<LyricLine>>(emptyList())
+
+    internal fun resetLyricsForSong(songKey: String) {
+        lyricLoadToken++
+        lyricsSongKey = songKey
+        lyricsExactMatched = false
+        lyrics = emptyList()
+        translatedLyrics = emptyList()
+        romajiLyrics = emptyList()
+        stageTranslations = emptyList()
+        PlaybackController.setLyrics(emptyList(), lyricOffset)
+    }
     var coverColors by mutableStateOf(EMPTY_COVER_COLORS)
     var resolving by mutableStateOf(false)
     var playbackUrl by mutableStateOf("")
@@ -237,7 +279,7 @@ class AppViewModel(internal val app: LxMineApp) : ViewModel() {
     var lyricOffset by mutableStateOf(0L)
     var lyricPrefs by mutableStateOf(LyricPreferences())
     internal var playToken = 0
-    private var lastPositionUiAt = 0L
+    internal var lastPositionUiAt = 0L
     var livePositionMs = 0L
     private var lastPlaybackSave = 0L
     private var lastPlaybackDiskSave = 0L
@@ -268,8 +310,8 @@ class AppViewModel(internal val app: LxMineApp) : ViewModel() {
     private var updateDownloadJob: kotlinx.coroutines.Job? = null
 
     fun currentAppVersion(): String = runCatching {
-        app.packageManager.getPackageInfo(app.packageName, 0).versionName ?: "1.1.0"
-    }.getOrDefault("1.1.0")
+        app.packageManager.getPackageInfo(app.packageName, 0).versionName ?: com.lxlia.player.BuildConfig.VERSION_NAME
+    }.getOrDefault(com.lxlia.player.BuildConfig.VERSION_NAME)
 
     fun checkAppUpdate(silent: Boolean = false) {
         if (updateChecking) return
@@ -355,31 +397,133 @@ class AppViewModel(internal val app: LxMineApp) : ViewModel() {
     var activeId by mutableStateOf("")
     var sourceReady by mutableStateOf(false)
     var quality by mutableStateOf("128k")
-    private var styleValue by mutableStateOf("mine-0")
+    private var styleValue by mutableStateOf("mine-7")
+    var resolvedStyleName by mutableStateOf("mine-7")
+    internal var smartStageCacheSig: String = ""
+    internal var smartStageCacheMap: MutableMap<String, String> = mutableMapOf()
+    private var restoringSettings: Boolean = false
     var styleName: String
         get() = styleValue
         set(value) {
             dynamicStageFailed = false
-            if (styleValue == "off" && value != "off") dynamicStageReady = false
             styleValue = value
-            if (value != "off") dynamicStyle = value
+            if (value == com.lxlia.player.audio.SMART_STAGE_MODE_ID) {
+                updateSmartStage(false)
+            } else {
+                resolvedStyleName = value
+            }
+            val nextEffective = effectiveStyleName()
+            if (nextEffective != "off") {
+                if (nextEffective.startsWith("folia-")) lastFoliaStyle = nextEffective
+                else lastMineStyle = nextEffective
+            }
+            syncDynamicStageReady()
         }
+    fun syncDynamicStageReady() {
+        val eff = effectiveStyleName()
+        dynamicStageReady = when {
+            eff == "off" || dynamicStageFailed -> false
+            eff.startsWith("folia-") -> foliaStageReady
+            else -> mineStageReady
+        }
+    }
+    fun effectiveStyleName(): String =
+        if (styleValue == com.lxlia.player.audio.SMART_STAGE_MODE_ID) resolvedStyleName else styleValue
+    fun resolvedStyleLabel(): String {
+        val eff = effectiveStyleName()
+        return com.lxlia.player.model.MINE_RADIO_MODES.firstOrNull { it.id == eff }?.label.orEmpty()
+    }
+    fun updateSmartStage(forceCommit: Boolean = false) {
+        if (styleValue != com.lxlia.player.audio.SMART_STAGE_MODE_ID) return
+        val decision = com.lxlia.player.audio.SmartStageSelector.select(
+            song = selected,
+            lyrics = lyrics,
+            primaryHex = coverColors.first,
+            secondaryHex = coverColors.last,
+            cachedSignature = smartStageCacheSig,
+            cachedChoices = smartStageCacheMap,
+            forceCommit = forceCommit,
+        )
+        resolvedStyleName = decision.modeId
+        if (decision.modeId != "off") {
+            if (decision.modeId.startsWith("folia-")) lastFoliaStyle = decision.modeId
+            else lastMineStyle = decision.modeId
+        }
+        syncDynamicStageReady()
+        if (decision.ready && selected != null) {
+            if (smartStageCacheSig != decision.catalogSignature) {
+                smartStageCacheSig = decision.catalogSignature
+                smartStageCacheMap.clear()
+            }
+            if (smartStageCacheMap[decision.songKey] != decision.modeId) {
+                smartStageCacheMap[decision.songKey] = decision.modeId
+                if (smartStageCacheMap.size > 500) {
+                    val firstKey = smartStageCacheMap.keys.firstOrNull()
+                    if (firstKey != null) smartStageCacheMap.remove(firstKey)
+                }
+                if (storeReady && !restoringSettings) save()
+            }
+        }
+    }
     var appearance by mutableStateOf("system")
     var stageBgOpacity by mutableStateOf(0.78f)
     var stageBgImagePath by mutableStateOf("")
     var stageBgDataUrl by mutableStateOf("")
+    var pageBgImagePath by mutableStateOf("")
+    var pageBgOpacity by mutableStateOf(0.35f)
+    var audioFx by mutableStateOf(com.lxlia.player.audio.AudioFxConfig())
+    var spatialHardwareStatus by mutableStateOf(com.lxlia.player.audio.SpatialHardwareStatus())
+    var bluetoothCarLyricsEnabled by mutableStateOf(false)
+    var bluetoothCarLyricsMode by mutableStateOf(com.lxlia.player.audio.BluetoothCarLyrics.MODE_TITLE)
+    var bluetoothAudioConnected by mutableStateOf(false)
+    var earMonitorOpen by mutableStateOf(false)
+    var earMonitorState by mutableStateOf(com.lxlia.player.audio.EarMonitorState())
+    var earMonitorPermissionRequest by mutableStateOf(0L)
+    internal var pendingEarMonitorMode: String = ""
+    internal val earMonitor = com.lxlia.player.audio.EarMonitorEngine()
+    internal var preResolveJob: Job? = null
+    var autoMixEnabled by mutableStateOf(false)
+    var autoMixPreview by mutableStateOf("")
+    var playPauseFadeEnabled by mutableStateOf(true)
+    var stageResetCameraOnSong by mutableStateOf(true)
+    internal var currentAutoMixPlan: com.lxlia.player.audio.AutoMixPlan? = null
+    internal var autoMixPlanDurationMs: Long = 0L
+    internal var autoMixPreloadKey: String = ""
+    internal var autoMixPreloadToken: Int = 0
+    internal var autoMixPreloadInFlight: Boolean = false
+    internal var autoMixPreloadStartedAt: Long = 0L
+    internal var autoMixPreloadAttempts: Int = 0
+    internal var autoMixPreloadRetryAt: Long = 0L
+    internal var autoMixNextSongKey: String = ""
+    internal val autoMixFailedUrls: MutableMap<String, MutableList<String>> = mutableMapOf()
+    internal val autoMixNextLyricsCache: MutableMap<String, List<LyricLine>> = mutableMapOf()
+    internal val autoMixNextLyricsPending: MutableSet<String> = mutableSetOf()
+    internal var autoMixTriggeredKey: String = ""
+    internal var autoMixPreloadJob: Job? = null
+    var dislikedKeys by mutableStateOf<List<String>>(emptyList())
+    var sleepMode by mutableStateOf("off")
+    var sleepEndAt by mutableStateOf(0L)
+    var sleepFinishSong by mutableStateOf(false)
+    var sleepPendingStop by mutableStateOf(false)
+    var sleepRemainingText by mutableStateOf("")
+    internal var sleepTimerJob: Job? = null
+    var pendingClearRecent by mutableStateOf(false)
     var stageMounted by mutableStateOf(false)
-    var dynamicStageMounted by mutableStateOf(false)
+    var mineStageMounted by mutableStateOf(false)
+    var foliaStageMounted by mutableStateOf(false)
     var plainStageMounted by mutableStateOf(false)
+    var mineStageReady by mutableStateOf(false)
+    var foliaStageReady by mutableStateOf(false)
     var dynamicStageReady by mutableStateOf(false)
     var dynamicStageFailed by mutableStateOf(false)
-    var dynamicStyle by mutableStateOf("mine-0")
+    var lastMineStyle by mutableStateOf("mine-0")
+    var lastFoliaStyle by mutableStateOf("folia-partita")
     var mode by mutableStateOf("列表循环")
     var settingsPanel by mutableStateOf("main")
     var sourcesOpen by mutableStateOf(false)
     var sourcesReveal by mutableStateOf(1f)
     var sourcesClosing by mutableStateOf(false)
-    var startupAnimation by mutableStateOf(true)
+    var startupAnimation by mutableStateOf(false)
     var resumeOnStartup by mutableStateOf(false)
     var allowLandscapeWhenLocked by mutableStateOf(true)
     var mixWithOthers by mutableStateOf(false)
@@ -435,33 +579,126 @@ class AppViewModel(internal val app: LxMineApp) : ViewModel() {
 
     init {
         PlaybackController.onState = { state -> handlePlaybackState(state) }
+        PlaybackController.onFadeOutChanged = { fadingOut -> stageFadingOut = fadingOut }
         PlaybackController.onTime = { time -> handlePlaybackTime(time) }
         PlaybackController.fallbackUrlResolver = { song ->
             engine.resolveUrl(
                 song,
                 excludeSourceIds = if (activeId.isNotEmpty()) listOf(activeId) else emptyList(),
                 raceAll = true,
+                forceResolve = true,
             )
         }
-        PlaybackController.onError = { detail ->
-            error = sanitizeUiError(detail)
+        PlaybackController.currentResolvedSourceIdProvider = {
+            engine.lastWinnerSourceId.ifEmpty { activeId }
+        }
+        PlaybackController.hasOtherSourceChecker = { excluded ->
+            engine.sources.any { it.id !in excluded }
+        }
+        PlaybackController.previewFallbackResolver = { song, attempt, excludeSourceIds, excludeUrls ->
+            val preferCross = attempt >= 1
+            val effectiveExcludeIds = when {
+                attempt == 0 -> excludeSourceIds.ifEmpty { if (activeId.isNotEmpty()) listOf(activeId) else emptyList() }
+                attempt >= 2 -> excludeSourceIds
+                else -> emptyList()
+            }
+            engine.resolveUrl(
+                song,
+                excludeSourceIds = effectiveExcludeIds,
+                raceAll = true,
+                silent = true,
+                forceResolve = true,
+                preferCrossPlatform = preferCross,
+                excludeUrls = excludeUrls,
+            )
+        }
+        PlaybackController.onPreviewRecovered = { tip ->
+            viewModelScope.launch(Dispatchers.Main.immediate) { notify(tip, 2800) }
+        }
+        PlaybackController.onError = { _ ->
             resolving = false
         }
         PlaybackController.onSourceReady = { song, url ->
             if (selected?.key == song.key) {
                 playbackUrl = url
                 resolving = false
-                loadLyricsFor(selected ?: song)
+                if (lyrics.isEmpty()) loadLyricsFor(selected ?: song)
                 loadCoverColors(selected ?: song)
+                preResolveNextTrack()
             }
+        }
+        earMonitor.onStateChanged = { st ->
+            viewModelScope.launch(Dispatchers.Main.immediate) {
+                earMonitorState = st
+            }
+        }
+        PlaybackController.startSpatialMonitor(app) { st ->
+            viewModelScope.launch(Dispatchers.Main.immediate) {
+                spatialHardwareStatus = st
+            }
+        }
+        PlaybackController.onBluetoothAudioChanged = { connected ->
+            viewModelScope.launch(Dispatchers.Main.immediate) {
+                bluetoothAudioConnected = connected
+            }
+        }
+        PlaybackController.startBluetoothMonitor(app)
+        bluetoothAudioConnected = PlaybackController.bluetoothAudioConnected
+        PlaybackController.onBeforeCompleted = {
+            if (sleepMode == "song" || sleepPendingStop) {
+                clearSleepTimer(silent = true)
+                notify("定时关闭已到，当前歌曲已播完暂停", 2400)
+                true
+            } else false
+        }
+        PlaybackController.onAutoMixCommit = { nextSong, nextUrl ->
+            selected = nextSong
+            playbackUrl = nextUrl
+            resolving = false
+            positionMs = PlaybackController.positionMs
+            livePositionMs = positionMs
+            lastPositionUiAt = System.currentTimeMillis()
+            duration = PlaybackController.durationMs.coerceAtLeast(nextSong.durationMs)
+            resetLyricsForSong(nextSong.key)
+            coverColors = EMPTY_COLORS()
+            autoMixPreloadToken++
+            autoMixPreloadInFlight = false
+            autoMixPreloadAttempts = 0
+            autoMixPreloadKey = ""
+            autoMixPreloadRetryAt = 0L
+            autoMixTriggeredKey = ""
+            currentAutoMixPlan = null
+            updateSmartStage(false)
+            loadCoverColors(nextSong)
+            loadLyricsFor(nextSong)
+            refreshAutoMixPlan()
+            recentSongs = listOf(nextSong) + recentSongs.filter { it.key != nextSong.key }
+            store.saveRecentSongs(Song.listToJson(recentSongs))
+            syncPlaybackState()
         }
         PlaybackController.onSongChanged = { song ->
             if (song.key != selected?.key) {
                 selected = song
                 playbackUrl = ""
                 resolving = true
+                // 切歌瞬间同步控制器当前起播位置并清空上一首歌词，同时并发拉取新歌词（#5）
+                val initPos = PlaybackController.positionMs.coerceAtLeast(0L)
+                positionMs = initPos
+                livePositionMs = initPos
+                duration = song.durationMs
+                resetLyricsForSong(song.key)
                 coverColors = EMPTY_COLORS()
+                autoMixPreloadToken++
+                autoMixPreloadInFlight = false
+                autoMixPreloadAttempts = 0
+                autoMixPreloadKey = ""
+                autoMixPreloadRetryAt = 0L
+                autoMixTriggeredKey = ""
+                currentAutoMixPlan = null
+                updateSmartStage(false)
                 loadCoverColors(song)
+                loadLyricsFor(song)
+                refreshAutoMixPlan()
             }
             syncPlaybackState()
         }
@@ -479,13 +716,21 @@ class AppViewModel(internal val app: LxMineApp) : ViewModel() {
             notify(clean, 3000)
         }
         downloads.onChange = { items ->
+            var stateChanged = items.size != downloadItems.size
             for (item in items) {
                 val previous = downloadItems.firstOrNull { it.id == item.id }
+                if (previous == null || previous.state != item.state || previous.publicUri != item.publicUri) {
+                    stateChanged = true
+                }
                 if (item.state == "complete" && previous != null && previous.state != "complete") {
-                    notify("下载完成：${item.song.name}", 3000)
+                    notify("下载完成：${item.song.name}", 2200)
                 }
             }
-            downloadItems = items
+            val now = System.currentTimeMillis()
+            if (stateChanged || now - lastDownloadUiAt >= 450L) {
+                lastDownloadUiAt = now
+                downloadItems = items
+            }
             val completed = items.filter { it.state == "complete" }.map { com.lxlia.player.lx.DownloadTrack(it.song, it.path) }
             val signature = completed.map { it.path }
             if (completed.isNotEmpty() && signature != adoptedDownloads) {
@@ -516,6 +761,8 @@ class AppViewModel(internal val app: LxMineApp) : ViewModel() {
     }
 
     private fun handlePlaybackTime(time: Long) {
+        // 切歌解析期间忽略旧歌残余回调，避免进度条短暂跳回上一首位置（#5）
+        if (resolving) return
         livePositionMs = time
         val now = System.currentTimeMillis()
         if (now - lastPositionUiAt >= if (showPlayer) 200 else 1000) {
@@ -524,6 +771,7 @@ class AppViewModel(internal val app: LxMineApp) : ViewModel() {
         }
         val current = PlaybackController.durationMs
         if (current != duration) duration = current
+        tickAutoMix(time, current)
         if (now - lastPlaybackSave > 5000) savePlayback()
     }
 
@@ -570,9 +818,8 @@ class AppViewModel(internal val app: LxMineApp) : ViewModel() {
             localLanIp = withContext(Dispatchers.IO) { com.lxlia.player.lx.LanDiscovery.localIpv4() }
         }.onFailure { message = "局域网同步启动失败：${it.message}" }
         lanSsid = lanDiscovery?.ssid ?: ""
-        pollJob = viewModelScope.launch {
-            while (true) {
-                delay(300)
+        lanSyncServer?.onIncomingChanged = {
+            viewModelScope.launch {
                 if (!applying) {
                     val request = lanSyncServer?.pollIncoming()
                     if (request?.id != incoming?.id) {
@@ -616,7 +863,7 @@ class AppViewModel(internal val app: LxMineApp) : ViewModel() {
             val parsed = HomeFeed.fromJson(cached)
             if (parsed != null && parsed.charts.firstOrNull()?.parts?.isNotEmpty() == true) homeFeed = parsed
         }
-        playlists = parsePlaylists(data.playlistsJson).ifEmpty { listOf(createPlaylist("我喜欢的", true)) }
+        playlists = parsePlaylists(data.playlistsJson).ifEmpty { listOf(createPlaylist("我的收藏", true)) }
         sources = uniqueSyncSources(SyncSourcePayload.listFromJson(data.sourcesJson))
         recentSongs = Song.listFromJson(store.loadRecentSongs())
         if (sources.isEmpty() && data.sourceScript.isNotEmpty()) {
@@ -644,7 +891,7 @@ class AppViewModel(internal val app: LxMineApp) : ViewModel() {
         }
         engine.onPersist = { save() }
         engine.onMessage = { notify(it, 2500) }
-        engine.onError = { error = sanitizeUiError(it) }
+        engine.onError = { _ -> }
         sourceReady = engine.ready
         activeId = engine.activeId
         storeReady = true
@@ -671,7 +918,7 @@ class AppViewModel(internal val app: LxMineApp) : ViewModel() {
         val hasScaleInJson = runCatching { rawLyrics != null && JSONObject(rawLyrics).has("lyricScale") }.getOrDefault(false)
         if (!hasScaleInJson) {
             (settings["lxmine_lyric_scale"] as? Number)?.toFloat()?.takeIf { it.isFinite() }?.let {
-                loadedPrefs = loadedPrefs.copy(lyricScale = it.coerceIn(0.75f, 1.40f))
+                loadedPrefs = loadedPrefs.copy(lyricScale = it.coerceIn(0.55f, 1.50f))
             }
         }
         lyricPrefs = loadedPrefs
@@ -679,24 +926,77 @@ class AppViewModel(internal val app: LxMineApp) : ViewModel() {
         settings["lxmine_lyric_scale"] = Math.round(lyricPrefs.lyricScale * 100.0) / 100.0
         updateStageTranslations()
         resumeOnStartup = settings["lxmine_resume_on_startup"] == true
-        allowLandscapeWhenLocked = (settings["lxmine_allow_landscape_when_locked"] as? Boolean) ?: true
+        allowLandscapeWhenLocked = (settings["lxmine_allow_landscape_when_locked"] as? Boolean)
+            ?: (settings["lxmine_allow_landscape_locked"] as? Boolean)
+            ?: true
         mixWithOthers = settings["lxmine_mix_with_others"] == true
         com.lxlia.player.audio.PlaybackController.setMixWithOthers(mixWithOthers)
         refreshAlgoOnDoubleTap = (settings["lxmine_refresh_algo_double_tap"] as? Boolean) ?: true
         lanAutoSync = settings["lxmine_lan_auto_sync"] == true
         lanManualTarget = (settings["lxmine_lan_manual_target"] as? String).orEmpty()
         appearance = (settings["lxmine_appearance"] as? String)?.takeIf { it in listOf("dark", "light", "system") } ?: "system"
-        startupAnimation = settings["lxlia_startup_animation"] != false
-        if (!startupAnimation) intro = false
+        startupAnimation = false
+        intro = false
         (settings["lxlia_search_history"] as? JSONArray)?.let { array ->
             val list = mutableListOf<String>()
             for (index in 0 until array.length()) array.optString(index).takeIf { it.isNotEmpty() }?.let(list::add)
             searchHistory = list.take(10)
         }
         (settings["lxlia_audio_quality"] as? String)?.takeIf { it in listOf("128k", "320k", "flac") }?.let { quality = it }
-        (settings["lxlia_native_style"] as? String)?.takeIf { com.lxlia.player.model.MINE_RADIO_MODES.any { mode -> mode.id == it } }?.let { styleName = it }
+        (settings["lxmine_smart_stage_cache"] as? String)?.takeIf { it.isNotBlank() }?.let { raw ->
+            runCatching {
+                val obj = JSONObject(raw)
+                smartStageCacheSig = obj.optString("sig")
+                smartStageCacheMap.clear()
+                obj.optJSONObject("choices")?.let { mapObj ->
+                    mapObj.keys().forEach { k ->
+                        mapObj.optString(k).takeIf { it.isNotEmpty() }?.let { v -> smartStageCacheMap[k] = v }
+                    }
+                }
+            }
+        }
+        (settings["lxlia_native_style"] as? String)?.takeIf { com.lxlia.player.model.MINE_RADIO_MODES.any { mode -> mode.id == it } }?.let {
+            restoringSettings = true
+            try { styleName = it } finally { restoringSettings = false }
+        }
         (settings["lxmine_stage_bg_opacity"] as? Number)?.toFloat()?.let { stageBgOpacity = it.coerceIn(0f, 1f) }
+        (settings["lxmine_page_bg_opacity"] as? Number)?.toFloat()?.let { pageBgOpacity = it.coerceIn(0.10f, 0.85f) }
         loadCustomStageBgImage()
+        loadCustomPageBgImage()
+        autoMixEnabled = settings["lxmine_automix"] == true
+        playPauseFadeEnabled = settings["lxmine_play_pause_fade"] != false
+        PlaybackController.playPauseFadeEnabled = playPauseFadeEnabled
+        stageResetCameraOnSong = settings["lxmine_stage_reset_camera"] != false
+        bluetoothCarLyricsEnabled = settings["lxmine_bt_car_lyrics"] == true
+        bluetoothCarLyricsMode = com.lxlia.player.audio.BluetoothCarLyrics.normalizeMode(
+            settings["lxmine_bt_car_lyrics_mode"] as? String
+        )
+        PlaybackController.setBluetoothCarLyrics(bluetoothCarLyricsEnabled, bluetoothCarLyricsMode)
+        sleepFinishSong = settings["lxmine_sleep_finish_song"] == true
+        (settings["lxmine_disliked_keys"] as? JSONArray)?.let { arr ->
+            val list = mutableListOf<String>()
+            for (i in 0 until arr.length()) arr.optString(i).takeIf { it.isNotEmpty() }?.let(list::add)
+            dislikedKeys = list.distinct()
+        }
+        val rawFx = settings["lxmine_audio_fx"] as? String ?: (settings["lxmine_audio_fx"] as? JSONObject)?.toString()
+        if (!rawFx.isNullOrBlank()) {
+            runCatching {
+                val obj = JSONObject(rawFx)
+                val bands = mutableListOf<Int>()
+                obj.optJSONArray("customBands")?.let { arr ->
+                    for (i in 0 until minOf(5, arr.length())) bands.add(arr.optInt(i, 0).coerceIn(-12, 12))
+                }
+                while (bands.size < 5) bands.add(0)
+                audioFx = com.lxlia.player.audio.AudioFxConfig(
+                    preset = obj.optString("preset", "off"),
+                    customBands = bands,
+                    spatial = obj.optBoolean("spatial", false),
+                    reverb = obj.optString("reverb", "none").takeIf { it in listOf("none", "small", "hall") } ?: "none",
+                    spatialMode = obj.optString("spatialMode", "system").takeIf { it in listOf("off", "system", "binaural") } ?: "system",
+                )
+            }
+        }
+        PlaybackController.setAudioFx(audioFx)
         (settings["lxlia_play_mode"] as? String)?.takeIf { it in PlaybackController.modeValues }?.let {
             mode = it
             PlaybackController.setMode(it)
@@ -732,7 +1032,7 @@ class AppViewModel(internal val app: LxMineApp) : ViewModel() {
 
     fun updateStageBgOpacity(value: Float) {
         stageBgOpacity = value.coerceIn(0f, 1f)
-        save()
+        scheduleSave()
     }
 
     fun importStageBgImage(uri: android.net.Uri) {
@@ -777,9 +1077,87 @@ class AppViewModel(internal val app: LxMineApp) : ViewModel() {
         notify("已恢复默认专辑封面背景")
     }
 
-    fun removeDownload(id: String) {
-        app.downloads.remove(id)
-        notify("已删除下载记录")
+    private fun pageBgFile(): java.io.File = java.io.File(app.filesDir, "custom_page_bg.jpg")
+
+    private fun loadCustomPageBgImage() {
+        val file = pageBgFile()
+        if (file.exists() && file.length() > 0L) {
+            pageBgImagePath = file.absolutePath
+        }
+    }
+
+    fun updatePageBgOpacity(value: Float) {
+        pageBgOpacity = value.coerceIn(0.10f, 0.85f)
+        scheduleSave()
+    }
+
+    fun importPageBgImage(uri: android.net.Uri) {
+        viewModelScope.launch(Dispatchers.IO) {
+            try {
+                val raw = app.contentResolver.openInputStream(uri)?.use { it.readBytes() } ?: return@launch
+                val decoded = android.graphics.BitmapFactory.decodeByteArray(raw, 0, raw.size) ?: return@launch
+                val maxDim = 1920
+                val scale = minOf(1f, maxDim.toFloat() / maxOf(decoded.width, decoded.height).coerceAtLeast(1))
+                val bmp = if (scale < 0.99f) {
+                    android.graphics.Bitmap.createScaledBitmap(
+                        decoded,
+                        (decoded.width * scale).toInt().coerceAtLeast(1),
+                        (decoded.height * scale).toInt().coerceAtLeast(1),
+                        true,
+                    )
+                } else decoded
+                val out = java.io.ByteArrayOutputStream()
+                bmp.compress(android.graphics.Bitmap.CompressFormat.JPEG, 86, out)
+                if (bmp !== decoded) bmp.recycle()
+                decoded.recycle()
+                val file = pageBgFile()
+                file.writeBytes(out.toByteArray())
+                withContext(Dispatchers.Main) {
+                    pageBgImagePath = "${file.absolutePath}?t=${System.currentTimeMillis()}"
+                    notify("已更新页面自定义背景图")
+                }
+            } catch (_: Throwable) {
+                withContext(Dispatchers.Main) { notify("页面背景图读取失败") }
+            }
+        }
+    }
+
+    fun clearPageBgImage() {
+        val file = pageBgFile()
+        runCatching { if (file.exists()) file.delete() }
+        pageBgImagePath = ""
+        notify("已恢复默认页面背景")
+    }
+
+    fun removeDownload(id: String, deleteSourceFile: Boolean = false) {
+        removeDownloads(listOf(id), deleteSourceFile)
+    }
+
+    fun removeDownloads(ids: List<String>, deleteSourceFile: Boolean = false) {
+        if (ids.isEmpty()) return
+        if (deleteSourceFile && playing) {
+            val targetSet = ids.toSet()
+            val curKey = selected?.key.orEmpty()
+            if (curKey.isNotEmpty() && downloadItems.any { it.id in targetSet && it.song.key == curKey }) {
+                PlaybackController.pause()
+            }
+        }
+        viewModelScope.launch(Dispatchers.IO) {
+            val result = app.downloads.removeBatch(ids, deleteSourceFile)
+            withContext(Dispatchers.Main) {
+                if (deleteSourceFile && (result.removedPaths.isNotEmpty() || result.removedSongKeys.isNotEmpty())) {
+                    localMusic.removeAdoptedPaths(result.removedPaths, result.removedSongKeys)
+                    localTracks = localMusic.songs()
+                }
+                val label = if (ids.size > 1) "${ids.size} 项下载" else "下载任务"
+                val message = when {
+                    !deleteSourceFile -> "已移除${label}记录"
+                    result.failedFileCount > 0 -> "已清理应用内音频，另有 ${result.failedFileCount} 个外部另存文件受系统权限限制，请在文件管理中手动删除"
+                    else -> "已删除${label}及本地源文件"
+                }
+                notify(message, if (result.failedFileCount > 0) 3600 else 2200)
+            }
+        }
     }
 
     internal fun sanitizeUiError(raw: String?): String {
@@ -806,6 +1184,27 @@ class AppViewModel(internal val app: LxMineApp) : ViewModel() {
         settings["lxlia_audio_quality"] = quality
         settings["lxlia_native_style"] = styleName
         settings["lxmine_stage_bg_opacity"] = stageBgOpacity.toDouble()
+        settings["lxmine_page_bg_opacity"] = pageBgOpacity.toDouble()
+        settings["lxmine_automix"] = autoMixEnabled
+        settings["lxmine_play_pause_fade"] = playPauseFadeEnabled
+        settings["lxmine_stage_reset_camera"] = stageResetCameraOnSong
+        settings["lxmine_bt_car_lyrics"] = bluetoothCarLyricsEnabled
+        settings["lxmine_bt_car_lyrics_mode"] = bluetoothCarLyricsMode
+        settings["lxmine_sleep_finish_song"] = sleepFinishSong
+        settings["lxmine_disliked_keys"] = JSONArray(dislikedKeys)
+        settings["lxmine_audio_fx"] = JSONObject()
+            .put("preset", audioFx.preset)
+            .put("customBands", JSONArray(audioFx.customBands))
+            .put("spatial", audioFx.spatial)
+            .put("reverb", audioFx.reverb)
+            .put("spatialMode", audioFx.spatialMode)
+            .toString()
+        val cacheObj = JSONObject()
+        smartStageCacheMap.forEach { (k, v) -> cacheObj.put(k, v) }
+        settings["lxmine_smart_stage_cache"] = JSONObject()
+            .put("sig", smartStageCacheSig)
+            .put("choices", cacheObj)
+            .toString()
         settings["lxmine_appearance"] = appearance
         settings["lxlia_play_mode"] = mode
         settings["lxlia_lyric_offset"] = lyricOffset
@@ -831,17 +1230,40 @@ class AppViewModel(internal val app: LxMineApp) : ViewModel() {
         }
     }
 
+    private var saveDebounceJob: Job? = null
+
     fun save() {
+        saveDebounceJob?.cancel()
         viewModelScope.launch { persist() }
+    }
+
+    fun scheduleSave(delayMs: Long = 260L) {
+        saveDebounceJob?.cancel()
+        saveDebounceJob = viewModelScope.launch {
+            delay(delayMs)
+            persist()
+        }
     }
 
     // ---- 导航 ----
 
-    fun configureViewport(width: Int, height: Int, topInset: Float, bottomInsetValue: Float) {
+    var leftInset by mutableStateOf(0f)
+    var rightInset by mutableStateOf(0f)
+
+    fun configureViewport(
+        width: Int,
+        height: Int,
+        topInset: Float,
+        bottomInsetValue: Float,
+        leftInsetValue: Float = 0f,
+        rightInsetValue: Float = 0f,
+    ) {
         viewportWidth = width
         viewportHeight = height
         statusInset = topInset
         bottomInset = bottomInsetValue
+        leftInset = leftInsetValue
+        rightInset = rightInsetValue
         wide = width >= 700
         val nextLandscape = width > height
         if (nextLandscape != landscape) landscape = nextLandscape
@@ -870,7 +1292,10 @@ class AppViewModel(internal val app: LxMineApp) : ViewModel() {
         openedPlaylist != null -> openedPlaylist?.name.orEmpty()
         downloadsOpen -> "下载"
         sourcesOpen -> "音源"
+        settingsPanel == "playback" -> "播放与音效"
+        settingsPanel == "appearance" -> "外观与背景"
         settingsPanel == "lyrics" -> "歌词设置"
+        settingsPanel == "general" -> "通用与交互"
         settingsPanel == "sync" -> "局域网同步"
         tab == "发现" && searchOpen -> openedEntity?.name ?: "搜索"
         else -> "LxMine"
@@ -883,6 +1308,7 @@ class AppViewModel(internal val app: LxMineApp) : ViewModel() {
         }
         downloadsOpen -> if (downloadItems.isNotEmpty()) "${downloadItems.size} 个下载" else ""
         sourcesOpen -> "${sources.size} 个音源"
+        tab == "发现" && searchOpen && openedEntity != null -> if (entitySongs.isNotEmpty()) "${entitySongs.size} 首歌曲" else if (loading) "正在读取…" else ""
         tab == "发现" && searchOpen && openedEntity == null -> "公共音乐检索"
         else -> ""
     }
@@ -890,7 +1316,8 @@ class AppViewModel(internal val app: LxMineApp) : ViewModel() {
     fun secondaryBackLabel(): String = when {
         downloadsOpen -> if (downloadsReturnTab == "设置") "返回设置" else "返回曲库"
         sourcesOpen || settingsPanel != "main" -> "返回设置"
-        tab == "发现" && searchOpen -> "返回首页"
+        tab == "发现" && searchOpen -> if (openedEntity != null) "返回搜索" else if (searchReturnToPlayer) "返回播放" else "返回首页"
+        openedPlaylist != null && playlistReturnToPlayer -> "返回播放"
         else -> "返回"
     }
 
@@ -913,6 +1340,10 @@ class AppViewModel(internal val app: LxMineApp) : ViewModel() {
             searchToken++
             loading = false
         }
+        searchReturnToPlayer = false
+        playlistReturnToPlayer = false
+        playlistReturnSearch = false
+        searchAddedPlaylistMap.clear()
         settingsPanel = "main"
         tab = target
         openedPlaylist = null
@@ -1034,9 +1465,14 @@ class AppViewModel(internal val app: LxMineApp) : ViewModel() {
     }
 
     fun openSearch() {
-        if (searchOpen) return
+        if (searchOpen && tab == "发现" && openedPlaylist == null) return
         resetListTools()
+        searchReturnToPlayer = false
+        searchAddedPlaylistMap.clear()
         searchWasCompact = compactHeader()
+        tab = "发现"
+        openedPlaylist = null
+        downloadsOpen = false
         feedSection = ""
         keyword = ""
         submitted = ""
@@ -1054,8 +1490,14 @@ class AppViewModel(internal val app: LxMineApp) : ViewModel() {
         // 让仍在路上的搜索请求作废，避免关掉搜索页后旧结果又把它填满。
         searchToken++
         loading = false
+        val shouldReturn = searchReturnToPlayer
+        searchReturnToPlayer = false
+        searchAddedPlaylistMap.clear()
         discoveryCompact = searchWasCompact
         searchMorph = if (searchWasCompact || viewportHeight < 500) 1f else 0f
+        if (shouldReturn && selected != null) {
+            showPlayer = true
+        }
     }
 
     fun openSettingsPanel(panel: String) {
@@ -1085,6 +1527,21 @@ class AppViewModel(internal val app: LxMineApp) : ViewModel() {
         pollJob?.cancel()
         autoSyncJob?.cancel()
         batchDownloadJob?.cancel()
+        autoMixPreloadJob?.cancel()
+        preResolveJob?.cancel()
+        sleepTimerJob?.cancel()
+        PlaybackController.onState = null
+        PlaybackController.onFadeOutChanged = null
+        PlaybackController.onTime = null
+        PlaybackController.onPreviewRecovered = null
+        PlaybackController.onError = null
+        PlaybackController.onSourceReady = null
+        PlaybackController.onBluetoothAudioChanged = null
+        PlaybackController.onBeforeCompleted = null
+        PlaybackController.onAutoMixCommit = null
+        PlaybackController.onSongChanged = null
+        lanSyncServer?.onIncomingChanged = null
+        earMonitor.stop()
         lanDiscovery?.stop()
         lanSyncServer?.stop()
     }
@@ -1140,7 +1597,7 @@ fun createPlaylist(name: String, favorite: Boolean = false): MusicPlaylist = Mus
 
 fun playlistWithSong(playlist: MusicPlaylist, song: Song, remove: Boolean = false): MusicPlaylist {
     val songs = playlist.songs.filter { it.key != song.key }.toMutableList()
-    if (!remove) songs.add(song)
+    if (!remove) songs.add(0, song)
     return playlist.copy(
         songs = songs,
         songIds = songs.map { it.key },
@@ -1150,10 +1607,16 @@ fun playlistWithSong(playlist: MusicPlaylist, song: Song, remove: Boolean = fals
 
 fun parsePlaylists(json: String): List<MusicPlaylist> {
     val parsed = MusicPlaylist.listFromJson(json)
-    if (parsed.isEmpty() || parsed.any { it.isFavorite }) return parsed
-    val namedFavIndex = parsed.indexOfFirst { it.name == "我喜欢的" }
-    if (namedFavIndex < 0) return parsed
-    return parsed.mapIndexed { idx, item -> if (idx == namedFavIndex) item.copy(isFavorite = true) else item }
+    if (parsed.isEmpty()) return parsed
+    return parsed.map { item ->
+        val fav = item.isFavorite || item.name == "我喜欢的" || item.name == "我的收藏"
+        if (fav) {
+            item.copy(
+                isFavorite = true,
+                name = if (item.name.isEmpty() || item.name == "我喜欢的") "我的收藏" else item.name,
+            )
+        } else item
+    }
 }
 
 fun uniqueSyncSources(sources: List<SyncSourcePayload>): List<SyncSourcePayload> {

@@ -35,6 +35,7 @@ fun AmbientBackdrop(
             coil.compose.AsyncImage(
                 model = remember(context, bgImage) { coil.request.ImageRequest.Builder(context)
                     .data(java.io.File(bgImage))
+                    .size(1080, 1920)
                     .crossfade(false)
                     .build() },
                 contentDescription = null,
@@ -48,7 +49,7 @@ fun AmbientBackdrop(
                 coil.compose.AsyncImage(
                     model = remember(context, coverUrl) { coil.request.ImageRequest.Builder(context)
                         .data(coverUrl)
-                        .size(512, 512)
+                        .size(128, 128)
                         .crossfade(false)
                         .build() },
                     contentDescription = null,

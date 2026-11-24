@@ -2837,15 +2837,22 @@ async function qqGetJSON(targetUrl, params, opts) {
   return parseJSONText(text);
 }
 
-function audioProxyHeadersFor(audioUrl, range) {
-  const headers = { 'User-Agent': UA, Referer: 'https://music.163.com/' };
-  try {
-    const host = new URL(audioUrl).hostname.toLowerCase();
-    if (host.includes('qq.com') || host.includes('qpic.cn')) headers.Referer = 'https://y.qq.com/';
-    if (host.includes('qishui.com') || host.includes('byteimg.com') || host.includes('douyin')) headers.Referer = 'https://www.qishui.com/';
-    const kugouReferer = kugouAudioReferer(audioUrl);
-    if (kugouReferer) headers.Referer = kugouReferer;
-  } catch (e) {}
+function audioProxyHeadersFor(audioUrl, range, omitReferer = false) {
+  const headers = { 'User-Agent': UA };
+  if (!omitReferer) {
+    try {
+      const host = new URL(audioUrl).hostname.toLowerCase();
+      if (host.includes('163.com') || host.includes('126.net')) headers.Referer = 'https://music.163.com/';
+      else if (host.includes('qq.com') || host.includes('qpic.cn') || host.includes('stream.qqmusic')) headers.Referer = 'https://y.qq.com/';
+      else if (host.includes('kuwo.cn') || host.includes('kwcdn')) headers.Referer = 'https://www.kuwo.cn/';
+      else if (host.includes('migu.cn')) headers.Referer = 'https://music.migu.cn/';
+      else if (host.includes('qishui.com') || host.includes('byteimg.com') || host.includes('douyin')) headers.Referer = 'https://www.qishui.com/';
+      else {
+        const kugouReferer = kugouAudioReferer(audioUrl);
+        if (kugouReferer) headers.Referer = kugouReferer;
+      }
+    } catch (e) {}
+  }
   if (range) headers.Range = range;
   return headers;
 }
@@ -6772,8 +6779,12 @@ const server = http.createServer(async (req, res) => {
           return;
         }
       }
-      const hdr = audioProxyHeadersFor(audioUrl, range);
-      const up = await fetchWithTimeout(audioUrl, { headers: hdr }, 9000);
+      const hdr = audioProxyHeadersFor(audioUrl, range, false);
+      let up = await fetchWithTimeout(audioUrl, { headers: hdr }, 12000);
+      if ((up.status === 403 || up.status === 401) && hdr.Referer) {
+        try { up.body?.cancel?.(); } catch (_) {}
+        up = await fetchWithTimeout(audioUrl, { headers: audioProxyHeadersFor(audioUrl, range, true) }, 12000);
+      }
       const out = {
         'Content-Type': audioContentTypeForUrl(audioUrl, up.headers.get('content-type')),
         'Access-Control-Allow-Origin': '*',

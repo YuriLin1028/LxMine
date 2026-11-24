@@ -290,11 +290,25 @@ function createLanSyncTransport(options) {
       }
       jsonResponse(res, 404, { message: 'not found' });
     });
-    server.on('error', reject);
-    server.listen(0, '0.0.0.0', () => {
-      port = server.address().port;
-      resolve(port);
-    });
+    const preferredPorts = [41300, 41301, 41302, 41303, 41304, 41305, 0];
+    let attempt = 0;
+    const tryListen = () => {
+      const targetPort = preferredPorts[attempt++];
+      const onError = err => {
+        if (err && (err.code === 'EADDRINUSE' || err.code === 'EACCES') && attempt < preferredPorts.length) {
+          tryListen();
+          return;
+        }
+        reject(err);
+      };
+      server.once('error', onError);
+      server.listen(targetPort, '0.0.0.0', () => {
+        server.off('error', onError);
+        port = server.address().port;
+        resolve(port);
+      });
+    };
+    tryListen();
   });
 
   const startDiscovery = () => new Promise((resolve, reject) => {

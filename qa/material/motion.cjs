@@ -175,7 +175,7 @@ const tone = () => {
       await page.locator('#dock-copy').click(); await page.waitForTimeout(1300);
       // Warm the entire scenario, including the different panel-filter graph,
       // rather than warming only the detail capsule and cold-testing menus.
-      await page.locator('#quality-btn').click(); await page.waitForTimeout(600);
+      await page.locator('#style-btn').click(); await page.waitForTimeout(600);
       await page.locator('.menu-backdrop').click({ position: { x: 10, y: 150 } }); await page.waitForTimeout(300);
       await page.locator('#style-btn').click(); await page.waitForTimeout(850);
       await page.keyboard.press('Escape'); await page.waitForTimeout(250);
@@ -187,12 +187,12 @@ const tone = () => {
       await mark('detail-enter');
       await page.locator('#dock-copy').click(); await page.waitForTimeout(1300); await shot('detail');
       result.stage = await page.evaluate(() => document.querySelector('#stage-frame').contentWindow.lxmineStage.diagnostics());
-      await mark('quality-menu');await page.locator('#quality-btn').click(); await page.waitForTimeout(600); await shot('popover');
+      await mark('style-menu');await page.locator('#style-btn').click(); await page.waitForTimeout(600); await shot('popover');
       result.popoverFilter = await page.locator('.popover').evaluate(n => getComputedStyle(n).backdropFilter);
       await page.locator('.menu-backdrop').click({ position: { x: 10, y: 150 } }); await page.waitForTimeout(300);
       result.popupCycles=[];
       for(let cycle=0;cycle<6;cycle++){
-        const selector=cycle%2?'#style-btn':'#quality-btn';await mark('popup-cycle-'+cycle);
+        const selector='#style-btn';await mark('popup-cycle-'+cycle);
         await page.locator(selector).click();await page.waitForTimeout(cycle===4?90:800);
         result.popupCycles.push(await page.locator('.anchored-menu').evaluate(n=>({width:n.offsetWidth,height:n.offsetHeight,filter:getComputedStyle(n.querySelector('.glass-surface')).backdropFilter})));
         await page.keyboard.press('Escape');await page.waitForTimeout(250);

@@ -46,40 +46,55 @@ data class LanDevice(
 fun mergeSyncedPlaylists(local: List<MusicPlaylist>, incoming: List<MusicPlaylist>): List<MusicPlaylist> {
     if (incoming.isEmpty()) return local
     val result = mutableListOf<MusicPlaylist>()
-    val localFav = local.firstOrNull { it.isFavorite }
-    val incomingFav = incoming.firstOrNull { it.isFavorite }
+    val isFavList: (MusicPlaylist) -> Boolean = { it.isFavorite || it.name == "我喜欢的" || it.name == "我的收藏" }
+    val localFav = local.firstOrNull(isFavList)
+    val incomingFav = incoming.firstOrNull(isFavList)
     when {
         localFav != null && incomingFav != null -> {
-            if (incomingFav.updatedAt > localFav.updatedAt) {
+            if (incomingFav.songs.isEmpty() && localFav.songs.isNotEmpty()) {
+                result.add(localFav.copy(isFavorite = true))
+            } else {
+                val primary = if (incomingFav.updatedAt >= localFav.updatedAt) incomingFav.songs else localFav.songs
+                val secondary = if (primary === incomingFav.songs) localFav.songs else incomingFav.songs
+                val seen = LinkedHashSet<String>()
+                val combined = mutableListOf<com.lxlia.player.model.Song>()
+                for (song in primary) if (seen.add(song.key)) combined.add(song)
+                for (song in secondary) if (seen.add(song.key)) combined.add(song)
                 result.add(
-                    incomingFav.copy(
-                        id = localFav.id,
-                        name = incomingFav.name.ifEmpty { localFav.name },
+                    localFav.copy(
+                        name = incomingFav.name.takeIf { it.isNotEmpty() && it != "我喜欢的" }
+                            ?: localFav.name.takeIf { it.isNotEmpty() && it != "我喜欢的" }
+                            ?: "我的收藏",
+                        songs = combined,
+                        songIds = combined.map { it.key },
+                        updatedAt = maxOf(localFav.updatedAt, incomingFav.updatedAt),
                         isFavorite = true,
+                        customCover = incomingFav.customCover.ifEmpty { localFav.customCover },
                     ),
                 )
-            } else {
-                result.add(localFav)
             }
         }
-        localFav != null -> result.add(localFav)
+        localFav != null -> result.add(localFav.copy(isFavorite = true))
         incomingFav != null -> result.add(incomingFav.copy(isFavorite = true))
     }
 
-    val incomingById = incoming.filterNot { it.isFavorite }.associateBy { it.id }
+    val incomingById = incoming.filterNot(isFavList).associateBy { it.id }
     val handledIds = mutableSetOf<String>()
     for (item in local) {
-        if (item.isFavorite) continue
+        if (isFavList(item)) continue
         val remote = incomingById[item.id]
         if (remote != null) {
             handledIds.add(item.id)
-            result.add(if (remote.updatedAt > item.updatedAt) remote else item)
+            result.add(
+                if (remote.updatedAt > item.updatedAt) remote.copy(customCover = remote.customCover.ifEmpty { item.customCover })
+                else item,
+            )
         } else {
             result.add(item)
         }
     }
     for (remote in incoming) {
-        if (remote.isFavorite) continue
+        if (isFavList(remote)) continue
         if (remote.id.isNotEmpty() && remote.id !in handledIds) {
             result.add(remote)
             handledIds.add(remote.id)
@@ -224,6 +239,10 @@ class LanSyncServer(private val confirmationTimeoutMs: Long = 120000) {
         port = 0
     }
 
+    /** 局域网同步收到新请求或队列变化时的推送回调，避免 UI 300ms 轮询。 */
+    @Volatile
+    var onIncomingChanged: (() -> Unit)? = null
+
     /** 供 UI 轮询：返回尚未处理的第一条请求（不消费，respond 时移除）。 */
     fun pollIncoming(): SyncIncoming? = synchronized(pending) { pending.values.firstOrNull()?.incoming }
 
@@ -238,6 +257,7 @@ class LanSyncServer(private val confirmationTimeoutMs: Long = 120000) {
     fun respond(id: String, accepted: Boolean, message: String = "") {
         val entry = synchronized(pending) { pending.remove(id) } ?: return
         entry.reply(200, JSONObject().put("accepted", accepted).put("message", message).toString())
+        onIncomingChanged?.invoke()
     }
 
     fun receivePulled(body: String): Boolean {
@@ -393,6 +413,7 @@ class LanSyncServer(private val confirmationTimeoutMs: Long = 120000) {
             sendReply(400, """{"accepted":false,"message":"too many pending requests"}""")
             return
         }
+        onIncomingChanged?.invoke()
         // 2 分钟无人确认则拒绝；请求一直挂起，本机落盘成功后才回 success。
         thread(isDaemon = true) {
             Thread.sleep(confirmationTimeoutMs)
@@ -401,6 +422,7 @@ class LanSyncServer(private val confirmationTimeoutMs: Long = 120000) {
             }
             if (expired != null) {
                 expired.reply(200, JSONObject().put("accepted", false).put("message", "接收方确认超时").toString())
+                onIncomingChanged?.invoke()
             }
         }
     }

@@ -2,6 +2,8 @@ package com.lxlia.player.ui
 
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
+import androidx.compose.foundation.combinedClickable
+import androidx.compose.foundation.interaction.MutableInteractionSource
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
@@ -40,6 +42,7 @@ import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.layout.onGloballyPositioned
 import androidx.compose.ui.layout.positionInParent
+import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
@@ -122,8 +125,8 @@ fun CoverCard(
                     verticalAlignment = Alignment.CenterVertically,
                     horizontalArrangement = Arrangement.spacedBy(3.dp),
                 ) {
-                    AssetIcon("ic_play.svg", size = 10.dp, tint = TEXT)
-                    Text(countText, fontSize = 10.sp, color = TEXT, maxLines = 1)
+                    AssetIcon("ic_play.svg", size = 10.dp, tint = Color.White)
+                    Text(countText, fontSize = 10.sp, color = Color.White, maxLines = 1)
                 }
             }
         }
@@ -156,7 +159,8 @@ private fun bannerNote(item: FeedPlaylist): String {
 private fun bannerItems(feed: HomeFeed?): List<FeedPlaylist> {
     val items = mutableListOf<FeedPlaylist>()
     feed?.daily?.let { items.add(it) }
-    for (chart in feed?.charts.orEmpty()) {
+    val chartPool = feed?.bannerCharts?.takeIf { it.isNotEmpty() } ?: feed?.charts.orEmpty()
+    for (chart in chartPool) {
         if (items.size >= 6) break
         items.add(chart)
     }
@@ -164,8 +168,8 @@ private fun bannerItems(feed: HomeFeed?): List<FeedPlaylist> {
 }
 
 /**
- * 首页：华为音乐样式的融合首屏（头图、新歌速递、动效/推荐/热门歌单/分类、相似推荐）。
- * 板块顺序与鸿蒙 MineHome 完全一致，锚点 id 供快捷胶囊使用。
+ * 首页：华为音乐样式的融合首屏（头图、猜你喜欢、新歌速递、推荐/排行/热门/分类、相似推荐）。
+ * 板块顺序与鸿蒙 MineHome 完全一致，锚点与滚动坐标统一换算为 dp（对应鸿蒙 vp）。
  */
 @Composable
 fun HomePage(
@@ -179,33 +183,37 @@ fun HomePage(
     val feed = vm.homeFeed
     val likedKeys = vm.likedKeys
     val scroll = rememberScrollState()
+    val density = LocalDensity.current.density.coerceAtLeast(1f)
     var newSongsSort by rememberSaveable { mutableStateOf("added") }
     var newSongsManual by rememberSaveable { mutableStateOf<List<String>>(emptyList()) }
     var orderOpen by remember { mutableStateOf(false) }
     var orderSongs by remember { mutableStateOf<List<Song>>(emptyList()) }
     androidx.activity.compose.BackHandler(enabled = orderOpen) { orderOpen = false }
 
-    LaunchedEffect(scroll) {
+    LaunchedEffect(scroll, density) {
         snapshotFlow {
             if (vm.tab == "发现" && !vm.showPlayer && !vm.searchOpen && vm.feedSection.isEmpty())
                 Triple(scroll.value, scroll.maxValue, scroll.isScrollInProgress) else null
         }.collect { state ->
             val (value, max, moving) = state ?: return@collect
-            onScrollOffset(value.toFloat(), moving)
+            val offsetDp = value / density
+            onScrollOffset(offsetDp, moving)
             onEdgeBottom(max > 0 && value >= max - 2)
-            vm.updateChipAnchorFromScroll(value.toFloat())
+            vm.updateChipAnchorFromScroll(offsetDp)
         }
     }
 
-    fun sortedNewSongs(): List<Song> = orderSongList(feed?.newSongs.orEmpty(), newSongsSort, newSongsManual)
+    val sortedNewSongs = remember(feed?.newSongs, newSongsSort, newSongsManual) {
+        orderSongList(feed?.newSongs.orEmpty(), newSongsSort, newSongsManual)
+    }
 
-    // 快捷胶囊点击 → 滚到对应板块（与鸿蒙 onHomeChip 的几何算法等价）。
-    LaunchedEffect(vm.scrollRequest) {
+    // 快捷胶囊点击 → 滚到对应板块（target 与 contentTop 均为 dp，乘回 density 得 px）。
+    LaunchedEffect(vm.scrollRequest, density) {
         val anchor = vm.scrollRequest ?: return@LaunchedEffect
-        val target = vm.anchorOffsets[anchor]
-        if (target != null) {
-            val offset = (target - (contentTop + 64)).toInt().coerceAtLeast(0)
-            scroll.animateScrollTo(offset)
+        val targetDp = vm.anchorOffsets[anchor]
+        if (targetDp != null) {
+            val offsetPx = ((targetDp - (contentTop + 64f)) * density).toInt().coerceAtLeast(0)
+            scroll.animateScrollTo(offsetPx)
         }
         vm.scrollRequest = null
     }
@@ -232,9 +240,9 @@ fun HomePage(
                     }
                 }
             }
-            val banners = bannerItems(feed)
+            val banners = remember(feed) { bannerItems(feed) }
             if (banners.isNotEmpty()) {
-                Box(Modifier.fillMaxWidth().onGloballyPositioned { onAnchorOffset("banner", it.positionInParent().y) }) {
+                Box(Modifier.fillMaxWidth().onGloballyPositioned { onAnchorOffset("banner", it.positionInParent().y / density) }) {
                     LazyRow(
                         modifier = Modifier.fillMaxWidth().height(238.dp),
                         horizontalArrangement = Arrangement.spacedBy(12.dp),
@@ -253,52 +261,68 @@ fun HomePage(
                     }
                 }
             }
-            if (feed != null && feed.similar.isNotEmpty()) {
+            val forYouSongs = feed?.forYou?.takeIf { it.isNotEmpty() } ?: feed?.similar.orEmpty()
+            if (feed != null && forYouSongs.isNotEmpty()) {
+                val forYouNote = if (feed.topArtists.isNotEmpty()) {
+                    "基于常听：${feed.topArtists.take(3).joinToString(" · ")}"
+                } else {
+                    "根据你的听歌口味推荐"
+                }
                 Column(
                     modifier = Modifier
                         .fillMaxWidth()
-                        .onGloballyPositioned { onAnchorOffset("similar", it.positionInParent().y) },
+                        .onGloballyPositioned { onAnchorOffset("forYou", it.positionInParent().y / density) },
                     verticalArrangement = Arrangement.spacedBy(12.dp),
                 ) {
                     SectionTitle(
                         title = "猜你喜欢",
-                        note = "基于你的常听与喜欢歌手",
-                        section = "similar",
-                        onMore = { vm.openFeedSection("similar") },
+                        note = forYouNote,
+                        section = "forYou",
+                        onMore = { vm.openFeedSection("forYou") },
                     )
-                    FeedSongCardRow(feed.similar) { vm.playSong(it, feed.similar) }
+                    FeedSongCardRow(
+                        items = forYouSongs,
+                        likedKeys = likedKeys,
+                        onPlay = { vm.playSong(it, forYouSongs, preserveQueue = true) },
+                        onLike = { vm.like(it) },
+                        onAddToPlaylist = { vm.addToPlaylist(it) },
+                        onDownload = { vm.downloadSong(it) },
+                    )
                 }
             }
             if (feed != null && feed.newSongs.isNotEmpty()) {
                 Column(
                     modifier = Modifier
                         .fillMaxWidth()
-                        .onGloballyPositioned { onAnchorOffset("newSongs", it.positionInParent().y) },
+                        .onGloballyPositioned { onAnchorOffset("newSongs", it.positionInParent().y / density) },
                     verticalArrangement = Arrangement.spacedBy(10.dp),
                 ) {
-                    SectionTitle("新歌速递", section = "newSongs", onMore = { vm.openFeedSection("newSongs") })
+                    SectionTitle(
+                        title = "新歌速递",
+                        note = "四平台新声同步汇聚",
+                        section = "newSongs",
+                        onMore = { vm.openFeedSection("newSongs") },
+                    )
                     SongListTools(
                         countText = "${feed.newSongs.size} 首歌曲",
                         modifier = Modifier.padding(horizontal = 20.dp),
                         onPlayAll = {
-                            val list = sortedNewSongs()
-                            if (list.isNotEmpty()) vm.playSong(list.first(), list)
+                            if (sortedNewSongs.isNotEmpty()) vm.playSong(sortedNewSongs.first(), sortedNewSongs)
                         },
-                        onBatchDownload = { vm.downloadBatch(sortedNewSongs()) },
                         onSort = { newSongsSort = it },
                         onManual = {
-                            orderSongs = sortedNewSongs()
+                            orderSongs = sortedNewSongs
                             orderOpen = true
                         },
                     )
                     Column(Modifier.padding(horizontal = 20.dp), verticalArrangement = Arrangement.spacedBy(2.dp)) {
-                        sortedNewSongs().take(10).forEach { song ->
+                        sortedNewSongs.take(10).forEach { song ->
                             SongRow(
                                 song = song,
                                 active = vm.playing && vm.selected?.key == song.key,
                                 liked = song.key in likedKeys,
                                 wide = wide,
-                                onClick = { vm.playSong(song, sortedNewSongs()) },
+                                onClick = { vm.playSong(song, sortedNewSongs, preserveQueue = true) },
                                 onLike = { vm.like(song) },
                                 onMore = { vm.addToPlaylist(song) },
                                 onDownload = { vm.downloadSong(song) },
@@ -312,7 +336,7 @@ fun HomePage(
                     Column(
                         modifier = Modifier
                             .fillMaxWidth()
-                            .onGloballyPositioned { onAnchorOffset(section.id, it.positionInParent().y) },
+                            .onGloballyPositioned { onAnchorOffset(section.id, it.positionInParent().y / density) },
                         verticalArrangement = Arrangement.spacedBy(12.dp),
                     ) {
                         if (section.kind == "playlist") {
@@ -333,6 +357,29 @@ fun HomePage(
                             }
                         }
                     }
+                }
+            }
+            if (feed != null && feed.forYou.isNotEmpty() && feed.similar.isNotEmpty()) {
+                Column(
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .onGloballyPositioned { onAnchorOffset("similar", it.positionInParent().y / density) },
+                    verticalArrangement = Arrangement.spacedBy(12.dp),
+                ) {
+                    SectionTitle(
+                        title = "相似推荐",
+                        note = vm.selected?.singer?.takeIf { it.isNotEmpty() } ?: "继续发现",
+                        section = "similar",
+                        onMore = { vm.openFeedSection("similar") },
+                    )
+                    FeedSongCardRow(
+                        items = feed.similar,
+                        likedKeys = likedKeys,
+                        onPlay = { vm.playSong(it, feed.similar, preserveQueue = true) },
+                        onLike = { vm.like(it) },
+                        onAddToPlaylist = { vm.addToPlaylist(it) },
+                        onDownload = { vm.downloadSong(it) },
+                    )
                 }
             }
         }
@@ -496,15 +543,43 @@ private fun FeedPlaylistRow(items: List<FeedPlaylist>, onOpen: (FeedPlaylist) ->
 }
 
 @Composable
-private fun FeedSongCardRow(items: List<Song>, onPlay: (Song) -> Unit) {
+private fun FeedSongCardRow(
+    items: List<Song>,
+    likedKeys: Set<String>,
+    onPlay: (Song) -> Unit,
+    onLike: (Song) -> Unit,
+    onAddToPlaylist: (Song) -> Unit,
+    onDownload: (Song) -> Unit,
+) {
     LazyRow(
         modifier = Modifier.fillMaxWidth().height(194.dp),
         horizontalArrangement = Arrangement.spacedBy(12.dp),
         contentPadding = PaddingValues(horizontal = 20.dp),
     ) {
         items(items, key = { "${it.source}:${it.id}" }) { song ->
+            val liked = song.key in likedKeys
+            val cardMenu = rememberGlassMenuTrigger {
+                buildList {
+                    add(GlassMenuItem("立即播放") { onPlay(song) })
+                    add(GlassMenuItem(if (liked) "取消收藏" else "收藏") { onLike(song) })
+                    add(GlassMenuItem("添加到歌单") { onAddToPlaylist(song) })
+                    if (song.source != "local") {
+                        add(GlassMenuItem("下载歌曲") { onDownload(song) })
+                    }
+                }
+            }
             Column(
-                modifier = Modifier.width(140.dp).height(190.dp).tapNoRipple { onPlay(song) },
+                modifier = Modifier
+                    .width(140.dp)
+                    .height(190.dp)
+                    .then(cardMenu.modifier)
+                    .clip(RoundedCornerShape(16.dp))
+                    .combinedClickable(
+                        interactionSource = remember { MutableInteractionSource() },
+                        indication = null,
+                        onClick = { onPlay(song) },
+                        onLongClick = { cardMenu.show() },
+                    ),
                 verticalArrangement = Arrangement.spacedBy(8.dp),
             ) {
                 CoverCard(
@@ -562,7 +637,9 @@ fun LocalPlaylistCard(playlist: MusicPlaylist, onOpen: () -> Unit) {
                     systemSymbol = false,
                 )
             }
-            val cover = playlist.songs.firstOrNull { it.coverUrl.isNotEmpty() }?.coverUrl.orEmpty()
+            val cover = playlist.customCover.ifEmpty {
+                playlist.songs.firstOrNull { it.coverUrl.isNotEmpty() }?.coverUrl.orEmpty()
+            }
             if (cover.isNotEmpty()) {
                 RemoteImage(cover, modifier = Modifier.fillMaxSize(), contentScale = ContentScale.Crop)
             }

@@ -63,7 +63,7 @@
       else if (content.list && typeof content.list === 'object') {
         const lists = content.list;
         data = [lists.defaultList && { ...lists.defaultList, name: lists.defaultList.name || '默认列表' },
-          lists.loveList && { ...lists.loveList, name: lists.loveList.name || '我喜欢的' }, ...(lists.userList || [])].filter(Boolean);
+          lists.loveList && { ...lists.loveList, name: (!lists.loveList.name || lists.loveList.name === '我喜欢的') ? '我的收藏' : lists.loveList.name }, ...(lists.userList || [])].filter(Boolean);
       } else data = content.playlists || content.playList || (content.defaultList ? [content.defaultList] : content);
     }
     if (!data || typeof data !== 'object') throw new Error('文件中的歌单数据无效');
@@ -269,11 +269,40 @@
           const candidates = items.map(raw => song(raw, source));
           const exact = candidates.find(candidate => candidate.source === original.source && candidate.id.toLowerCase() === String(original.id).toLowerCase());
           if (exact) return exact;
-          const matches = candidates.filter(candidate =>
-            matchingText(candidate.name) === matchingText(original.name) &&
-            matchingText(candidate.singer).split(/[、,&/]/).filter(Boolean).sort().join('|') === artists &&
-            (!original.durationMs || !candidate.durationMs || Math.abs(original.durationMs - candidate.durationMs) <= 3000));
-          if (matches.length) return matches.find(candidate => matchingText(candidate.albumName) === matchingText(original.albumName)) || matches[0];
+          const matches = candidates.filter(candidate => {
+            if (hasConflictingVersionTag(original.name, candidate.name, original.albumName, candidate.albumName)) return false;
+            const titleSame = matchingText(candidate.name) === matchingText(original.name) || coreTitle(candidate.name) === coreTitle(original.name);
+            if (!titleSame) return false;
+            const origToks = artistTokens(original.singer);
+            const candToks = artistTokens(candidate.singer);
+            if (!origToks.length || !candToks.length || !hasArtistOverlap(origToks, candToks)) return false;
+            if (hasConflictingArtistPersona(original.singer, candidate.singer)) return false;
+            if (original.durationMs > 0 && candidate.durationMs > 0 && Math.abs(original.durationMs - candidate.durationMs) > 5000) return false;
+            return true;
+          });
+          if (matches.length) {
+            const origDur = Number(original.durationMs) || 0;
+            const origAlb = coreTitle(original.albumName || '');
+            const filtered = origDur > 0 && matches.some(c => c.durationMs > 0)
+              ? matches.filter(c => c.durationMs > 0 && Math.abs(c.durationMs - origDur) <= 5000)
+              : matches;
+            const pool = filtered.length ? filtered : matches;
+            pool.sort((a, b) => {
+              const albA = origAlb && coreTitle(a.albumName || '') === origAlb ? 1 : 0;
+              const albB = origAlb && coreTitle(b.albumName || '') === origAlb ? 1 : 0;
+              if (albA !== albB) return albB - albA;
+              const exactA = matchingText(a.name) === matchingText(original.name) ? 1 : 0;
+              const exactB = matchingText(b.name) === matchingText(original.name) ? 1 : 0;
+              if (exactA !== exactB) return exactB - exactA;
+              if (origDur > 0) {
+                const diffA = a.durationMs > 0 ? Math.abs(a.durationMs - origDur) : 999999;
+                const diffB = b.durationMs > 0 ? Math.abs(b.durationMs - origDur) : 999999;
+                if (diffA !== diffB) return diffA - diffB;
+              }
+              return 0;
+            });
+            return pool[0];
+          }
         } catch (_) {}
       }
       throw new Error('暂未找到「' + original.name + '」的同名同歌手版本');
@@ -488,14 +517,16 @@
         const data = await io.json('https://c.y.qq.com/qzone/fcg-bin/fcg_ucc_getcdinfo_byids_cp.fcg?type=1&json=1&utf8=1&onlysong=0&new_format=1&disstid=' + id + '&format=json&platform=yqq.json&needNewCode=0', { headers: { Referer: 'https://y.qq.com/' } });
         if (data.code === 0 && Array.isArray(data.cdlist?.[0]?.songlist)) list = data.cdlist[0];
       } catch (_) {}
-      let tracks = list?.songlist || [];
+      const initialTracks = Array.isArray(list?.songlist) ? list.songlist : [];
+      let tracks = initialTracks.slice();
       let total = list ? number(list.total_song_num ?? list.songnum) : 1;
       let name = list?.dissname || '';
       if (!list || total > tracks.length) {
-        tracks = [];
+        const pagedTracks = [];
         const seen = new Set(), pages = new Set();
         let gateway = 'https://u6.y.qq.com/cgi-bin/musicu.fcg';
         let offset = 0;
+        let truncatedByProvider = false;
         while (offset < total) {
           const body = {
             comm: { cv: 4747474, ct: 24, format: 'json', inCharset: 'utf-8', outCharset: 'utf-8', platform: 'yqq.json', needNewCode: 1, uin: 0 },
@@ -509,35 +540,65 @@
           const validate = data => {
             const result = data.req_1?.data;
             if (data.code !== 0 || data.req_1?.code !== 0 || !Array.isArray(result?.songlist)) throw new Error('QQ 未完整返回歌单，请重试');
-            const reported = result.total_song_num == null ? total : number(result.total_song_num);
-            if (!result.songlist.length && offset < reported) throw new Error('QQ 歌单分页中断，请重试');
-            const fingerprint = result.songlist.map(track => str(track.mid || track.songmid || track.id)).join('|');
-            if (result.songlist.length && pages.has(fingerprint)) throw new Error('QQ 重复返回同一页，请重试');
           };
           let page;
           try { page = await io.json(gateway, options, validate); }
           catch (error) {
-            if (!gateway.includes('u6.y.qq.com')) throw error;
-            gateway = 'https://u.y.qq.com/cgi-bin/musicu.fcg';
-            page = await io.json(gateway, options, validate);
+            if (gateway.includes('u6.y.qq.com')) {
+              gateway = 'https://u.y.qq.com/cgi-bin/musicu.fcg';
+              try { page = await io.json(gateway, options, validate); }
+              catch (fallbackError) {
+                if (pagedTracks.length || initialTracks.length) { truncatedByProvider = true; break; }
+                throw fallbackError;
+              }
+            } else {
+              if (pagedTracks.length || initialTracks.length) { truncatedByProvider = true; break; }
+              throw error;
+            }
           }
-          const result = page.req_1.data;
+          let result = page.req_1.data;
+          if (!result.songlist.length && offset < (result.total_song_num == null ? total : number(result.total_song_num)) && gateway.includes('u6.y.qq.com')) {
+            gateway = 'https://u.y.qq.com/cgi-bin/musicu.fcg';
+            try {
+              const altPage = await io.json(gateway, options, validate);
+              if (altPage?.req_1?.data) result = altPage.req_1.data;
+            } catch (_) {}
+          }
           if (result.total_song_num != null) total = number(result.total_song_num);
           name = result.dirinfo?.title || name;
-          pages.add(result.songlist.map(track => str(track.mid || track.songmid || track.id)).join('|'));
+          if (!result.songlist.length) {
+            if (pagedTracks.length || initialTracks.length) { truncatedByProvider = true; break; }
+            throw new Error('QQ 歌单分页中断，请重试');
+          }
+          const fingerprint = result.songlist.map(track => str(track.mid || track.songmid || track.id)).join('|');
+          if (pages.has(fingerprint)) {
+            if (pagedTracks.length || initialTracks.length) { truncatedByProvider = true; break; }
+            throw new Error('QQ 重复返回同一页，请重试');
+          }
+          pages.add(fingerprint);
           for (const track of result.songlist) {
             const key = str(track.mid || track.songmid || track.id);
             if (!key || seen.has(key)) continue;
             seen.add(key);
-            tracks.push(track);
+            pagedTracks.push(track);
           }
           // The provider's offset counts raw entries, including repeated songs.
           offset += result.songlist.length;
         }
+        if (initialTracks.length > pagedTracks.length) {
+          for (const track of initialTracks) {
+            const key = str(track.mid || track.songmid || track.id);
+            if (!key || seen.has(key)) continue;
+            seen.add(key);
+            pagedTracks.push(track);
+          }
+        }
+        tracks = pagedTracks.length ? pagedTracks : initialTracks;
+        if (truncatedByProvider && !tracks.length) throw new Error('QQ 歌单分页中断，请重试');
       }
       const result = playlist(name, tracks, source);
       result.id = 'lx-import-tx-' + id;
-      if (total > result.songs.length) result.warning = (total - result.songs.length) + ' 条重复或无平台标识的曲目已合并，已导入全部返回的歌曲';
+      if (total > result.songs.length) result.warning = (total - result.songs.length) + ' 条重复、隐藏或不可用曲目已跳过，已导入全部返回歌曲';
       return [result];
     }
     if (source === 'kw') {
@@ -558,17 +619,87 @@
     }
     throw new Error('该平台尚未提供歌单链接导入，请选择歌单备份文件');
   }
+  const IGNORED_ARTIST_TOKENS = new Set([
+    '未知歌手', '未知艺人', '未知', '本地文件', '群星', '佚名', '华语群星', '欧美群星',
+    'variousartists', 'various', 'unknown', 'unknownartist'
+  ]);
+  const ARTIST_PERSONA_RE = /翻唱|翻自|原唱|伴奏|纯音乐|演奏|乐团|钢琴|吉他|古筝|笛子|二胡|小提琴|唢呐|八音盒|\bdj\b|\bcover\b|\bkaraoke\b/i;
+  const VERSION_TAG_GROUPS = [
+    /伴奏|消音|纯音乐|纯音|轻音乐|演奏|钢琴版|吉他版|弹唱|古筝|笛子|二胡|小提琴|八音盒|唢呐|清唱|和声|\binst\.?\b|\binstrumental\b|\bkaraoke\b|卡拉ok|\bbgm\b/i,
+    /\bdj\b|dj版|remix|电音版|慢摇|串烧|mashup|bootleg|加快|加速|降调|升调|倍速|0\.[789]x|1\.[123]x|slowed|sped\s*up|speed\s*up|nightcore|\b8d\b|\b3d\b|环绕|reverb/i,
+    /翻唱|翻自|原唱\s*[:：]?|\bcover\b|致敬|仿唱/i,
+    /\blive\b|现场|演唱会|音乐节|巡演|unplugged|不插电/i,
+    /女声版|女生版|男声版|男生版|童声|戏腔|烟嗓|粤语版|国语版|英文版|英语版|日语版|日文版|韩语版|民谣版|摇滚版|说唱版|acoustic|\bdemo\b/i,
+    /铃声|片段|试听|30秒|高潮版|副歌版|抖音|热播|\btv\s*size\b|\bshort\s*ver/i
+  ];
+  const ALBUM_CONFLICT_GROUPS = [
+    /伴奏|纯音乐|轻音乐|八音盒|钢琴曲|\binstrumental\b|\bkaraoke\b/i,
+    /\bdj\b|dj版|remix|慢摇|串烧|抖音热歌|加快版|倍速/i,
+    /翻唱|翻自|\bcover\b/i
+  ];
   function coreTitle(value) {
+    // Only strip non-semantic metadata tags (OST/movie/feat/original edition), NEVER version-changing tags.
     return matchingText(value)
-      .replace(/\((?:live|现场|伴奏|inst\.?|instrumental|remix|dj[^)]*|国语|粤语|原版|正式版|电影[^)]*|电视剧[^)]*|动画[^)]*|游戏[^)]*)\)/gi, '')
-      .replace(/-(?:live|现场版?|伴奏)$/gi, '')
+      .replace(/\((?:原版|正式版|完整版|单曲版|专辑版|album\s*ver(?:sion)?|single\s*ver(?:sion)?|original(?:\s*mix)?|explicit|clean|电影[^)]*|电视剧[^)]*|网剧[^)]*|动画[^)]*|动漫[^)]*|游戏[^)]*|片头[^)]*|片尾[^)]*|插曲|主题曲|推广曲|宣传曲|原声带|ost|(?:feat|ft|with|prod)\.?\s*[^)]*)\)/gi, '')
+      .replace(/【(?:原版|正式版|完整版|电影[^】]*|电视剧[^】]*|网剧[^】]*|动画[^】]*|游戏[^】]*|ost|主题曲|插曲|片头曲|片尾曲)】/gi, '')
+      .replace(/-(?:原版|正式版|完整版)$/gi, '')
       .replace(/[^\p{L}\p{N}]/gu, '');
   }
   function artistTokens(value) {
-    return matchingText(value)
-      .split(/[、,&/;，feat\.ft\.]+/)
-      .map(part => part.replace(/^[a-z.]+(?=[\u4e00-\u9fff])/i, '').replace(/[^\p{L}\p{N}]/gu, ''))
-      .filter(Boolean);
+    const raw = clean(value);
+    const expanded = raw
+      .replace(/(?:\s+|\()(?:featuring|feat|ft|with|vs)\.?(?:\s+|\))/gi, ',')
+      .replace(/[（(]([^）)]+)[）)]/g, ',$1,');
+    const out = [];
+    const seen = new Set();
+    const push = token => {
+      const cleaned = token.replace(/[^\p{L}\p{N}]/gu, '');
+      if (!cleaned || IGNORED_ARTIST_TOKENS.has(cleaned) || seen.has(cleaned)) return;
+      seen.add(cleaned);
+      out.push(cleaned);
+    };
+    for (const part of matchingText(expanded).split(/[、,&/;，/|]+/)) {
+      if (!part) continue;
+      push(part);
+      // Support bilingual artist formatting like "G.E.M.邓紫棋" -> ["gem邓紫棋", "gem", "邓紫棋"].
+      const cjkSplit = part.match(/^([a-z0-9.]+)([\u4e00-\u9fff\u3040-\u30ff\uac00-\ud7af]{2,})$/i);
+      if (cjkSplit) {
+        push(cjkSplit[1]);
+        push(cjkSplit[2]);
+      }
+      const revSplit = part.match(/^([\u4e00-\u9fff\u3040-\u30ff\uac00-\ud7af]{2,})([a-z0-9]{2,})$/i);
+      if (revSplit) {
+        push(revSplit[1]);
+        push(revSplit[2]);
+      }
+    }
+    return out;
+  }
+  function hasArtistOverlap(origArtists, candArtists) {
+    if (!Array.isArray(origArtists) || !Array.isArray(candArtists) || !origArtists.length || !candArtists.length) return false;
+    // Exact token match only: prevents false collisions like "周杰" vs "周杰伦", "王菲" vs "王菲儿", "陈粒" vs "陈粒翻唱".
+    const candSet = new Set(candArtists);
+    return origArtists.some(a => candSet.has(a));
+  }
+  function hasConflictingArtistPersona(origSinger, candSinger) {
+    const o = String(origSinger || '');
+    const c = String(candSinger || '');
+    return ARTIST_PERSONA_RE.test(c) && !ARTIST_PERSONA_RE.test(o);
+  }
+  function hasConflictingVersionTag(origName, candName, origAlbum, candAlbum) {
+    const o = String(origName || '');
+    const c = String(candName || '');
+    for (const re of VERSION_TAG_GROUPS) {
+      if (re.test(c) !== re.test(o)) return true;
+    }
+    const oa = String(origAlbum || '');
+    const ca = String(candAlbum || '');
+    if (ca) {
+      for (const re of ALBUM_CONFLICT_GROUPS) {
+        if (re.test(ca) && !re.test(oa) && !re.test(o)) return true;
+      }
+    }
+    return false;
   }
   function candidateScore(original, candidate) {
     const origExact = matchingText(original.name);
@@ -576,29 +707,42 @@
     const origCore = coreTitle(original.name);
     const candCore = coreTitle(candidate.name);
     if (!candCore || !origCore) return -1;
+    if (hasConflictingVersionTag(original.name, candidate.name, original.albumName, candidate.albumName)) return -1;
+    if (hasConflictingArtistPersona(original.singer, candidate.singer)) return -1;
+
     let score = 0;
-    if (candExact === origExact) score += 60;
-    else if (candCore === origCore) score += 45;
-    else if (candCore.includes(origCore) || origCore.includes(candCore)) score += 24;
+    if (candExact === origExact) score += 64;
+    else if (candCore === origCore) score += 52;
     else return -1;
-    const origLive = /live|现场/i.test(original.name || '');
-    const candLive = /live|现场/i.test(candidate.name || '');
-    if (origLive !== candLive) score -= 14;
-    if (/伴奏|inst|karaoke|卡拉ok/i.test(candidate.name || '') && !/伴奏|inst/i.test(original.name || '')) score -= 35;
+
     const origArtists = artistTokens(original.singer);
     const candArtists = artistTokens(candidate.singer);
-    if (origArtists.length && candArtists.length) {
-      const overlap = origArtists.some(a => candArtists.some(b => a === b || (a.length >= 2 && b.includes(a)) || (b.length >= 2 && a.includes(b))));
-      if (overlap) score += 35;
-      else score -= 22;
+    if (origArtists.length) {
+      // Strict anti-collision gate: NEVER match a same-title song by a different or missing singer.
+      if (!candArtists.length || !hasArtistOverlap(origArtists, candArtists)) return -1;
+      score += 44;
+      if (origArtists[0] === candArtists[0]) score += 8;
+    } else {
+      // Unknown original artist: require exact title + tight duration (<=2.5s) + matching album when available.
+      const origAlbum = coreTitle(original.albumName || '');
+      const candAlbum = coreTitle(candidate.albumName || '');
+      const durOk = original.durationMs > 0 && candidate.durationMs > 0 && Math.abs(original.durationMs - candidate.durationMs) <= 2500;
+      const albumOk = !origAlbum || (candAlbum && origAlbum === candAlbum);
+      if (candExact !== origExact || !durOk || !albumOk) return -1;
+      score += 24;
     }
+
     if (original.durationMs > 0 && candidate.durationMs > 0) {
       const diff = Math.abs(original.durationMs - candidate.durationMs);
-      if (diff <= 3000) score += 15;
-      else if (diff <= 10000) score += 8;
-      else if (diff > 25000) score -= 15;
+      if (diff > 5500) return -1;
+      if (diff <= 2000) score += 20;
+      else if (diff <= 3500) score += 12;
+      else score += 4;
     }
-    if (candidate.coverUrl) score += 5;
+    const origAlbum = coreTitle(original.albumName || '');
+    const candAlbum = coreTitle(candidate.albumName || '');
+    if (origAlbum && candAlbum && origAlbum === candAlbum) score += 10;
+    if (candidate.coverUrl) score += 4;
     return score;
   }
   async function searchSourceSongs(source, query, io, limit = 15) {
@@ -626,6 +770,8 @@
     const cleanSinger = str(original.singer).replace(/未知歌手|本地文件/g, '').trim();
     const query = [original.name, cleanSinger.split(/[、,&/;，]/)[0] || ''].filter(Boolean).join(' ').trim();
     if (!query) return [];
+    const hasKnownArtist = artistTokens(original.singer).length > 0;
+    const minAcceptedScore = hasKnownArtist ? 96 : 88;
     const settled = await Promise.all(preferred.map(source => searchSourceSongs(source, query, io, 16).catch(() => [])));
     const scored = [];
     const seen = new Set();
@@ -633,7 +779,7 @@
       let count = 0;
       const list = settled[i]
         .map(cand => ({ cand, score: candidateScore(original, cand) }))
-        .filter(entry => entry.score >= 20)
+        .filter(entry => entry.score >= minAcceptedScore)
         .sort((a, b) => b.score - a.score);
       for (const entry of list) {
         const key = entry.cand.source + ':' + entry.cand.id;
@@ -646,7 +792,7 @@
     scored.sort((a, b) => b.score - a.score);
     return scored.map(entry => entry.cand);
   }
-  const api = { normalizeSong: song, fromJson, parseLink, importPlaylist, matchSong, findMatchingSong, searchPlatformCandidates, coreTitle, artistTokens };
+  const api = { normalizeSong: song, fromJson, parseLink, importPlaylist, matchSong, findMatchingSong, searchPlatformCandidates, coreTitle, artistTokens, hasArtistOverlap, candidateScore };
   if (typeof module !== 'undefined' && module.exports) module.exports = api;
   else root.LxPlaylists = api;
 })(typeof window !== 'undefined' ? window : globalThis);

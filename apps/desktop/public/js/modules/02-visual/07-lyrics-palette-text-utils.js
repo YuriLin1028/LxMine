@@ -99,12 +99,15 @@ function lyricBeatGlowThreeColor(pal, fallback, minLum) {
   pal = pal || {};
   return lyricThreeColor(lyricResolvedGlowColor(pal, fallback || '#fff0b8'), fallback || '#fff0b8', minLum == null ? 0.50 : minLum);
 }
+function lyricTranslationThreeColor(pal) {
+  pal = pal || {};
+  return lyricThreeColor(pal.primary || pal.secondary || '#d6f8ff', '#d6f8ff', 0.38);
+}
 function lyricRowGlowThreeColor(pal, isTranslation) {
   pal = pal || {};
-  if (fx && fx.lyricGlowLinked === false) return lyricDetachedGlowThreeColor(isTranslation ? '#fff2bf' : '#9cffdf', isTranslation ? 0.34 : 0.40);
-  return isTranslation
-    ? lyricThreeColor(lyricResolvedGlowColor(pal, '#fff2bf'), '#fff2bf', 0.34)
-    : lyricThreeColor(lyricResolvedGlowColor(pal, '#9cffdf'), '#9cffdf', 0.40);
+  void isTranslation;
+  if (fx && fx.lyricGlowLinked === false) return lyricDetachedGlowThreeColor('#9cffdf', 0.40);
+  return lyricThreeColor(lyricResolvedGlowColor(pal, '#9cffdf'), '#9cffdf', 0.40);
 }
 function setLyricSparkColor(data, color) {
   if (!data || !data.sparkMat) return;
@@ -144,14 +147,14 @@ function applyLyricPaletteToMesh(mesh) {
         if (ru.uGlowColor) ru.uGlowColor.value.copy(lyricStageGlowThreeColor(pal, '#9cffdf', 0.36));
         if (ru.uSolarColor) ru.uSolarColor.value.copy(lyricBeatGlowThreeColor(pal, '#fff0b8', 0.50));
         if (ru.uColor) ru.uColor.value.copy(row.isTranslation
-          ? lyricThreeColor(pal.highlight || pal.primary, '#eaf6ff', 0.42)
+          ? lyricTranslationThreeColor(pal)
           : lyricThreeColor(pal.primary || pal.secondary, '#d6f8ff', 0.34));
         row.mat.needsUpdate = true;
         return;
       }
       if (row.mat.color) {
         row.mat.color.copy(row.isTranslation
-          ? lyricThreeColor(pal.highlight || pal.primary, '#eaf6ff', 0.42)
+          ? lyricTranslationThreeColor(pal)
           : lyricThreeColor(pal.primary || pal.secondary, '#d6f8ff', 0.34));
       }
     });
@@ -564,6 +567,11 @@ function cssColorToThreeColor(css, fallback) {
 }
 function lyricThreeColor(css, fallback, minLum) {
   var c = cssColorToThreeColor(css, fallback || '#d6f8ff');
+  if (typeof LxMineAppearance !== 'undefined' && LxMineAppearance.isLight()) {
+    // Preset palettes also contain rgb() colours. Normalize through THREE
+    // before contrast correction, after the preset's brightness adjustments.
+    return cssColorToThreeColor(LxMineAppearance.readable('#' + c.getHexString()), fallback);
+  }
   var lum = c.r * 0.299 + c.g * 0.587 + c.b * 0.114;
   var floor = minLum == null ? 0.34 : minLum;
   if (lum < floor) {

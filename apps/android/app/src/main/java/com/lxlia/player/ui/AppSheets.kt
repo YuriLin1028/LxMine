@@ -5,31 +5,33 @@ import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
+import androidx.compose.foundation.layout.PaddingValues
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
-import androidx.compose.foundation.layout.fillMaxHeight
+import androidx.compose.foundation.layout.WindowInsets
+import androidx.compose.foundation.layout.asPaddingValues
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
-import androidx.compose.foundation.layout.heightIn
+import androidx.compose.foundation.layout.navigationBars
 import androidx.compose.foundation.layout.padding
-import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.itemsIndexed
 import androidx.compose.foundation.lazy.rememberLazyListState
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.text.BasicTextField
-import androidx.compose.foundation.text.KeyboardOptions
 import androidx.compose.foundation.text.KeyboardActions
+import androidx.compose.foundation.text.KeyboardOptions
 import androidx.compose.foundation.verticalScroll
-import androidx.compose.material3.AlertDialog
-import androidx.compose.material3.ExperimentalMaterial3Api
-import androidx.compose.material3.ModalBottomSheet
 import androidx.compose.material3.Text
-import androidx.compose.material3.rememberModalBottomSheetState
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
+import androidx.compose.runtime.getValue
+import androidx.compose.runtime.key
+import androidx.compose.runtime.mutableStateOf
+import androidx.compose.runtime.remember
+import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
@@ -37,21 +39,50 @@ import androidx.compose.ui.focus.focusRequester
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.SolidColor
 import androidx.compose.ui.text.TextStyle
-import androidx.compose.ui.text.input.ImeAction
 import androidx.compose.ui.text.font.FontWeight
-import androidx.compose.ui.text.style.TextOverflow
+import androidx.compose.ui.text.input.ImeAction
 import androidx.compose.ui.text.style.TextAlign
+import androidx.compose.ui.text.style.TextOverflow
+import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
+
+/** 独立页顶栏统一的纯文字操作按钮（对齐鸿蒙 ButtonStyleMode.TEXTUAL）。 */
+@Composable
+internal fun SheetHeaderTextAction(
+    label: String,
+    color: Color = ACCENT,
+    enabled: Boolean = true,
+    onClick: () -> Unit,
+) {
+    Text(
+        text = label,
+        fontSize = 15.sp,
+        fontWeight = FontWeight.Medium,
+        color = color.copy(alpha = if (enabled) 1f else 0.4f),
+        maxLines = 1,
+        modifier = Modifier
+            .clip(RoundedCornerShape(10.dp))
+            .pressDeform()
+            .clickable(enabled = enabled, onClick = onClick)
+            .padding(horizontal = 8.dp, vertical = 6.dp),
+    )
+}
 
 @Composable
 fun AppSheets(vm: AppViewModel) {
     if (vm.sourceImportReport.isNotEmpty()) {
         GlassDialog(onDismiss = { vm.sourceImportReport = "" }) {
-            Text("音源导入结果", fontSize = 24.sp, fontWeight = FontWeight.Medium, color = TEXT)
-            Text(vm.sourceImportReport, fontSize = 14.sp, color = TEXT,
-                modifier = Modifier.fillMaxWidth().heightIn(max = 360.dp).verticalScroll(rememberScrollState()))
-            PillButton("完成", filled = false, textual = true) { vm.sourceImportReport = "" }
+            Text("音源导入结果", fontSize = 22.sp, fontWeight = FontWeight.SemiBold, color = TEXT)
+            Text(
+                vm.sourceImportReport,
+                fontSize = 14.sp,
+                color = TEXT,
+                modifier = Modifier.fillMaxWidth().weight(1f, fill = false).verticalScroll(rememberScrollState()),
+            )
+            Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.End) {
+                SheetHeaderTextAction("完成", color = ACCENT) { vm.sourceImportReport = "" }
+            }
         }
         return
     }
@@ -75,6 +106,73 @@ fun AppSheets(vm: AppViewModel) {
         )
         return
     }
+    if (vm.pendingClearRecent) {
+        ConfirmRemovalDialog(
+            title = "清空最近播放",
+            message = "确定清空全部 ${vm.recentSongs.size} 条最近播放记录？",
+            confirmLabel = "清空",
+            onDismiss = { vm.pendingClearRecent = false },
+            onConfirm = { vm.confirmClearRecentSongs() },
+        )
+        return
+    }
+    val navBottom = if (vm.wide) 0.dp else WindowInsets.navigationBars.asPaddingValues().calculateBottomPadding()
+    if (vm.moreSubSheet.isNotEmpty()) {
+        val sub = vm.moreSubSheet
+        val subLarge = sub == "音效"
+        key("sub:$sub") {
+            GlassSheet(onDismiss = { vm.moreSubSheet = "" }, wide = vm.wide, large = subLarge) {
+                if (subLarge) {
+                    FixedSheetScrollScaffold(
+                        headerBlurHeight = 86f,
+                        header = {
+                            Row(
+                                modifier = Modifier
+                                    .fillMaxWidth()
+                                    .padding(start = 24.dp, end = 20.dp, top = 20.dp, bottom = 10.dp),
+                                verticalAlignment = Alignment.CenterVertically,
+                                horizontalArrangement = Arrangement.spacedBy(8.dp),
+                            ) {
+                                Column(Modifier.weight(1f), verticalArrangement = Arrangement.spacedBy(2.dp)) {
+                                    Text("音效", fontSize = 24.sp, fontWeight = FontWeight.Bold, color = TEXT, maxLines = 1, overflow = TextOverflow.Ellipsis)
+                                    Text(com.lxlia.player.audio.AudioFxPresets.summary(vm.audioFx), fontSize = 12.sp, color = ACCENT, maxLines = 1)
+                                }
+                                SheetHeaderTextAction("完成", color = ACCENT) { vm.moreSubSheet = "" }
+                            }
+                        },
+                    ) {
+                        PlayerAudioFxSheetContent(
+                            vm = vm,
+                            topPadding = 86.dp,
+                            bottomPadding = navBottom + 28.dp,
+                        )
+                    }
+                } else {
+                    val sleepStatus = when (vm.sleepMode) {
+                        "off" -> "当前未开启定时关闭"
+                        "song" -> "将在本首歌曲播放完成后自动暂停"
+                        else -> "倒计时剩余：${vm.sleepRemainingText.ifEmpty { "已开启" }}"
+                    }
+                    Column(
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .padding(start = 24.dp, end = 24.dp, top = 20.dp, bottom = 24.dp),
+                        verticalArrangement = Arrangement.spacedBy(14.dp),
+                    ) {
+                        Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                            Column(Modifier.weight(1f), verticalArrangement = Arrangement.spacedBy(3.dp)) {
+                                Text("定时关闭", fontSize = 24.sp, fontWeight = FontWeight.Bold, color = TEXT, maxLines = 1, overflow = TextOverflow.Ellipsis)
+                                Text(sleepStatus, fontSize = 12.sp, color = if (vm.sleepMode != "off") ACCENT else MUTED, maxLines = 1, overflow = TextOverflow.Ellipsis)
+                            }
+                            SheetHeaderTextAction("完成", color = ACCENT) { vm.moreSubSheet = "" }
+                        }
+                        PlayerSleepTimerSheetContent(vm, Modifier.weight(1f, fill = false))
+                    }
+                }
+            }
+        }
+        return
+    }
     if (!vm.showSheet) {
         return
     }
@@ -82,73 +180,134 @@ fun AppSheets(vm: AppViewModel) {
         AddToPlaylistDialog(vm)
         return
     }
-    GlassSheet(onDismiss = { vm.closeSheet() }, wide = vm.wide, large = vm.sheet == "播放队列") {
-        Column(
-            modifier = Modifier
-                .fillMaxWidth()
-                .then(if (vm.sheet == "播放队列") Modifier.fillMaxHeight() else Modifier)
-                .padding(24.dp),
-            verticalArrangement = Arrangement.spacedBy(18.dp),
-        ) {
-            Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(12.dp)) {
-                Text(vm.sheet, fontSize = 24.sp, fontWeight = FontWeight.Bold, color = TEXT, modifier = Modifier.weight(1f), maxLines = 1, overflow = TextOverflow.Ellipsis)
-                when (vm.sheet) {
-                    "播放队列" -> PillButton("完成", filled = false, textual = true) { vm.closeSheet() }
-                    else -> {
-                        PillButton("取消", filled = false, textual = true, enabled = !vm.busy) { vm.closeSheet() }
-                        PillButton(
-                            if (vm.busy) "处理中…" else when (vm.sheet) {
+    val largeSheet = vm.sheet == "播放队列" || vm.sheet == "更多" || vm.sheet == "耳返监听"
+    key("main:${vm.sheet}") {
+        GlassSheet(onDismiss = { vm.closeSheet() }, wide = vm.wide, large = largeSheet) {
+            if (largeSheet) {
+                FixedSheetScrollScaffold(
+                    headerBlurHeight = 76f,
+                    header = {
+                        Row(
+                            modifier = Modifier
+                                .fillMaxWidth()
+                                .padding(start = 24.dp, end = 20.dp, top = 20.dp, bottom = 10.dp),
+                            verticalAlignment = Alignment.CenterVertically,
+                            horizontalArrangement = Arrangement.spacedBy(6.dp),
+                        ) {
+                            Row(
+                                modifier = Modifier.weight(1f),
+                                verticalAlignment = Alignment.CenterVertically,
+                                horizontalArrangement = Arrangement.spacedBy(8.dp),
+                            ) {
+                                Text(
+                                    vm.sheet,
+                                    fontSize = 24.sp,
+                                    fontWeight = FontWeight.Bold,
+                                    color = TEXT,
+                                    maxLines = 1,
+                                    overflow = TextOverflow.Ellipsis,
+                                )
+                                if (vm.sheet == "耳返监听") {
+                                    Box(
+                                        modifier = Modifier
+                                            .clip(RoundedCornerShape(10.dp))
+                                            .background(ACCENT.copy(alpha = 0.2f))
+                                            .padding(horizontal = 8.dp, vertical = 3.dp),
+                                    ) {
+                                        Text("Beta", fontSize = 11.sp, fontWeight = FontWeight.Bold, color = ACCENT)
+                                    }
+                                }
+                            }
+                            if (vm.sheet == "播放队列" && vm.queue.size > 1) {
+                                SheetHeaderTextAction("排序", color = TEXT) {
+                                    vm.openSubSheetFromSheet("播放队列") {
+                                        vm.queueOrderOpen = true
+                                    }
+                                }
+                            }
+                            SheetHeaderTextAction("完成", color = ACCENT, enabled = !vm.busy) { vm.closeSheet() }
+                        }
+                    },
+                ) {
+                    when (vm.sheet) {
+                        "播放队列" -> SongListInputQueue(vm, topPadding = 74.dp, bottomPadding = navBottom + 28.dp)
+                        "更多" -> PlayerMoreSheet(vm, topPadding = 74.dp, bottomPadding = navBottom + 28.dp)
+                        "耳返监听" -> EarMonitorSheetContent(vm, topPadding = 74.dp, bottomPadding = navBottom + 28.dp)
+                    }
+                }
+            } else {
+                Column(
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .padding(start = 24.dp, end = 24.dp, top = 22.dp, bottom = 24.dp),
+                    verticalArrangement = Arrangement.spacedBy(16.dp),
+                ) {
+                    Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(6.dp)) {
+                        Text(
+                            vm.sheet,
+                            fontSize = 24.sp,
+                            fontWeight = FontWeight.Bold,
+                            color = TEXT,
+                            maxLines = 1,
+                            overflow = TextOverflow.Ellipsis,
+                            modifier = Modifier.weight(1f),
+                        )
+                        SheetHeaderTextAction("取消", color = MUTED, enabled = !vm.busy) { vm.closeSheet() }
+                        SheetHeaderTextAction(
+                            label = if (vm.busy) "处理中…" else when (vm.sheet) {
                                 "新建歌单" -> "创建"
                                 "重命名歌单" -> "保存"
                                 "导入歌单" -> "导入"
                                 else -> "添加"
                             },
-                            filled = true,
-                            textual = true,
+                            color = ACCENT,
                             enabled = !vm.busy && vm.draft.trim().isNotEmpty(),
                         ) { vm.submitSheet() }
                     }
-                }
-            }
-            when (vm.sheet) {
-                "播放队列" -> SongListInputQueue(vm, Modifier.weight(1f))
-                else -> {
-                    if (vm.error.isNotEmpty()) {
-                        Text(vm.error, fontSize = 13.sp, color = Color(0xFFFFB4B4))
-                    }
-                    Text(
-                        when (vm.sheet) {
-                            "导入歌单" -> "粘贴网易云、QQ、酷我、酷狗、汽水的分享内容，或选择 .lxmc / JSON 文件。汽水歌曲播放时匹配同名同歌手版本。"
-                            "添加音源" -> "粘贴 LX 音源脚本，或一次选择多个 .js / .txt 文件。"
-                            "重命名歌单" -> "输入新的歌单名称"
-                            else -> "输入歌单名称"
-                        },
-                        fontSize = 14.sp,
-                        color = MUTED,
-                    )
-                    if (vm.sheet == "新建歌单" || vm.sheet == "重命名歌单") {
-                        EditBox(
-                            value = vm.draft,
-                            onValueChange = { vm.draft = it },
-                            placeholder = "歌单名称",
-                            height = 48.dp,
-                            singleLine = true,
-                            onSubmit = { vm.submitSheet() },
+                    Column(
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .weight(1f, fill = false)
+                            .verticalScroll(rememberScrollState()),
+                        verticalArrangement = Arrangement.spacedBy(14.dp),
+                    ) {
+                        if (vm.error.isNotEmpty()) {
+                            Text(vm.error, fontSize = 13.sp, color = Color(0xFFFFB4B4))
+                        }
+                        Text(
+                            when (vm.sheet) {
+                                "导入歌单" -> "粘贴网易云、QQ、酷我、酷狗、汽水的分享内容，或选择 .lxmc / JSON 文件。汽水歌曲播放时匹配同名同歌手版本。"
+                                "添加音源" -> "粘贴 LX 音源脚本，或一次选择多个 .js / .txt 文件。"
+                                "重命名歌单" -> "输入新的歌单名称"
+                                else -> "输入歌单名称"
+                            },
+                            fontSize = 14.sp,
+                            color = MUTED,
                         )
-                    } else {
-                        EditBox(
-                            value = vm.draft,
-                            onValueChange = { vm.draft = it },
-                            placeholder = "在这里粘贴…",
-                            height = 180.dp,
-                        )
-                    }
-                    if (vm.sheet == "导入歌单" || vm.sheet == "添加音源") {
-                        GlassSurfaceButton(
-                            if (vm.sheet == "导入歌单") "选择歌单文件" else "批量导入音源",
-                            Modifier.fillMaxWidth(),
-                        ) {
-                            vm.showFilePicker(forSource = vm.sheet == "添加音源")
+                        if (vm.sheet == "新建歌单" || vm.sheet == "重命名歌单") {
+                            EditBox(
+                                value = vm.draft,
+                                onValueChange = { vm.draft = it },
+                                placeholder = "歌单名称",
+                                height = 48.dp,
+                                singleLine = true,
+                                onSubmit = { vm.submitSheet() },
+                            )
+                        } else {
+                            EditBox(
+                                value = vm.draft,
+                                onValueChange = { vm.draft = it },
+                                placeholder = "在这里粘贴…",
+                                height = 180.dp,
+                            )
+                        }
+                        if (vm.sheet == "导入歌单" || vm.sheet == "添加音源") {
+                            GlassSurfaceButton(
+                                if (vm.sheet == "导入歌单") "选择歌单文件" else "批量导入音源",
+                                Modifier.fillMaxWidth(),
+                            ) {
+                                vm.showFilePicker(forSource = vm.sheet == "添加音源")
+                            }
                         }
                     }
                 }
@@ -166,11 +325,11 @@ private fun ConfirmRemovalDialog(
     onConfirm: () -> Unit,
 ) {
     GlassDialog(onDismiss = onDismiss) {
-        Text(title, fontSize = 24.sp, fontWeight = FontWeight.Medium, color = TEXT, textAlign = TextAlign.Center, modifier = Modifier.fillMaxWidth())
-        Text(message, fontSize = 16.sp, color = TEXT, maxLines = 4, overflow = TextOverflow.Ellipsis, textAlign = TextAlign.Center, modifier = Modifier.fillMaxWidth())
+        Text(title, fontSize = 22.sp, fontWeight = FontWeight.SemiBold, color = TEXT, textAlign = TextAlign.Center, modifier = Modifier.fillMaxWidth())
+        Text(message, fontSize = 15.sp, color = MUTED, maxLines = 4, overflow = TextOverflow.Ellipsis, textAlign = TextAlign.Center, modifier = Modifier.fillMaxWidth())
         Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(12.dp, Alignment.End)) {
-            PillButton("取消", filled = false, textual = true, onClick = onDismiss)
-            PillButton(confirmLabel, filled = false, textual = true, onClick = onConfirm)
+            SheetHeaderTextAction("取消", color = MUTED, onClick = onDismiss)
+            SheetHeaderTextAction(confirmLabel, color = HEART_RED, onClick = onConfirm)
         }
     }
 }
@@ -180,17 +339,17 @@ private fun EditBox(
     value: String,
     onValueChange: (String) -> Unit,
     placeholder: String,
-    height: androidx.compose.ui.unit.Dp,
+    height: Dp,
     singleLine: Boolean = false,
     onSubmit: () -> Unit = {},
 ) {
-    val focusRequester = androidx.compose.runtime.remember { androidx.compose.ui.focus.FocusRequester() }
+    val focusRequester = remember { androidx.compose.ui.focus.FocusRequester() }
     Box(
         Modifier
             .fillMaxWidth()
             .height(height)
             .clip(RoundedCornerShape(14.dp))
-            .background(Color(0x14FFFFFF))
+            .background(INPUT_BG)
             .tapNoRipple {
                 runCatching { focusRequester.requestFocus() }
             }
@@ -215,10 +374,15 @@ private fun EditBox(
 }
 
 @Composable
-private fun SongListInputQueue(vm: AppViewModel, modifier: Modifier) {
+private fun SongListInputQueue(
+    vm: AppViewModel,
+    topPadding: Dp = 74.dp,
+    bottomPadding: Dp = 28.dp,
+) {
     val songs = vm.queue
     val likedKeys = vm.likedKeys
     val listState = rememberLazyListState()
+    var initialPositioned by remember { mutableStateOf(false) }
     LaunchedEffect(songs.size, vm.selected?.key) {
         val activeKey = vm.selected?.key ?: return@LaunchedEffect
         val index = songs.indexOfFirst { it.key == activeKey }
@@ -226,10 +390,20 @@ private fun SongListInputQueue(vm: AppViewModel, modifier: Modifier) {
             kotlinx.coroutines.yield()
             val viewport = (listState.layoutInfo.viewportEndOffset - listState.layoutInfo.viewportStartOffset).coerceAtLeast(0)
             val centerOffset = if (viewport > 180) -(viewport / 3) else -96
-            runCatching { listState.animateScrollToItem(index, centerOffset) }
+            if (!initialPositioned) {
+                initialPositioned = true
+                runCatching { listState.scrollToItem(index, centerOffset) }
+            } else {
+                runCatching { listState.animateScrollToItem(index, centerOffset) }
+            }
         }
     }
-    LazyColumn(modifier.fillMaxWidth(), state = listState, verticalArrangement = Arrangement.spacedBy(2.dp)) {
+    LazyColumn(
+        modifier = Modifier.fillMaxSize(),
+        state = listState,
+        contentPadding = PaddingValues(start = 16.dp, end = 16.dp, top = topPadding, bottom = bottomPadding),
+        verticalArrangement = Arrangement.spacedBy(2.dp),
+    ) {
         itemsIndexed(songs, key = { index, song -> "${song.key}:$index" }) { index, song ->
             SongRow(
                 song = song,
@@ -241,6 +415,8 @@ private fun SongListInputQueue(vm: AppViewModel, modifier: Modifier) {
                 onMore = { vm.addToPlaylist(song) },
                 onDownload = { vm.downloadSong(song) },
                 onSwitchPlatform = if (song.source != "local") ({ vm.openSwitchPlatformFromQueue(index, song) }) else null,
+                onRemove = { vm.removeFromQueue(song) },
+                removeLabel = "从队列移除",
             )
         }
     }
@@ -249,8 +425,8 @@ private fun SongListInputQueue(vm: AppViewModel, modifier: Modifier) {
 @Composable
 private fun AddToPlaylistDialog(vm: AppViewModel) {
     GlassDialog(onDismiss = { vm.closeSheet() }) {
-        Text("添加到歌单", fontSize = 24.sp, fontWeight = FontWeight.Medium, color = TEXT, textAlign = TextAlign.Center, modifier = Modifier.fillMaxWidth())
-        Text(vm.addToPlaylistSong?.name.orEmpty(), fontSize = 16.sp, color = TEXT, maxLines = 3, overflow = TextOverflow.Ellipsis, textAlign = TextAlign.Center, modifier = Modifier.fillMaxWidth())
+        Text("添加到歌单", fontSize = 22.sp, fontWeight = FontWeight.SemiBold, color = TEXT, textAlign = TextAlign.Center, modifier = Modifier.fillMaxWidth())
+        Text(vm.addToPlaylistSong?.name.orEmpty(), fontSize = 15.sp, color = MUTED, maxLines = 3, overflow = TextOverflow.Ellipsis, textAlign = TextAlign.Center, modifier = Modifier.fillMaxWidth())
         if (vm.addToPlaylistChoices.size <= 2) {
             Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
                 vm.addToPlaylistChoices.forEach { playlist ->
@@ -261,7 +437,7 @@ private fun AddToPlaylistDialog(vm: AppViewModel) {
             }
         } else {
             Column(
-                Modifier.fillMaxWidth().heightIn(max = 360.dp).verticalScroll(rememberScrollState()),
+                Modifier.fillMaxWidth().weight(1f, fill = false).verticalScroll(rememberScrollState()),
                 verticalArrangement = Arrangement.spacedBy(4.dp),
             ) {
                 vm.addToPlaylistChoices.forEach { playlist ->
@@ -278,19 +454,18 @@ private fun AddToPlaylistDialog(vm: AppViewModel) {
 @Composable
 internal fun IncomingSyncDialog(vm: AppViewModel) {
     val request = vm.incoming ?: return
-    GlassDialog(onDismiss = { }) {
-        Text("接收同步", fontSize = 24.sp, fontWeight = FontWeight.Medium, color = TEXT, textAlign = TextAlign.Center, modifier = Modifier.fillMaxWidth())
+    GlassDialog(onDismiss = { }, dismissible = false) {
+        Text("接收同步", fontSize = 22.sp, fontWeight = FontWeight.SemiBold, color = TEXT, textAlign = TextAlign.Center, modifier = Modifier.fillMaxWidth())
         Text(
             "「${request.peerName}」将发送 ${request.summary.playlists} 个歌单、${request.summary.sources} 个音源及 ${request.summary.settings} 项设置。接收后覆盖本机对应数据。",
             color = MUTED,
-            fontSize = 16.sp,
+            fontSize = 15.sp,
             textAlign = TextAlign.Center,
             modifier = Modifier.fillMaxWidth(),
         )
-        Row(horizontalArrangement = Arrangement.spacedBy(12.dp)) {
-            Spacer(Modifier.weight(1f))
-            PillButton("拒绝", filled = false, textual = true, enabled = !vm.applying) { vm.respondSync(false) }
-            PillButton("接收并覆盖", filled = false, textual = true, enabled = !vm.applying) { vm.respondSync(true) }
+        Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(12.dp, Alignment.End)) {
+            SheetHeaderTextAction("拒绝", color = MUTED, enabled = !vm.applying) { vm.respondSync(false) }
+            SheetHeaderTextAction("接收并覆盖", color = ACCENT, enabled = !vm.applying) { vm.respondSync(true) }
         }
     }
 }

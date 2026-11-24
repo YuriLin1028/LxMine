@@ -103,6 +103,20 @@ class LocalMusic(private val context: Context) {
         }
     }
 
+    fun removeAdoptedPaths(paths: List<String>, songKeys: List<String> = emptyList()) {
+        val targetSet = paths.filter { it.isNotEmpty() }.toSet()
+        val targetKeySet = songKeys.filter { it.isNotEmpty() }.toSet()
+        if (targetSet.isEmpty() && targetKeySet.isEmpty()) return
+        val before = items.size
+        items.removeAll { item ->
+            item.path in targetSet || (targetKeySet.isNotEmpty() && item.sourceUri.startsWith("download:") && item.song.key in targetKeySet)
+        }
+        if (items.size != before) {
+            persist()
+            onChange(songs())
+        }
+    }
+
     /** 复制选中的音频到沙箱；返回本次新增数量。重复选择同一 URI 会跳过。 */
     suspend fun addUris(uris: List<Uri>): Int = withContext(Dispatchers.IO) {
         var added = 0

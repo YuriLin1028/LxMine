@@ -108,11 +108,19 @@ function sanitizePlaylist(source) {
     seen.add(track.builtInIdentity);
     tracks.push(track);
   }
+  const customCoverRaw = typeof source.customCover === 'string' ? source.customCover.trim() : '';
+  const customCover = customCoverRaw && (customCoverRaw.startsWith('data:image/') || /^https?:\/\//i.test(customCoverRaw) || customCoverRaw.startsWith('file://'))
+    ? customCoverRaw.slice(0, 600000)
+    : '';
+  const cleanName = cleanText(source.name, '未命名歌单', 80);
+  const isFavorite = source.isFavorite === true || cleanName === '我喜欢的' || cleanName === '我的收藏';
+  const normalizedName = isFavorite && cleanName === '我喜欢的' ? '我的收藏' : cleanName;
   return {
     id,
-    name: cleanText(source.name, '未命名歌单', 80),
-    isFavorite: source.isFavorite === true,
-    portableId: cleanText(source.portableId, id, 128),
+    name: normalizedName,
+    customCover,
+    isFavorite,
+    portableId: cleanText(source.portableId, isFavorite ? 'lxmine-favorite' : id, 128),
     createdAt: Math.max(0, Number(source.createdAt) || Date.now()),
     updatedAt: Math.max(0, Number(source.updatedAt) || Date.now()),
     tracks,
@@ -154,8 +162,9 @@ class BuiltInPlaylistLibrary {
       creator: 'LxMine',
       isFavorite: playlist.isFavorite === true,
       trackCount: playlist.tracks.length,
-      // 卡片封面优先取第一首带封面的歌曲（若第 0 首已有封面即为第 0 首）；历史数据里封面字段可能是 cover 或 coverUrl。
-      cover: cleanText(firstWithCover.cover || firstWithCover.coverUrl, '', 4096),
+      // 卡片封面优先取用户自定义封面，其次取第一首带封面的歌曲；历史数据里封面字段可能是 cover 或 coverUrl。
+      cover: playlist.customCover || cleanText(firstWithCover.cover || firstWithCover.coverUrl, '', 4096),
+      customCover: playlist.customCover || '',
       createdAt: playlist.createdAt,
       updatedAt: playlist.updatedAt,
       shelfPane: 'mine',
@@ -254,6 +263,19 @@ class BuiltInPlaylistLibrary {
     });
   }
 
+  setCover(id, coverValue) {
+    return this.mutate((next) => {
+      const playlist = next.find((item) => item.id === cleanText(id, '', 64).toLowerCase());
+      if (!playlist) throw Object.assign(new Error('BUILT_IN_PLAYLIST_NOT_FOUND'), { code: 'BUILT_IN_PLAYLIST_NOT_FOUND' });
+      const raw = typeof coverValue === 'string' ? coverValue.trim() : '';
+      playlist.customCover = raw && (raw.startsWith('data:image/') || /^https?:\/\//i.test(raw) || raw.startsWith('file://'))
+        ? raw.slice(0, 600000)
+        : '';
+      playlist.updatedAt = Date.now();
+      return { playlist: this.summary(playlist) };
+    });
+  }
+
   delete(id) {
     return this.mutate((next) => {
       const index = next.findIndex((item) => item.id === cleanText(id, '', 64).toLowerCase());
@@ -270,7 +292,7 @@ class BuiltInPlaylistLibrary {
       const playlist = next.find((item) => item.id === cleanText(id, '', 64).toLowerCase());
       if (!playlist) throw Object.assign(new Error('BUILT_IN_PLAYLIST_NOT_FOUND'), { code: 'BUILT_IN_PLAYLIST_NOT_FOUND' });
       if (playlist.tracks.some((item) => item.builtInIdentity === track.builtInIdentity)) return { playlist: this.summary(playlist), duplicate: true };
-      playlist.tracks.push(track);
+      playlist.tracks.unshift(track);
       playlist.updatedAt = Date.now();
       return { playlist: this.summary(playlist), added: true };
     });
@@ -355,7 +377,7 @@ class BuiltInPlaylistLibrary {
     });
   }
 
-  setFavoriteTracks(sources) {
+  setFavoriteTracks(sources, options = {}) {
     const cleaned = [];
     const seen = new Set();
     for (const source of Array.isArray(sources) ? sources : []) {
@@ -364,22 +386,31 @@ class BuiltInPlaylistLibrary {
       seen.add(track.builtInIdentity);
       cleaned.push(track);
     }
+    const touch = options && options.touch === true;
     return this.mutate((next) => {
-      let favorite = next.find((item) => item.isFavorite === true);
+      let favorite = next.find((item) => item.isFavorite === true || item.name === '我喜欢的' || item.name === '我的收藏');
       if (!favorite) {
         favorite = {
           id: crypto.createHash('sha256').update('lxmine-favorite').digest('hex').slice(0, 24),
           portableId: 'lxmine-favorite',
-          name: '我喜欢的',
+          name: '我的收藏',
+          customCover: '',
           isFavorite: true,
           createdAt: Date.now(),
-          updatedAt: Date.now(),
+          updatedAt: cleaned.length > 0 || touch ? Date.now() : 0,
           tracks: cleaned,
         };
         next.unshift(favorite);
       } else {
+        const prevSig = favorite.tracks.map(t => t.builtInIdentity).join('|');
+        const nextSig = cleaned.map(t => t.builtInIdentity).join('|');
+        favorite.isFavorite = true;
+        if (!favorite.name || favorite.name === '我喜欢的') favorite.name = '我的收藏';
+        favorite.portableId = favorite.portableId || 'lxmine-favorite';
         favorite.tracks = cleaned;
-        favorite.updatedAt = Date.now();
+        if (touch || prevSig !== nextSig) {
+          favorite.updatedAt = Date.now();
+        }
       }
       return { playlist: this.summary(favorite) };
     });

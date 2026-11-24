@@ -10,7 +10,7 @@ export interface LxSongInfo {
   albumId: string; interval: number; type: string; hash?: string; _types?: Record<string, LxHash>;
   strMediaMid?: string; songId?: string;
 }
-interface HttpPayload { url: string; method?: string; headers?: Record<string, string>; body?: string; form?: Record<string, string>; timeout?: number; }
+interface HttpPayload { url: string; method?: string; headers?: Record<string, string>; body?: string; form?: Record<string, string>; timeout?: number; probeOnly?: boolean; }
 interface InitSource { actions?: string[]; qualitys?: string[]; }
 interface LxInitPayload { sources?: Record<string, InitSource>; }
 interface BridgeResult { ok: boolean; progress?: boolean; error?: string; data?: Object | string; }
@@ -77,12 +77,30 @@ export class LxHost {
       const body = payload.form ? Object.keys(payload.form).map((key: string) => `${encodeURIComponent(key)}=${encodeURIComponent(payload.form![key])}`).join('&') : payload.body;
       const headers = payload.headers ?? {};
       if (payload.form) headers['content-type'] = 'application/x-www-form-urlencoded';
-      client.request(payload.url, { method: (payload.method ?? 'GET').toUpperCase() as http.RequestMethod,
+      const method = (payload.method ?? 'GET').toUpperCase();
+      const probeOnly = !!payload.probeOnly || method === 'HEAD';
+      if (probeOnly) {
+        client.request(payload.url, {
+          method: method as http.RequestMethod,
+          header: headers,
+          extraData: body,
+          expectDataType: http.HttpDataType.ARRAY_BUFFER,
+          maxLimit: 16384,
+          connectTimeout: payload.timeout ?? 6000,
+          readTimeout: payload.timeout ?? 6000
+        }).then((response: http.HttpResponse) => {
+          const result: NativeResult = { response: { statusCode: response.responseCode, headers: response.header, body: '' } };
+          this.finishHttp(id, JSON.stringify(result));
+        }).catch((error: BusinessError) => this.finishHttp(id, JSON.stringify({ error: error.message } as NativeResult)))
+          .finally(() => client.destroy());
+        return;
+      }
+      client.request(payload.url, { method: method as http.RequestMethod,
         header: headers, extraData: body, connectTimeout: payload.timeout ?? 20000, readTimeout: payload.timeout ?? 20000
       }).then((response: http.HttpResponse) => {
-        let body: Object | string = response.result as string;
-        try { body = JSON.parse(body as string) as Object; } catch (error) { /* 文本响应原样返回。 */ }
-        const result: NativeResult = { response: { statusCode: response.responseCode, headers: response.header, body } };
+        let resBody: Object | string = response.result as string;
+        try { resBody = JSON.parse(resBody as string) as Object; } catch (error) { /* 文本响应原样返回。 */ }
+        const result: NativeResult = { response: { statusCode: response.responseCode, headers: response.header, body: resBody } };
         this.finishHttp(id, JSON.stringify(result));
       }).catch((error: BusinessError) => this.finishHttp(id, JSON.stringify({ error: error.message } as NativeResult)))
         .finally(() => client.destroy());
@@ -140,7 +158,8 @@ export class LxHost {
     return this.bridge(`window.__lxImportPlaylist(__REQUEST_ID__,${JSON.stringify(input)},${JSON.stringify(source)})`, 120000);
   }
   catalogue(operation: string, paramsJson: string): Promise<string> {
-    return this.bridge(`window.__lxCatalogue(__REQUEST_ID__,${JSON.stringify(operation)},${paramsJson})`, 30000);
+    const timeoutMs = operation === 'race-music-url' ? 45000 : 30000;
+    return this.bridge(`window.__lxCatalogue(__REQUEST_ID__,${JSON.stringify(operation)},${paramsJson})`, timeoutMs);
   }
   dispose(): void {
     if (this.init) { clearTimeout(this.init.timer); this.init.reject(new Error('运行时已关闭')); this.init = null; }

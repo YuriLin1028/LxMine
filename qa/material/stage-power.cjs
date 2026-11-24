@@ -106,7 +106,7 @@ function fixtureAudio() {
     for (let index = 0; index < presetCount; index++) {
       await page.locator('#style-btn').click();
       const before = await stage.evaluate(() => renderer.info.render.frame);
-      await page.locator('.menu-row').nth(index + 1).click();
+      await page.locator('.menu-row').nth(index + 2).click();
       await stage.waitForFunction(({ index, before }) => {
         if (fx.preset !== index || renderer.info.render.frame <= before) return false;
         if (index === SKULL_PRESET_INDEX && !skullParticleGroup?.visible) return false;
@@ -152,7 +152,7 @@ function fixtureAudio() {
         await child.evaluate(() => { window.__mineradioApplyProperties = __qaWorkshopProperties; });
       }
     }
-    await page.locator('#style-btn').click(); await page.locator('.menu-row').nth(8).click();
+    await page.locator('#style-btn').click(); await page.locator('.menu-row').nth(9).click();
     await page.waitForTimeout(400);
     await stage.waitForFunction(() => stageLyrics.current?.userData.lyric.rowLayers.some(row =>
       row.lineIndex === stageLyrics.currentIdx && row.readability && row.glow));
@@ -273,6 +273,7 @@ function fixtureAudio() {
     assert.equal(report.returnedHome.parentPlaying, true);
 
     await page.locator('#nav [data-tab="settings"]').click();
+    await page.locator('.setting-row').filter({ hasText: '外观与背景' }).click();
     const appearance = page.locator('.setting-row').filter({ has: page.getByText('外观', { exact: true }) }).getByRole('button');
     await appearance.click(); await page.locator('.menu-row').filter({ hasText: '浅色' }).click();
     await page.waitForFunction(() => document.body.classList.contains('light-theme'));
@@ -288,10 +289,10 @@ function fixtureAudio() {
     await page.locator('#dock-copy').click();
     await page.waitForFunction(() => document.getElementById('stage-frame').contentWindow.lxmineStage);
     await page.locator('#style-btn').click();
-    assert.equal(await page.locator('.menu-row').first().innerText(), '关闭动效');
+    assert.equal(await page.locator('.menu-row').nth(1).innerText(), '关闭动效');
     await stage.evaluate(() => { window.__powerQaIdentity = Math.random(); });
     const dynamicIdentity = await stage.evaluate(() => window.__powerQaIdentity);
-    await page.locator('.menu-row').first().click();
+    await page.locator('.menu-row').nth(1).click();
     await page.waitForFunction(() => __lxmine.S.styleName === 'off' && __lxmine.S.detailOpen);
     await page.waitForFunction(() => document.getElementById('plain-stage-frame').contentWindow.lxmineStage?.diagnostics().plain);
     const plain = page.frames().find(frame => frame.url().includes('plain-stage.html'));

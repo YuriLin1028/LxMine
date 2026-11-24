@@ -2,9 +2,9 @@
 var scene = new THREE.Scene();
 scene.background = null;
 var camera = new THREE.PerspectiveCamera(45, innerWidth / innerHeight, 0.1, 100);
-var RENDER_DPR_CAP = 1.35;
-var RENDER_PIXEL_BUDGET = 5200000;
-var RENDER_MIN_DPR = 0.72;
+var RENDER_DPR_CAP = window.__LXMINE_NATIVE_STAGE ? 2.15 : 1.35;
+var RENDER_PIXEL_BUDGET = window.__LXMINE_NATIVE_STAGE ? 1950000 : 2200000;
+var RENDER_MIN_DPR = window.__LXMINE_NATIVE_STAGE ? 1.15 : 0.80;
 // 0 = display vsync. Foreground visible motion must keep VSync cadence.
 var RENDER_VISIBLE_VSYNC = true;
 var RENDER_IDLE_FPS = 72;
@@ -30,7 +30,9 @@ var adaptiveFrameLoadState = {
   lastCostMs: 0,
   lastTargetFps: 0,
   pressure: 0,
-  level: 0
+  level: 0,
+  resolutionScale: 1,
+  lastResolutionAt: 0
 };
 function roundRenderNumber(value, digits) {
   var scale = Math.pow(10, digits || 0);
@@ -77,6 +79,20 @@ function sampleAdaptiveFrameCost(costMs, targetFps) {
     adaptiveFrameLoadState.pressure = Math.max(0, adaptiveFrameLoadState.pressure - 0.10);
   }
   adaptiveFrameLoadState.level = adaptiveFrameLoadState.pressure >= 4 ? 2 : (adaptiveFrameLoadState.pressure >= 2 ? 1 : 0);
+  var now = performance.now();
+  var foregroundStage = !window.__lxmineStagePresentation || window.__lxmineStagePresentation.detail;
+  if (foregroundStage && now > 5000) {
+    var scale = adaptiveFrameLoadState.resolutionScale;
+    var elapsed = now - adaptiveFrameLoadState.lastResolutionAt;
+    var minResScale = window.__LXMINE_NATIVE_STAGE ? 0.85 : 0.72;
+    if (adaptiveFrameLoadState.level >= 2 && elapsed > 2000) scale = Math.max(minResScale, scale * (window.__LXMINE_NATIVE_STAGE ? 0.92 : 0.88));
+    else if (adaptiveFrameLoadState.level === 0 && adaptiveFrameLoadState.avgMs < budget * 0.45 && elapsed > 10000) scale = Math.min(1, scale * 1.05);
+    if (Math.abs(scale - adaptiveFrameLoadState.resolutionScale) > 0.001) {
+      adaptiveFrameLoadState.resolutionScale = scale;
+      adaptiveFrameLoadState.lastResolutionAt = now;
+      if (typeof applyRendererPowerMode === 'function') applyRendererPowerMode();
+    }
+  }
   return adaptiveFrameLoadSnapshot();
 }
 function adaptiveFrameLoadSnapshot() {
@@ -85,7 +101,8 @@ function adaptiveFrameLoadSnapshot() {
     lastCostMs: roundRenderNumber(adaptiveFrameLoadState.lastCostMs, 3),
     lastTargetFps: roundRenderNumber(adaptiveFrameLoadState.lastTargetFps, 1),
     pressure: roundRenderNumber(adaptiveFrameLoadState.pressure, 2),
-    level: adaptiveFrameLoadState.level || 0
+    level: adaptiveFrameLoadState.level || 0,
+    resolutionScale: adaptiveFrameLoadState.resolutionScale
   };
 }
 function clampAdaptiveCadenceDivisor(displayHz, divisor, minFps) {
@@ -127,19 +144,24 @@ function renderQualityProfile() {
   var quality = normalizePerformanceQuality(fx && fx.performanceQuality);
   var profile = (typeof runtimeHardwareProfile !== 'undefined' && runtimeHardwareProfile) ? runtimeHardwareProfile : null;
   var lowSpec = profile && profile.lowSpec;
-  if (quality === 'eco') return { cap: lowSpec ? 0.88 : 0.95, min: 0.52, budget: lowSpec ? 1900000 : 2400000 };
-  if (quality === 'balanced') return { cap: lowSpec ? 0.98 : 1.12, min: 0.62, budget: lowSpec ? 2800000 : 3800000 };
-  if (quality === 'ultra') return { cap: 1.75, min: 0.85, budget: 7800000 };
-  return { cap: lowSpec ? 1.12 : RENDER_DPR_CAP, min: lowSpec ? 0.66 : RENDER_MIN_DPR, budget: lowSpec ? 3600000 : RENDER_PIXEL_BUDGET };
+  if (typeof window !== 'undefined' && window.__LXMINE_NATIVE_STAGE && quality === 'eco') return { cap: 1.55, min: 1.00, budget: 1200000 };
+  if (typeof window !== 'undefined' && window.__LXMINE_NATIVE_STAGE && quality === 'balanced') return { cap: 2.15, min: 1.35, budget: 1850000 };
+  if (quality === 'eco') return { cap: lowSpec ? 0.95 : 1.05, min: 0.65, budget: lowSpec ? 1500000 : 1850000 };
+  if (quality === 'balanced') return { cap: lowSpec ? 1.05 : 1.25, min: 0.75, budget: lowSpec ? 1900000 : 2400000 };
+  if (quality === 'ultra') return { cap: 2.50, min: 1.45, budget: 4800000 };
+  return { cap: lowSpec ? 1.50 : RENDER_DPR_CAP, min: lowSpec ? 1.00 : RENDER_MIN_DPR, budget: lowSpec ? 1850000 : RENDER_PIXEL_BUDGET };
 }
 function getRenderPixelRatio() {
   var device = window.devicePixelRatio || 1;
   if (isDeepBackgroundMode()) return Math.min(device, 0.30);
   var cssPixels = Math.max(1, innerWidth * innerHeight);
+  if (window.__lxmineStagePresentation && !window.__lxmineStagePresentation.detail) {
+    return Math.min(device, 0.48, Math.sqrt(260000 / cssPixels));
+  }
   var quality = renderQualityProfile();
   var budgetCap = Math.sqrt(quality.budget / cssPixels);
   var cap = Math.min(quality.cap, budgetCap);
-  return Math.max(quality.min, Math.min(device, cap));
+  return Math.max(0.4, Math.max(quality.min, Math.min(device, cap)) * adaptiveFrameLoadState.resolutionScale);
 }
 function getRenderPixelLoad() {
   var ratio = getRenderPixelRatio();
@@ -174,7 +196,7 @@ function getRenderLoadTier() {
   if (cssPixels >= 3200000 || renderPixels >= 3600000) return 1;
   return 0;
 }
-var renderer = new THREE.WebGLRenderer({ antialias: false, alpha: true, powerPreference: 'high-performance' });
+var renderer = new THREE.WebGLRenderer({ antialias: false, alpha: true, powerPreference: 'default' });
 renderer.setClearColor(0x000000, 0);
 renderer.setPixelRatio(getRenderPixelRatio());
 renderer.setSize(innerWidth, innerHeight);

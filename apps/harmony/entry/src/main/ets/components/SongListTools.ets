@@ -7,15 +7,22 @@ export struct SongListTools {
   @Prop countText: string = '';
   @Prop disabled: boolean = false;
   @Prop showDelete: boolean = false;
+  @Prop deleteLabel: string = '删除歌单';
   @Prop showEdit: boolean = false;
+  @Prop showCustomCover: boolean = false;
   @Prop showBatchDownload: boolean = false;
+  @Prop showCollect: boolean = false;
+  @Prop collected: boolean = false;
+  @Prop collectLabel: string = '收藏到曲库';
   onPlayAll: () => void = () => {};
   onSort: (mode: string) => void = () => {};
   onManual: () => void = () => {};
   onDelete: () => void = () => {};
   onRename: () => void = () => {};
+  onCustomCover: () => void = () => {};
   onBatchDelete: () => void = () => {};
   onBatchDownload: () => void = () => {};
+  onCollect: () => void = () => {};
 
   @Builder private sortMenu() {
     Menu() {
@@ -31,6 +38,9 @@ export struct SongListTools {
   @Builder private editMenu() {
     Menu() {
       MenuItem({ content: '重命名歌单' }).onClick(() => { setTimeout(() => this.onRename(), 220); })
+      if (this.showCustomCover) {
+        MenuItem({ content: '自定义封面' }).onClick(() => { setTimeout(() => this.onCustomCover(), 220); })
+      }
       MenuItem({ content: '批量移除歌曲' }).enabled(!this.disabled).onClick(() => { setTimeout(() => this.onBatchDelete(), 220); })
       MenuItem({ content: '自定义歌曲顺序' }).enabled(!this.disabled).onClick(() => { setTimeout(() => this.onManual(), 220); })
       if (this.showDelete) {
@@ -45,6 +55,12 @@ export struct SongListTools {
         .maxLines(1).textOverflow({ overflow: TextOverflow.Ellipsis })
       Button('播放全部').attributeModifier(musicButtonPress).buttonStyle(ButtonStyleMode.TEXTUAL).fontSize(13).fontColor(ACCENT).backgroundColor(Color.Transparent)
         .enabled(!this.disabled).onClick(() => this.onPlayAll())
+      if (this.showCollect) {
+        Button(this.collected ? '已收藏' : this.collectLabel)
+          .attributeModifier(musicButtonPress).buttonStyle(ButtonStyleMode.TEXTUAL).fontSize(13)
+          .fontColor(this.collected ? MUTED : ACCENT).backgroundColor(Color.Transparent)
+          .enabled(!this.disabled).onClick(() => this.onCollect())
+      }
       if (this.showBatchDownload) {
         Button('批量下载').attributeModifier(musicButtonPress).buttonStyle(ButtonStyleMode.TEXTUAL).fontSize(13).fontColor(ACCENT).backgroundColor(Color.Transparent)
           .enabled(!this.disabled).onClick(() => this.onBatchDownload())
@@ -54,9 +70,15 @@ export struct SongListTools {
       if (this.showEdit) {
         Button('编辑').attributeModifier(musicButtonPress).buttonStyle(ButtonStyleMode.TEXTUAL).fontSize(13).fontColor(ACCENT).backgroundColor(Color.Transparent)
           .bindMenu(this.editMenu())
-      } else if (this.showDelete) {
-        Button('删除歌单').attributeModifier(musicButtonPress).buttonStyle(ButtonStyleMode.TEXTUAL).fontSize(13).fontColor(MUTED).backgroundColor(Color.Transparent)
-          .onClick(() => this.onDelete())
+      } else {
+        if (this.showCustomCover) {
+          Button('封面').attributeModifier(musicButtonPress).buttonStyle(ButtonStyleMode.TEXTUAL).fontSize(13).fontColor(ACCENT).backgroundColor(Color.Transparent)
+            .onClick(() => this.onCustomCover())
+        }
+        if (this.showDelete) {
+          Button(this.deleteLabel).attributeModifier(musicButtonPress).buttonStyle(ButtonStyleMode.TEXTUAL).fontSize(13).fontColor(MUTED).backgroundColor(Color.Transparent)
+            .onClick(() => this.onDelete())
+        }
       }
     }.width('100%').height(52)
   }

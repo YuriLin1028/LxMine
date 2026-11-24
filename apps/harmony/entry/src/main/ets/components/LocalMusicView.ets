@@ -1,6 +1,7 @@
 import { Song } from '../model/Song';
 import { ArrayDataSource } from '../services/ArrayDataSource';
 import { songKey } from '../services/MusicLibrary';
+import { isHarmonyPc } from '../services/HarmonyPcWindowService';
 import { SongRow } from './SongRow';
 import { TEXT, MUTED } from './Theme';
 import { SongListTools } from './SongListTools';
@@ -71,11 +72,11 @@ export struct LocalMusicView {
         ListItem() {
           Column({ space: 8 }) {
             Text(this.searchQuery.trim().length ? '没有匹配的本地歌曲' : '还没有本地音乐').fontSize(14).fontColor(MUTED)
-            Text(this.searchQuery.trim().length ? '换个歌名、歌手或专辑试试' : '点击右上角「智能识别」或「导入」添加手机里的音频').fontSize(12).fontColor(MUTED)
+            Text(this.searchQuery.trim().length ? '换个歌名、歌手或专辑试试' : `点击右上角「智能识别」或「导入」添加${isHarmonyPc() ? '电脑' : '手机'}里的音频`).fontSize(12).fontColor(MUTED)
           }.width('100%').padding({ top: 44 })
         }
       }
-    }.width('100%').height('100%').scrollBar(BarState.Off)
+    }.width('100%').height('100%').scrollBar(BarState.Off).fadingEdge(false)
       .contentStartOffset(this.contentTop + 12).contentEndOffset(180)
       .onDidScroll((offset: number, state: ScrollState) => {
         if (state !== ScrollState.Idle) this.onScroll(this.scroller.currentOffset().yOffset);

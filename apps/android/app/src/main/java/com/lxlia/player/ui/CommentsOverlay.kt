@@ -1,25 +1,30 @@
 package com.lxlia.player.ui
 
+import androidx.compose.animation.core.Animatable
+import androidx.compose.animation.core.Spring
+import androidx.compose.animation.core.spring
 import androidx.compose.foundation.background
-import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
+import androidx.compose.foundation.layout.PaddingValues
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
+import androidx.compose.foundation.layout.fillMaxHeight
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
-import androidx.compose.foundation.layout.width
+import androidx.compose.foundation.layout.widthIn
 import androidx.compose.foundation.lazy.LazyColumn
-import androidx.compose.foundation.lazy.items
+import androidx.compose.foundation.lazy.itemsIndexed
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.CompositionLocalProvider
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
@@ -29,11 +34,15 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.ui.layout.ContentScale
+import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
+import com.kyant.backdrop.backdrops.layerBackdrop
+import com.kyant.backdrop.backdrops.rememberLayerBackdrop
 import com.lxlia.player.lx.MusicComments
 import com.lxlia.player.lx.SongComment
 import com.lxlia.player.lx.SongComments
@@ -53,7 +62,7 @@ private fun relativeTime(ms: Long): String {
     }
 }
 
-/** 评论浮层：只读取原平台公开评论，不提供登录、点赞或发表入口。 */
+/** 评论浮层：只读取原平台公开评论，上模糊下穿透 + 860dp 宽屏居中（对齐鸿蒙 CommentsPanel）。 */
 @Composable
 fun CommentsOverlay(vm: AppViewModel) {
     val song = vm.selected
@@ -62,6 +71,11 @@ fun CommentsOverlay(vm: AppViewModel) {
     var error by remember { mutableStateOf("") }
     var token by remember { mutableStateOf(0) }
     var reloadKey by remember { mutableStateOf(0) }
+
+    val appear = remember { Animatable(0f) }
+    LaunchedEffect(Unit) {
+        appear.animateTo(1f, spring(dampingRatio = 0.85f, stiffness = Spring.StiffnessMediumLow))
+    }
 
     LaunchedEffect(song?.key, reloadKey) {
         val current = song
@@ -85,22 +99,36 @@ fun CommentsOverlay(vm: AppViewModel) {
             }
     }
 
-    Box(Modifier.fillMaxSize().background(INK)) {
-        Column(Modifier.fillMaxSize()) {
-            PageHeader(
-                title = song?.name ?: "歌曲评论",
-                subtitle = song?.let { it.singer + (data?.let { info -> " · ${info.platform}" } ?: "") } ?: "网络平台评论",
-                wide = vm.wide,
-                topInset = vm.statusInset,
-                backLabel = "返回歌曲",
-                onBack = { vm.commentsOpen = false },
-            )
+    val commentsBackdrop = rememberLayerBackdrop {
+        drawRect(INK)
+        drawContent()
+    }
+    val topBlurHeight = vm.statusInset + 96f
+    Box(
+        Modifier
+            .fillMaxSize()
+            .background(INK)
+            .graphicsLayer {
+                alpha = appear.value
+                translationY = (1f - appear.value) * 18.dp.toPx()
+            },
+    ) {
+        Box(
+            Modifier
+                .fillMaxSize()
+                .topProgressiveFade(topBlurHeight)
+                .layerBackdrop(commentsBackdrop),
+        ) {
             LazyColumn(
-                modifier = Modifier.weight(1f).fillMaxWidth(),
-                contentPadding = androidx.compose.foundation.layout.PaddingValues(
+                modifier = Modifier
+                    .align(Alignment.TopCenter)
+                    .widthIn(max = 860.dp)
+                    .fillMaxWidth()
+                    .fillMaxHeight(),
+                contentPadding = PaddingValues(
                     start = if (vm.wide) 32.dp else 20.dp,
                     end = if (vm.wide) 32.dp else 20.dp,
-                    top = 6.dp,
+                    top = (vm.statusInset + 84).dp,
                     bottom = vm.bottomInset.dp + 40.dp,
                 ),
                 verticalArrangement = Arrangement.spacedBy(16.dp),
@@ -110,11 +138,15 @@ fun CommentsOverlay(vm: AppViewModel) {
                     item { CommentsNotice(info.platform) }
                     if (info.hot.isNotEmpty()) {
                         item { SectionHeading("热门评论") }
-                        items(info.hot, key = { "hot-${it.id}" }) { comment -> CommentRow(comment) }
+                        itemsIndexed(info.hot, key = { idx, c -> "hot-${c.id}-$idx" }) { idx, comment ->
+                            CommentRow(comment, showDivider = idx < info.hot.lastIndex)
+                        }
                     }
                     if (info.latest.isNotEmpty()) {
                         item { SectionHeading("最新评论") }
-                        items(info.latest, key = { "new-${it.id}" }) { comment -> CommentRow(comment) }
+                        itemsIndexed(info.latest, key = { idx, c -> "new-${c.id}-$idx" }) { idx, comment ->
+                            CommentRow(comment, showDivider = idx < info.latest.lastIndex)
+                        }
                     }
                     item {
                         Text(
@@ -151,12 +183,23 @@ fun CommentsOverlay(vm: AppViewModel) {
                 }
             }
         }
+        TopProgressiveBlur(commentsBackdrop, topBlurHeight)
+        CompositionLocalProvider(LocalBackdrop provides commentsBackdrop) {
+            PageHeader(
+                title = song?.name ?: "歌曲评论",
+                subtitle = song?.let { it.singer + (data?.let { info -> " · ${info.platform}" } ?: "") } ?: "网络平台评论",
+                wide = vm.wide,
+                topInset = vm.statusInset,
+                backLabel = "返回歌曲",
+                onBack = { vm.commentsOpen = false },
+            )
+        }
     }
 }
 
 @Composable
 private fun SectionHeading(text: String) {
-    Text(text, fontSize = 18.sp, color = TEXT, fontWeight = androidx.compose.ui.text.font.FontWeight.Medium, modifier = Modifier.fillMaxWidth())
+    Text(text, fontSize = 18.sp, color = TEXT, fontWeight = FontWeight.Medium, modifier = Modifier.fillMaxWidth())
 }
 
 @Composable
@@ -165,7 +208,7 @@ private fun CommentsNotice(platform: String) {
         modifier = Modifier
             .fillMaxWidth()
             .clip(RoundedCornerShape(16.dp))
-            .background(Color(0x0DFFFFFF))
+            .background(CARD_SURFACE)
             .padding(14.dp),
         horizontalArrangement = Arrangement.spacedBy(10.dp),
     ) {
@@ -178,11 +221,11 @@ private fun CommentsNotice(platform: String) {
 }
 
 @Composable
-private fun CommentRow(comment: SongComment) {
+private fun CommentRow(comment: SongComment, showDivider: Boolean = true) {
     Column(verticalArrangement = Arrangement.spacedBy(6.dp)) {
         Row(horizontalArrangement = Arrangement.spacedBy(12.dp)) {
             Box(
-                modifier = Modifier.size(40.dp).clip(CircleShape).background(Color(0x16FFFFFF)),
+                modifier = Modifier.size(40.dp).clip(CircleShape).background(CHIP_BG),
                 contentAlignment = Alignment.Center,
             ) {
                 if (comment.avatar.isNotEmpty()) {
@@ -219,6 +262,8 @@ private fun CommentRow(comment: SongComment) {
                 }
             }
         }
-        Box(Modifier.fillMaxWidth().height(1.dp).background(Color(0x12FFFFFF)))
+        if (showDivider) {
+            Box(Modifier.fillMaxWidth().height(1.dp).background(DIVIDER_COLOR))
+        }
     }
 }

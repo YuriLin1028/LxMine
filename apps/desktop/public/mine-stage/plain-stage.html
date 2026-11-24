@@ -8,41 +8,162 @@
     * { box-sizing: border-box; }
     * { -webkit-tap-highlight-color: transparent; outline: none; user-select: none; -webkit-user-select: none; }
     html, body { width: 100%; height: 100%; margin: 0; overflow: hidden; background: transparent; }
-    body { font-family: "HarmonyOS Sans SC", "Microsoft YaHei UI", sans-serif; color: #fff; }
+    body { font-family: "Segoe UI", "HarmonyOS Sans SC", "PingFang SC", "Microsoft YaHei UI", sans-serif; color: #fff; }
     #viewport { position: fixed; inset: 0; overflow: auto; scrollbar-width: none; overscroll-behavior: contain; mask-image: linear-gradient(to bottom, transparent, #000 var(--fade-top, 100px), #000 calc(100% - var(--fade-bottom, 170px)), transparent); -webkit-mask-image: linear-gradient(to bottom, transparent, #000 var(--fade-top, 100px), #000 calc(100% - var(--fade-bottom, 170px)), transparent); }
     #viewport::-webkit-scrollbar { display: none; }
     #lyrics { padding: var(--lyric-half-height, 0px) clamp(28px, 8vw, 130px); }
-    .line { margin: 0; padding: 16px 0; width: calc(100% / 1.18); font-size: calc(clamp(22px, 3.4vw, 36px) * var(--user-lyric-scale, 1)); font-weight: 500; line-height: 1.5; text-align: left; color: var(--primary, #7dd3fc); cursor: pointer; transform: scale(var(--line-scale, .82)); transform-origin: left center; transition: transform .38s cubic-bezier(.2,.8,.2,1), color .24s ease; }
-    .line.active { color: var(--primary, #7dd3fc); }
-    .main { display: block; line-height: 1.5; opacity: .78; }
+    .line { margin: 0; padding: calc(12px * var(--lyric-line-spacing, 1.2)) 0; width: calc(100% / 1.18); font-size: calc(clamp(22px, 3.4vw, 36px) * var(--user-lyric-scale, 1)); font-weight: 700; line-height: calc(1.28 * var(--lyric-line-spacing, 1.2)); letter-spacing: 0.01em; text-align: left; color: var(--primary, #7dd3fc); cursor: pointer; transform: scale(var(--line-scale, .82)); transform-origin: left center; overflow-wrap: anywhere; word-break: break-word; transition: transform .38s cubic-bezier(.2,.8,.2,1), color .24s ease, opacity .32s ease; }
+    .line.active { color: var(--primary, #7dd3fc); font-weight: 800; }
+    .line.beyond-limit { opacity: 0 !important; pointer-events: none; }
+    .main { display: block; line-height: inherit; opacity: .78; }
     .line.active .main, .line.past .main { opacity: 1; }
     .karaoke-char { position: relative; display: inline-block; white-space: pre; line-height: 1; color: var(--primary); }
     .karaoke-base { opacity: 1; }
     .sung { position: absolute; inset: 0; pointer-events: none; color: var(--highlight); mask-image: var(--karaoke-mask, none); -webkit-mask-image: var(--karaoke-mask, none); }
     body.light-theme .main { opacity: .9; }
     body.light-theme .line.active .main, body.light-theme .line.past .main { opacity: 1; }
-    .translation { display: block; font-size: .55em; font-weight: 400; white-space: pre-line; color: #ffffff99; }
+    .translation { display: block; margin-top: 7px; font-size: .56em; font-weight: inherit; line-height: 1.38; white-space: pre-line; overflow-wrap: anywhere; word-break: break-word; color: var(--primary); opacity: .78; transition: opacity .32s ease, color .24s ease; }
+    .line.active .translation, .line.past .translation { opacity: 1; }
     #empty { position: fixed; inset: 45% 8% auto; font-size: 20px; color: #ffffffaa; }
+    #wp-bg { position: fixed; inset: 0; z-index: -1; display: none; overflow: hidden; background: rgba(9, 11, 16, var(--wp-bg-opacity, 0.42)); opacity: var(--wp-bg-opacity, 0.42); transition: opacity .2s ease; }
+    body.wallpaper-host #wp-bg { display: block; }
+    body.wallpaper-host #viewport { opacity: var(--wp-overall-opacity, 0.95); }
+    #wp-bg-img { position: absolute; inset: -32px; background-position: center; background-size: cover; filter: blur(42px) saturate(1.28) brightness(.52); transform: scale(1.08); transition: background-image .55s ease; }
+    body.light-theme #wp-bg { background: rgba(220, 224, 229, var(--wp-bg-opacity, 0.42)); }
+    body.light-theme #wp-bg-img { filter: blur(44px) saturate(1.18) brightness(1.05); opacity: .42; }
+    #wp-bg-scrim { position: absolute; inset: 0; background: radial-gradient(circle at 30% 25%, rgba(125,211,252,.16), rgba(7,9,13,.62) 72%); }
+    body.light-theme #wp-bg-scrim { background: radial-gradient(circle at 30% 25%, rgba(255,255,255,.32), rgba(220,224,229,.78) 72%); }
     body.light-theme .line { color: var(--primary, #26303c); }
     body.light-theme .line.active { color: var(--primary); }
-    body.light-theme .translation, body.light-theme #empty { color: #303844; }
+    body.light-theme .translation { color: var(--primary, #26303c); opacity: .9; }
+    body.light-theme .line.active .translation, body.light-theme .line.past .translation { opacity: 1; }
+    body.light-theme #empty { color: #303844; }
   </style>
   <script src="mine-stage-lyrics.js"></script>
   <script src="mine-stage-appearance.js"></script>
   <script src="mine-stage-gestures.js"></script>
 </head>
 <body>
+  <div id="wp-bg"><div id="wp-bg-img"></div><div id="wp-bg-scrim"></div></div>
   <div id="viewport"><div id="lyrics"></div></div><div id="empty">选择一首歌</div>
   <script>
     (() => {
+      if (new URLSearchParams(location.search).get('wallpaper') === '1') {
+        document.body.classList.add('wallpaper-host');
+      }
+      const wpBgImg = document.getElementById('wp-bg-img');
       const viewport = document.getElementById('viewport');
       const root = document.getElementById('lyrics');
       const empty = document.getElementById('empty');
       const gestures = LxMineGestures.bind(viewport, true);
       let data = {}, clock = { positionMs: 0, playing: false }, at = performance.now();
-      let presentation = window.__lxmineStagePresentation = { visible: true, detail: true }, active = -1, timer = 0, key = '', manualUntil = 0, karaokeBuilds = 0;
-      let palette = {}, activeChars = [], stageLines = [], wordRanges = [], shownProgress = 0, activeAt = 0, trackAt = 0, lyricFrame = 0;
-      let scrollFrame = 0, scrollNode = null, scrollPosition = 0, trackPosition = 0, scrollGoal = 0, scrollVelocity = 0, scrollAt = 0, resumePending = false, layoutHeight = 0;
+      let presentation = window.__lxmineStagePresentation = { visible: true, detail: true }, active = -1, timer = 0, key = '', prevColorSig = '', manualUntil = 0, karaokeBuilds = 0, maxVisibleLines = 0;
+      let palette = {}, activeChars = [], stageLines = [], wordRanges = [], hasWordKaraoke = false, shownProgress = 0, activeAt = 0, trackAt = 0, lyricFrame = 0;
+      let scrollFrame = 0, scrollNode = null, scrollPosition = 0, trackPosition = 0, scrollGoal = 0, scrollVelocity = 0, scrollAt = 0, resumePending = false, layoutHeight = 0, resizeRaf = 0, lastPaintedActive = -1;
+      function applyInsets() {
+        const vh = Math.max(240, window.visualViewport?.height || innerHeight || 640);
+        const topRaw = Number(data.topInset);
+        const botRaw = Number(data.bottomInset);
+        const topClamped = Math.round(Math.min(Number.isFinite(topRaw) && topRaw > 0 ? topRaw : 100, vh * 0.22));
+        const botClamped = Math.round(Math.min(Number.isFinite(botRaw) && botRaw > 0 ? botRaw : 170, vh * 0.34));
+        viewport.style.setProperty('--fade-top', topClamped + 'px');
+        viewport.style.setProperty('--fade-bottom', botClamped + 'px');
+      }
+      // Optional 4th-Order Sub-Bass (105Hz) + Mid-Side Vocal Suppressor / Zero-Clip Vocal Booster
+      let vcState = { active: false, vocalGain: 1.0 }, vcAudio = null, vcCtx = null, vcNodes = null, vcSourceUrl = '';
+      function makePlainSoftClipCurve(knee, ceiling) {
+        const n = 4096, curve = new Float32Array(n), span = ceiling - knee;
+        for (let i = 0; i < n; i += 1) {
+          const x = (i * 2) / (n - 1) - 1;
+          const ax = Math.abs(x);
+          curve[i] = ax <= knee ? x : (x < 0 ? -1 : 1) * (knee + span * Math.tanh((ax - knee) / span));
+        }
+        return curve;
+      }
+      function applyPlainVocalGains() {
+        if (!vcNodes || !vcCtx) return;
+        const now = vcCtx.currentTime;
+        const v = Math.max(0, Math.min(1.5, Number.isFinite(Number(vcState.vocalGain)) ? Number(vcState.vocalGain) : 1.0));
+        const suppress = Math.max(0, 1 - Math.min(1, v));
+        const boost = Math.max(0, (v - 1.0) * 2.0);
+        const midDirect = v <= 1.0 ? (v * v) : 1.0;
+        const lowKeep = suppress * (1 + suppress * 0.12);
+        const midBoostDb = boost * 5.2;
+        const sideNotchDb = suppress > 0 ? (-7.5 * suppress) : (-2.2 * boost);
+        const sideGain = suppress > 0 ? (1.0 + suppress * 0.42) : (1.0 - boost * 0.34);
+        const trim = 1.0 / (1.0 + boost * 0.24);
+        vcNodes.midVocalDirect.gain.setTargetAtTime(midDirect, now, 0.025);
+        vcNodes.midLowPreserve.gain.setTargetAtTime(lowKeep, now, 0.025);
+        vcNodes.midVocalBoostEq.gain.setTargetAtTime(midBoostDb, now, 0.025);
+        vcNodes.sideVocalNotch.gain.setTargetAtTime(sideNotchDb, now, 0.025);
+        vcNodes.sidePreserve.gain.setTargetAtTime(sideGain, now, 0.025);
+        vcNodes.outGain.gain.setTargetAtTime(vcState.active ? trim : 0.0, now, 0.025);
+      }
+      function ensurePlainVocalGraph() {
+        if (vcNodes) return true;
+        try {
+          vcAudio = new Audio(); vcAudio.crossOrigin = 'anonymous'; vcAudio.preload = 'auto';
+          vcAudio.addEventListener('loadedmetadata', syncPlainVocalAudio);
+          const Ctx = window.AudioContext || window.webkitAudioContext;
+          if (!Ctx) return false;
+          vcCtx = new Ctx();
+          const src = vcCtx.createMediaElementSource(vcAudio);
+          const split = vcCtx.createChannelSplitter(2);
+          const merge = vcCtx.createChannelMerger(2);
+          const lToMid = vcCtx.createGain(); lToMid.gain.value = 0.5;
+          const rToMid = vcCtx.createGain(); rToMid.gain.value = 0.5;
+          const lToSide = vcCtx.createGain(); lToSide.gain.value = 0.5;
+          const rToSide = vcCtx.createGain(); rToSide.gain.value = -0.5;
+          const midBus = vcCtx.createGain(); midBus.gain.value = 1.0;
+          const sideBus = vcCtx.createGain(); sideBus.gain.value = 1.0;
+          const midVocalDirect = vcCtx.createGain(); midVocalDirect.gain.value = 1.0;
+          const midLowLp1 = vcCtx.createBiquadFilter(); midLowLp1.type = 'lowpass'; midLowLp1.frequency.value = 105; midLowLp1.Q.value = 0.7071;
+          const midLowLp2 = vcCtx.createBiquadFilter(); midLowLp2.type = 'lowpass'; midLowLp2.frequency.value = 105; midLowLp2.Q.value = 0.7071;
+          const midLowPreserve = vcCtx.createGain(); midLowPreserve.gain.value = 0.0;
+          const midVocalBoostEq = vcCtx.createBiquadFilter(); midVocalBoostEq.type = 'peaking'; midVocalBoostEq.frequency.value = 1850; midVocalBoostEq.Q.value = 0.65; midVocalBoostEq.gain.value = 0.0;
+          const midOut = vcCtx.createGain(); midOut.gain.value = 1.0;
+          const sideVocalNotch = vcCtx.createBiquadFilter(); sideVocalNotch.type = 'peaking'; sideVocalNotch.frequency.value = 1550; sideVocalNotch.Q.value = 0.52; sideVocalNotch.gain.value = 0.0;
+          const sidePreserve = vcCtx.createGain(); sidePreserve.gain.value = 1.0;
+          const sideInvert = vcCtx.createGain(); sideInvert.gain.value = -1.0;
+          const outGain = vcCtx.createGain(); outGain.gain.value = 0.0;
+          const shaper = vcCtx.createWaveShaper(); shaper.curve = makePlainSoftClipCurve(0.72, 0.94); shaper.oversample = '2x';
+          const limiter = vcCtx.createDynamicsCompressor();
+          limiter.threshold.value = -10; limiter.knee.value = 14; limiter.ratio.value = 6; limiter.attack.value = 0.002; limiter.release.value = 0.08;
+          src.connect(split);
+          split.connect(lToMid, 0); split.connect(rToMid, 1);
+          split.connect(lToSide, 0); split.connect(rToSide, 1);
+          lToMid.connect(midBus); rToMid.connect(midBus);
+          lToSide.connect(sideBus); rToSide.connect(sideBus);
+          midBus.connect(midVocalDirect); midVocalDirect.connect(midVocalBoostEq); midVocalBoostEq.connect(midOut);
+          midBus.connect(midLowLp1); midLowLp1.connect(midLowLp2); midLowLp2.connect(midLowPreserve); midLowPreserve.connect(midOut);
+          sideBus.connect(sideVocalNotch); sideVocalNotch.connect(sidePreserve); sidePreserve.connect(sideInvert);
+          midOut.connect(merge, 0, 0); sidePreserve.connect(merge, 0, 0);
+          midOut.connect(merge, 0, 1); sideInvert.connect(merge, 0, 1);
+          merge.connect(outGain); outGain.connect(limiter); limiter.connect(shaper); shaper.connect(vcCtx.destination);
+          vcNodes = { midVocalDirect, midLowPreserve, midVocalBoostEq, sideVocalNotch, sidePreserve, outGain };
+          applyPlainVocalGains();
+          return true;
+        } catch (_) { return false; }
+      }
+      function syncPlainVocalAudio() {
+        if (!vcState.active || !vcSourceUrl || !clock.playing) {
+          if (vcAudio) {
+            vcAudio.pause();
+            if (!vcState.active && vcAudio.getAttribute('src')) { vcAudio.removeAttribute('src'); vcAudio.load(); }
+          }
+          if (vcCtx && vcCtx.state === 'running') vcCtx.suspend().catch(() => {});
+          return;
+        }
+        if (!ensurePlainVocalGraph()) return;
+        if (vcAudio.getAttribute('src') !== vcSourceUrl) { vcAudio.src = vcSourceUrl; vcAudio.load(); }
+        applyPlainVocalGains();
+        if (vcCtx.state === 'suspended') vcCtx.resume().catch(() => {});
+        const targetSec = Math.max(0, position() / 1000);
+        if (Math.abs((vcAudio.currentTime || 0) - targetSec) > 0.30 && vcAudio.readyState >= 1) {
+          try { vcAudio.currentTime = targetSec; } catch (_) {}
+        }
+        if (vcAudio.paused) vcAudio.play().catch(() => {});
+      }
       const measure = document.createElement('canvas').getContext('2d');
       function syncViewport() {
         // A cached native WebView can retain a zero CSS large-viewport height
@@ -53,12 +174,14 @@
           root.style.setProperty('--lyric-half-height', (height / 2).toFixed(2) + 'px');
         }
       }
-      function position() { return clock.positionMs + (clock.playing ? performance.now() - at : 0); }
+      let clockRate = 1;
+      function position() { return clock.positionMs + (clock.playing ? (performance.now() - at) * clockRate : 0); }
       function cancelFollow() { cancelAnimationFrame(scrollFrame); scrollFrame = 0; scrollNode = null; scrollVelocity = 0; scrollAt = 0; }
       function scrollStep(time) {
         const dt = Math.max(.001, Math.min(.032, (time - (scrollAt || time - 16)) / 1000)); scrollAt = time;
         if (scrollNode?.isConnected) {
-          const bounds = scrollNode.querySelector('.main').getBoundingClientRect();
+          const mainEl = scrollNode._main || scrollNode.querySelector('.main');
+          const bounds = mainEl.getBoundingClientRect();
           scrollGoal = Math.max(0, Math.min(viewport.scrollHeight - viewport.clientHeight,
             viewport.scrollTop + bounds.top + bounds.height / 2 - LxMineLyrics.anchorY(window.visualViewport?.height || innerHeight)));
         }
@@ -77,7 +200,8 @@
       function center(node, immediate) {
         if (!node) return;
         scrollNode = node;
-        const text = node.querySelector('.main').getBoundingClientRect();
+        const mainEl = node._main || node.querySelector('.main');
+        const text = mainEl.getBoundingClientRect();
         const anchor = LxMineLyrics.anchorY(window.visualViewport?.height || innerHeight);
         scrollGoal = Math.max(0, Math.min(viewport.scrollHeight - viewport.clientHeight, viewport.scrollTop + text.top + text.height / 2 - anchor));
         if (immediate) { cancelFollow(); viewport.scrollTop = scrollGoal; }
@@ -102,7 +226,8 @@
       }
       function buildKaraoke(index) {
         activeChars = [];
-        const line = data.lines?.[index], main = root.children[index]?.querySelector('.main');
+        const rowNode = root.children[index];
+        const line = data.lines?.[index], main = rowNode?.querySelector('.main');
         if (!line || !main) return;
         karaokeBuilds++;
         const font = getComputedStyle(main);
@@ -122,6 +247,33 @@
           activeChars.push({ ...segment, node: unit, p0: start, p1: end, last: null });
           return unit;
         }));
+        const sub = rowNode.querySelector('.translation');
+        const subRaw = sub && sub.dataset.rawText;
+        if (sub && subRaw) {
+          const subFont = getComputedStyle(sub);
+          measure.font = subFont.fontWeight + ' 96px ' + subFont.fontFamily;
+          const subRows = String(subRaw).split(/\r?\n/);
+          const subChildren = [];
+          subRows.forEach((subRow, rIdx) => {
+            if (rIdx > 0) subChildren.push(document.createElement('br'));
+            const rowText = subRow || '';
+            if (!rowText) return;
+            const rowW = Math.max(1, measure.measureText(rowText).width);
+            let subPrefix = '';
+            Array.from(rowText).forEach(ch => {
+              const unit = document.createElement('span'); unit.className = 'karaoke-char';
+              const base = document.createElement('span'); base.className = 'karaoke-base'; base.textContent = ch;
+              const sung = document.createElement('span'); sung.className = 'sung'; sung.textContent = ch; sung.setAttribute('aria-hidden', 'true');
+              const p0 = measure.measureText(subPrefix).width / rowW;
+              subPrefix += ch;
+              const p1 = measure.measureText(subPrefix).width / rowW;
+              unit.append(base, sung);
+              activeChars.push({ text: ch, node: unit, p0, p1, last: null });
+              subChildren.push(unit);
+            });
+          });
+          sub.replaceChildren(...subChildren);
+        }
         shownProgress = LxMineLyrics.lineProgress(stageLines[index], stageLines[index + 1],
           LxMineLyrics.adjustedTime(position(), data.lyricOffset) / 1000, data.duration / 1000, wordRanges);
         activeAt = performance.now();
@@ -131,8 +283,10 @@
         if (!line) return;
         const native = !!line.words.length;
         const target = LxMineLyrics.lineProgress(line, stageLines[active + 1], time / 1000, data.duration / 1000, wordRanges);
-        shownProgress = clock.playing ? LxMineLyrics.progressStep(shownProgress, target, native, .165, (performance.now() - activeAt) / 1000) : target;
-        const feather = LxMineLyrics.feather(stageLines.some(entry => entry.words.length));
+        shownProgress = clock.playing
+          ? LxMineLyrics.progressStep(shownProgress, target, native, .165, (performance.now() - activeAt) / 1000)
+          : target;
+        const feather = LxMineLyrics.feather(hasWordKaraoke);
         for (const unit of activeChars) {
           const mask = LxMineLyrics.karaokeMask(shownProgress, unit.p0, unit.p1, feather);
           if (mask !== unit.last) {
@@ -141,6 +295,14 @@
           }
         }
       }
+      function updateRowVisual(i, total, halfBefore, halfAfter) {
+        const node = root.children[i];
+        if (!node) return;
+        node.classList.toggle('active', i === active);
+        node.classList.toggle('past', i < active);
+        node.classList.toggle('beyond-limit', maxVisibleLines > 0 && active >= 0 && (i < active - halfBefore || i > active + halfAfter));
+        node.style.setProperty('--line-scale', Math.max(.78, 1.18 * Math.pow(.92, Math.abs(i - active))).toFixed(4));
+      }
       function tick(force, immediate) {
         clearTimeout(timer); cancelAnimationFrame(lyricFrame); lyricFrame = 0;
         if (!presentation.visible || !presentation.detail) return;
@@ -148,13 +310,25 @@
         const lines = data.lines || [], target = LxMineLyrics.adjustedTime(position(), data.lyricOffset);
         const index = LxMineLyrics.indexAt(lines, target), changed = index !== active;
         if (changed || force) {
-          if (changed && root.children[active]) root.children[active].querySelector('.main').textContent = lines[active]?.text || '';
-          active = index;
-          for (let i = 0; i < root.children.length; i++) {
-            const node = root.children[i];
-            node.classList.toggle('active', i === active); node.classList.toggle('past', i < active);
-            node.style.setProperty('--line-scale', Math.max(.78, 1.18 * Math.pow(.92, Math.abs(i - active))).toFixed(4));
+          const prevActive = active;
+          if (changed && root.children[prevActive]) {
+            const prevNode = root.children[prevActive];
+            (prevNode._main || prevNode.querySelector('.main')).textContent = lines[prevActive]?.text || '';
+            const prevSub = prevNode._sub || prevNode.querySelector('.translation');
+            if (prevSub && prevSub.dataset.rawText) prevSub.textContent = prevSub.dataset.rawText;
           }
+          active = index;
+          const total = root.children.length;
+          const halfBefore = maxVisibleLines > 0 ? Math.floor((maxVisibleLines - 1) / 2) : 0;
+          const halfAfter = maxVisibleLines > 0 ? (maxVisibleLines - 1 - halfBefore) : 0;
+          if (force || prevActive < 0 || Math.abs(active - prevActive) > 12 || total <= 28) {
+            for (let i = 0; i < total; i++) updateRowVisual(i, total, halfBefore, halfAfter);
+          } else {
+            const winStart = Math.max(0, Math.min(prevActive, active) - 10);
+            const winEnd = Math.min(total - 1, Math.max(prevActive, active) + 10);
+            for (let i = winStart; i <= winEnd; i++) updateRowVisual(i, total, halfBefore, halfAfter);
+          }
+          lastPaintedActive = active;
           if (changed) buildKaraoke(active);
           if (performance.now() > manualUntil) center(root.children[active], immediate);
         } else if (resumePending && performance.now() > manualUntil) {
@@ -172,10 +346,37 @@
       viewport.addEventListener('pointerdown', manualBrowse);
       viewport.addEventListener('pointerup', () => { if (resumePending) manualUntil = performance.now() + 3500; });
       viewport.addEventListener('wheel', manualBrowse, { passive: true });
-      window.addEventListener('resize', () => tick(true, false));
+      window.addEventListener('resize', () => {
+        if (!presentation.visible || !presentation.detail) return;
+        if (resizeRaf) return;
+        resizeRaf = requestAnimationFrame(() => {
+          resizeRaf = 0;
+          applyInsets();
+          tick(true, true);
+        });
+      }, { passive: true });
       window.lxmineStage = {
         metadata(value) {
+          const prevId = data && data.id;
           data = value;
+          if (prevId && value.id && prevId !== value.id) {
+            clock = { positionMs: 0, playing: false };
+            at = performance.now();
+            active = -1;
+            manualUntil = 0;
+            resumePending = false;
+            cancelFollow();
+          }
+          if (wpBgImg && document.body.classList.contains('wallpaper-host')) {
+            const bgSrc = String(value.bgImage || value.cover || '').trim();
+            wpBgImg.style.backgroundImage = bgSrc ? `url("${bgSrc.replace(/"/g, '\\"')}")` : 'none';
+            if (value.wallpaperBgOpacity !== undefined && isFinite(Number(value.wallpaperBgOpacity))) {
+              document.body.style.setProperty('--wp-bg-opacity', String(Math.max(0, Math.min(1, Number(value.wallpaperBgOpacity)))));
+            }
+            if (value.wallpaperOverallOpacity !== undefined && isFinite(Number(value.wallpaperOverallOpacity))) {
+              document.body.style.setProperty('--wp-overall-opacity', String(Math.max(0.2, Math.min(1, Number(value.wallpaperOverallOpacity)))));
+            }
+          }
           LxMineAppearance.apply(value.appearance);
           const colors = palette = LxMineAppearance.colors({ primary: '#7dd3fc', secondary: '#a5b4fc', ...(value.lyricColors || {}) });
           palette.primary = colors.primary || '#7dd3fc'; palette.secondary = colors.secondary || palette.primary;
@@ -184,22 +385,38 @@
           document.body.style.setProperty('--secondary', colors.secondary || colors.primary || '#a5b4fc');
           document.body.classList.toggle('gradient', String(value.lyricColorMode).includes('gradient'));
           colorKaraoke();
-          viewport.style.setProperty('--fade-top', (Number(value.topInset) || 100) + 'px');
-          viewport.style.setProperty('--fade-bottom', (Number(value.bottomInset) || 170) + 'px');
-          const userScale = Math.max(0.75, Math.min(1.4, Number(value.lyricScale) || 1));
+          applyInsets();
+          const userScale = Math.max(0.55, Math.min(1.5, Number(value.lyricScale) || 1));
+          const lineSpacing = Math.max(0.85, Math.min(1.8, Number(value.lyricLineSpacing) || 1.2));
+          maxVisibleLines = Math.max(0, Math.min(10, Math.round(Number(value.lyricMaxLines) || 0)));
           document.body.style.setProperty('--user-lyric-scale', String(userScale));
-          const nextKey = JSON.stringify([value.id, value.lines, value.translationLines, userScale]);
+          document.body.style.setProperty('--lyric-line-spacing', String(lineSpacing));
+          const nextKey = JSON.stringify([value.id, value.lines, value.translationLines, userScale, lineSpacing, maxVisibleLines]);
+          const nextColorSig = JSON.stringify([value.appearance, value.lyricColorMode, value.lyricColors, value.lyricOffset]);
           const initial = key !== nextKey || !root.children.length || !presentation.visible || !presentation.detail;
+          const metaVisualChanged = initial || prevColorSig !== nextColorSig;
+          prevColorSig = nextColorSig;
           if (key !== nextKey) {
             cancelFollow();
             key = nextKey;
             trackAt = performance.now();
             stageLines = LxMineLyrics.stageLines(value.lines || [], value.duration);
-            const translations = new Map((value.translationLines || []).map(line => [line.timeMs, line.text]));
+            hasWordKaraoke = stageLines.some(entry => entry.words.length > 0);
+            const rawTrans = (value.translationLines || []).filter(line => line && line.text && !/^[\/\\\-—–_~·•\s]+$/.test(String(line.text).trim()));
+            const findTrans = timeMs => {
+              let best = null, bestDiff = 651;
+              for (const tr of rawTrans) {
+                const diff = Math.abs(tr.timeMs - timeMs);
+                if (diff < bestDiff) { bestDiff = diff; best = tr.text; if (diff === 0) break; }
+              }
+              return best;
+            };
             root.replaceChildren(...(value.lines || []).map(line => {
               const node = document.createElement('p'); node.className = 'line';
               const main = document.createElement('span'); main.className = 'main'; main.textContent = line.text; node.append(main);
-              if (translations.has(line.timeMs)) { const auxiliary = document.createElement('span'); auxiliary.className = 'translation'; auxiliary.textContent = translations.get(line.timeMs); node.append(auxiliary); }
+              node._main = main;
+              const matchedTrans = line.translation || findTrans(line.timeMs);
+              if (matchedTrans) { const auxiliary = document.createElement('span'); auxiliary.className = 'translation'; auxiliary.dataset.rawText = matchedTrans; auxiliary.textContent = matchedTrans; node.append(auxiliary); node._sub = auxiliary; }
               node.onclick = event => {
                 if (event.clientY < (data.topInset || 0) || event.clientY > innerHeight - (data.bottomInset || 0)) return;
                 manualUntil = 0; resumePending = false;
@@ -210,11 +427,47 @@
             active = -1;
           }
           empty.hidden = (value.lines || []).length > 0; empty.textContent = value.name ? '暂无歌词' : '选择一首歌';
-          tick(true, initial);
+          if (typeof value.audioUrl === 'string' && value.audioUrl !== vcSourceUrl) {
+            vcSourceUrl = value.audioUrl;
+            if (vcAudio) vcAudio.pause();
+          }
+          syncPlainVocalAudio();
+          if (metaVisualChanged) tick(true, initial);
           if (window.__lxmineNative && typeof window.__lxmineNative.visualReady === 'function') window.__lxmineNative.visualReady();
           if (parent !== window) parent.postMessage({ type: 'lxmine-stage-visual-ready' }, location.origin);
         },
-        clock(value) { clock = value; at = performance.now(); tick(); },
+        clock(value) {
+          const now = performance.now();
+          const curMs = position();
+          const inMs = Math.max(0, Number(value && value.positionMs) || 0);
+          const nextPlaying = !!(value && value.playing);
+          const diff = inMs - curMs;
+          let finalMs = inMs;
+          if (clock.playing && nextPlaying && Math.abs(diff) <= 650) {
+            finalMs = curMs;
+            clockRate = Math.max(0.88, Math.min(1.12, 1 + (diff / 1000) * 0.35));
+          } else {
+            clockRate = 1;
+          }
+          clock = { positionMs: finalMs, playing: nextPlaying };
+          at = now;
+          syncPlainVocalAudio();
+          tick();
+        },
+        vocalCancel(cfg) {
+          cfg = cfg || {};
+          vcState.active = cfg.active === true;
+          const g = Number(cfg.vocalGain);
+          vcState.vocalGain = Number.isFinite(g) ? Math.max(0, Math.min(1.5, g)) : 1.0;
+          applyPlainVocalGains();
+          syncPlainVocalAudio();
+        },
+        setInsets(insets) {
+          if (!insets) return;
+          if (insets.topInset !== undefined) data.topInset = Number(insets.topInset) || 0;
+          if (insets.bottomInset !== undefined) data.bottomInset = Number(insets.bottomInset) || 0;
+          applyInsets();
+        },
         presentation(value) {
           const visible = value.visible !== false, detail = value.detail === true;
           if (presentation.visible === visible && presentation.detail === detail) return;

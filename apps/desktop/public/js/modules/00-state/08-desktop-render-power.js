@@ -122,7 +122,12 @@ function runtimeAnalysisStride(kind, length) {
   }
   return 1;
 }
+function isWallpaperHostDocument() {
+  return !!(document.documentElement && document.documentElement.classList && document.documentElement.classList.contains('wallpaper-host'));
+}
 function isDeepBackgroundMode() {
+  if (isWallpaperHostDocument()) return false;
+  if (window.__lxmineStagePresentation) return window.__lxmineStagePresentation.visible !== true;
   if (isLiveBackgroundKeepMode()) return false;
   // Electron may briefly leave document.hidden stale after a tray restore.
   // The native BrowserWindow state is authoritative for desktop power policy;
@@ -142,6 +147,7 @@ function isBackgroundReleaseMode() {
   return currentPerformanceBackgroundMode() === 'release';
 }
 function isHiddenForBackgroundOptimization() {
+  if (isWallpaperHostDocument()) return false;
   return !!(document.hidden && !isLiveBackgroundKeepMode());
 }
 function isVisibleBackgroundMode() {
@@ -379,7 +385,7 @@ function trimRuntimeCaches(reason, aggressive) {
   runtimePerfState.lastCacheTrimAt = performance.now();
   runtimePerfState.cacheTrimCount += 1;
   runtimePerfState.lastCacheTrimReason = reason || (aggressive ? 'deep' : 'active');
-  collectRuntimePerfSnapshot(runtimePerfState.lastCacheTrimAt);
+  if (aggressive) collectRuntimePerfSnapshot(runtimePerfState.lastCacheTrimAt);
   return dropped;
 }
 function trimVisualCachesForBackground() {

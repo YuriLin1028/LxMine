@@ -47,17 +47,54 @@ function createLxManager(options) {
   };
 
   const sourceHealth = new Map();
-  const PREVIEW_URL_RE = /(?:free_?trial|try_?listen|audition|preview_?30|30s_?trial|\/trial\/|[?&]free=1(?:&|$))/i;
+  const urlCache = new Map();
+  const PREVIEW_URL_RE = /(?:free_?trial|try_?listen|audition|shiting|preview_?(?:30|45|60)|(?:30|45|60)s_?trial|trial_?play|\/trial\/|[?&](?:free|try|trial|preview)=1(?:&|$))/i;
+
+  const VERSION_CONFLICT_RE = /(?:\b(?:dj|remix|cover|karaoke|instrumental|acapella|sped\s*up|nightcore)\b|dj版|伴奏|纯音乐|翻唱|翻自|试听|30秒|铃声|变速|加速版|降调|升调)/i;
+
+  const cacheKeyFor = (info) => {
+    const idPart = String(info?.musicInfo?.songmid || info?.musicInfo?.hash || info?.musicInfo?.id || '').trim();
+    if (!idPart) return '';
+    return `${info?.source || ''}:${idPart}:${info?.type || '128k'}`;
+  };
+  const getCachedUrl = (key) => {
+    const entry = urlCache.get(key);
+    if (!entry) return null;
+    if (Date.now() > entry.expiresAt) { urlCache.delete(key); return null; }
+    return entry.value;
+  };
+  const putCachedUrl = (key, value) => {
+    if (!key || !value || !value.url) return;
+    urlCache.set(key, { value, expiresAt: Date.now() + 90_000 });
+    if (urlCache.size > 80) urlCache.delete(urlCache.keys().next().value);
+  };
+
+  const CHROME_UA = 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/126.0.0.0 Safari/537.36';
+  const QUALITY_ORDER = ['flac24bit', 'flac', '320k', '128k'];
+
+  const buildQualityChain = (requested) => {
+    const req = String(requested || '128k');
+    const idx = QUALITY_ORDER.indexOf(req);
+    if (idx >= 0) {
+      const chain = QUALITY_ORDER.slice(idx);
+      if (req === '128k') chain.push('320k');
+      return chain;
+    }
+    return [req, '320k', '128k'];
+  };
 
   const isSourceCoolingDown = (sourceId) => {
     const h = sourceHealth.get(sourceId);
-    if (!h || !h.failCount) return false;
-    return Date.now() - h.lastFailAt < 90_000;
+    if (!h || h.failCount < 2) return false;
+    return Date.now() - h.lastFailAt < 20_000;
   };
   const markSourceSuccess = (sourceId) => {
     sourceHealth.set(sourceId, { failCount: 0, lastFailAt: 0, lastOkAt: Date.now() });
   };
-  const markSourceFail = (sourceId) => {
+  const markSourceFail = (sourceId, err) => {
+    const msg = String((err && err.message) || err || '');
+    // 平台未声明、单曲试听拦截、版本冲突、重复 URL 排除、冷启动脚本初始化超时不代表音源本身损坏，禁止污染冷却状态。
+    if (msg === 'unsupported_platform' || msg === 'preview_30s' || msg === 'wrong_version' || msg === 'excluded_url' || msg === 'init_timeout') return;
     const prev = sourceHealth.get(sourceId) || { failCount: 0, lastFailAt: 0, lastOkAt: 0 };
     sourceHealth.set(sourceId, { failCount: prev.failCount + 1, lastFailAt: Date.now(), lastOkAt: prev.lastOkAt });
   };
@@ -67,34 +104,67 @@ function createLxManager(options) {
     const timer = setTimeout(() => {
       if (!done) { done = true; reject(new Error(label || 'timeout')); }
     }, ms);
+    if (typeof timer.unref === 'function') timer.unref();
     Promise.resolve(promise).then(
       val => { if (!done) { done = true; clearTimeout(timer); resolve(val); } },
       err => { if (!done) { done = true; clearTimeout(timer); reject(err); } },
     );
   });
 
-  /** 快速探测音频 URL 可用性与 30s VIP 试听片段（Range: bytes=0-1，~100-250ms）。 */
-  const probePlayableUrl = async (url, expectedDurationMs) => {
+  /** 快速探测音频 URL 可用性、30s/60s VIP 试听片段与异常版本文件名（Range: bytes=0-1 + HEAD 兜底）。 */
+  const probePlayableUrl = async (url, expectedDurationMs, excludeUrlSet, songName) => {
     if (typeof url !== 'string' || !/^https?:\/\//i.test(url)) throw new Error('invalid_url');
+    if (excludeUrlSet && excludeUrlSet.has(url)) throw new Error('excluded_url');
     const durMs = Math.max(0, Number(expectedDurationMs) || 0);
-    if (durMs >= 75_000 && PREVIEW_URL_RE.test(url)) {
+    if (durMs >= 45_000 && PREVIEW_URL_RE.test(url)) {
       throw new Error('preview_30s');
     }
+    const origName = String(songName || '');
     const doFetch = fetchImpl || globalThis.fetch;
     if (typeof doFetch !== 'function') return url;
-    const controller = typeof AbortController === 'function' ? new AbortController() : null;
-    const timer = setTimeout(() => { try { controller?.abort(); } catch (_) {} }, 2800);
+    const probeOnce = async (method, headers) => {
+      const controller = typeof AbortController === 'function' ? new AbortController() : null;
+      const timer = setTimeout(() => { try { controller?.abort(); } catch (_) {} }, 2800);
+      if (typeof timer.unref === 'function') timer.unref();
+      try {
+        return await doFetch(url, {
+          method,
+          headers,
+          redirect: 'follow',
+          signal: controller ? controller.signal : undefined,
+        });
+      } finally {
+        clearTimeout(timer);
+      }
+    };
     try {
-      const resp = await doFetch(url, {
-        method: 'GET',
-        headers: { Range: 'bytes=0-1', 'User-Agent': 'Mozilla/5.0 LxMine/1.1' },
-        redirect: 'follow',
-        signal: controller ? controller.signal : undefined,
-      });
-      if (resp.status >= 400) throw new Error('http_' + resp.status);
+      let resp = await probeOnce('GET', { Range: 'bytes=0-1', 'User-Agent': CHROME_UA });
+      if (resp.status === 403 || resp.status === 405 || resp.status === 416) {
+        try { await resp.body?.cancel?.(); } catch (_) {}
+        resp = await probeOnce('HEAD', { 'User-Agent': CHROME_UA });
+        if (resp.status === 405 || resp.status === 403) {
+          // 部分音乐 CDN 拒绝 Range/HEAD 探测但播放器直连 GET 200 可正常播，不直接误杀
+          try { await resp.body?.cancel?.(); } catch (_) {}
+          return url;
+        }
+      }
+      if (resp.status >= 400) {
+        try { await resp.body?.cancel?.(); } catch (_) {}
+        throw new Error('http_' + resp.status);
+      }
       const ct = String(resp.headers?.get?.('content-type') || '').toLowerCase();
       if (ct && (ct.includes('text/html') || ct.includes('application/json') || ct.includes('text/plain') || ct.includes('application/xml'))) {
+        try { await resp.body?.cancel?.(); } catch (_) {}
         throw new Error('non_audio_content');
+      }
+      const cd = String(resp.headers?.get?.('content-disposition') || '');
+      if (cd && origName) {
+        let decodedCd = cd;
+        try { decodedCd = decodeURIComponent(cd); } catch (_) {}
+        if (VERSION_CONFLICT_RE.test(decodedCd) && !VERSION_CONFLICT_RE.test(origName)) {
+          try { await resp.body?.cancel?.(); } catch (_) {}
+          throw new Error('wrong_version');
+        }
       }
       let totalBytes = 0;
       const contentRange = String(resp.headers?.get?.('content-range') || '');
@@ -106,33 +176,34 @@ function createLxManager(options) {
       }
       try { await resp.body?.cancel?.(); } catch (_) {}
       if (totalBytes > 0 && totalBytes < 24_000) throw new Error('empty_audio');
-      // 30s VIP 试听拦截：完整歌曲（>=75s）若总字节数远低于正常码率下限（~6.5KB/s 且 <720KB），判定为 30s 试听片段。
-      if (durMs >= 75_000 && totalBytes > 0) {
-        const minExpectedBytes = Math.min(720 * 1024, Math.floor((durMs / 1000) * 6500));
+      // 仅拦截明确短试听（30s/60s 试听片段），避免误杀合法 64k/96k AAC 或以 mp3 返回的 flac 请求。
+      if (durMs >= 45_000 && totalBytes > 0) {
+        const lowerUrl = url.toLowerCase();
+        const isLossless = /\.flac(?:$|\?)|\.ape(?:$|\?)|\.wav(?:$|\?)/.test(lowerUrl) || ct.includes('flac') || ct.includes('wav');
+        const bytesPerSec = isLossless ? 11_000 : 5_200;
+        const minExpectedBytes = Math.min(1_450_000, Math.floor((durMs / 1000) * bytesPerSec));
         if (totalBytes < minExpectedBytes) throw new Error('preview_30s');
       }
       return url;
     } catch (err) {
       const msg = String(err && err.message || '');
-      if (msg === 'preview_30s' || msg === 'non_audio_content' || msg === 'empty_audio' || msg.startsWith('http_')) {
+      if (msg === 'preview_30s' || msg === 'wrong_version' || msg === 'excluded_url' || msg === 'non_audio_content' || msg === 'empty_audio' || msg.startsWith('http_')) {
         throw err;
       }
-      // 网络波动/Abort 不直接误杀已拿到的有效直链（某些 CDN 拒绝 Range），仅在明确错误时拒收。
       return url;
-    } finally {
-      clearTimeout(timer);
     }
   };
 
-  const requestFromSource = async (source, info, timeoutMs, expectedDurationMs) => {
-    const runtime = await withTimeout(getRuntime(source.id), Math.min(3500, timeoutMs), 'init_timeout');
+  const requestFromSource = async (source, info, timeoutMs, expectedDurationMs, excludeUrlSet) => {
+    const runtime = await withTimeout(getRuntime(source.id), Math.max(9500, timeoutMs), 'init_timeout');
     const declared = runtime.sourceInfo?.sources?.[info?.source];
-    if (declared && Array.isArray(declared.actions) && !declared.actions.includes('musicUrl')) {
+    if (!declared || !Array.isArray(declared.actions) || !declared.actions.includes('musicUrl')) {
       throw new Error('unsupported_platform');
     }
     const reqInfo = { ...info };
-    if (declared && Array.isArray(declared.qualitys) && declared.qualitys.length && !declared.qualitys.includes(reqInfo.type)) {
-      reqInfo.type = declared.qualitys.includes('320k') ? '320k' : (declared.qualitys.includes('128k') ? '128k' : declared.qualitys[0]);
+    if (Array.isArray(declared.qualitys) && declared.qualitys.length && !declared.qualitys.includes(reqInfo.type)) {
+      const fallbackQ = buildQualityChain(reqInfo.type).find(q => declared.qualitys.includes(q));
+      reqInfo.type = fallbackQ || declared.qualitys[0];
     }
     const result = await withTimeout(runtime.request({
       source: reqInfo?.source,
@@ -141,40 +212,38 @@ function createLxManager(options) {
     }), timeoutMs, 'request_timeout');
     const url = result?.data?.url;
     if (!url) throw new Error('empty_url');
-    await probePlayableUrl(url, expectedDurationMs);
+    await probePlayableUrl(url, expectedDurationMs, excludeUrlSet, reqInfo?.musicInfo?.name);
     markSourceSuccess(source.id);
     return { url, sourceId: source.id, sourceName: source.name, type: reqInfo.type };
   };
 
+  const inflightUrlRaces = new Map();
   const raceMusicUrl = async (info, opts = {}) => {
     const allSources = store.list();
     if (!allSources.length) throw new Error('没有启用的自定义源');
     const exclude = new Set(Array.isArray(opts.excludeSourceIds) ? opts.excludeSourceIds : []);
+    const excludeUrlSet = new Set(Array.isArray(opts.excludeUrls) ? opts.excludeUrls.filter(Boolean) : []);
+    const key = cacheKeyFor(info);
+    const canDedupe = Boolean(key && !opts.forceResolve && exclude.size === 0 && excludeUrlSet.size === 0);
+    if (key && !canDedupe) {
+      urlCache.delete(key);
+    }
+    if (canDedupe) {
+      const cached = getCachedUrl(key);
+      if (cached && allSources.some(s => s.id === cached.sourceId)) return { ...cached, switched: false };
+      if (inflightUrlRaces.has(key)) return inflightUrlRaces.get(key);
+    }
     const candidates = allSources.filter(s => !exclude.has(s.id));
     if (!candidates.length) throw new Error('全部音源均暂不可用');
     const expectedDurationMs = Number(opts.expectedDurationMs || info?.musicInfo?.durationMs || info?.musicInfo?.duration || 0) || 0;
     const activeId = store.getActiveId();
-    const active = candidates.find(s => s.id === activeId);
+    const healthy = candidates.filter(s => !isSourceCoolingDown(s.id));
+    const pool = healthy.length ? healthy : candidates;
 
-    // 1. 当前源健康且未强制全源竞速时，先给 3.5s 快速通道；一旦异常/超时/30s 试听，立刻全源并行竞速。
-    if (active && !opts.raceAll && !isSourceCoolingDown(active.id)) {
-      try {
-        const hit = await requestFromSource(active, info, 3800, expectedDurationMs);
-        return { ...hit, switched: false };
-      } catch (_) {
-        markSourceFail(active.id);
-      }
-    }
-
-    // 2. 把库里所有剩余音源一股脑并行竞速，谁最先返回可用完整直链立刻采用！
-    const pool = active && !opts.raceAll && !isSourceCoolingDown(active.id)
-      ? candidates.filter(s => s.id !== active.id)
-      : candidates;
-    if (!pool.length) throw new Error('当前歌曲暂无法获取完整音源');
-    try {
-      const winner = await Promise.any(pool.map(src =>
-        requestFromSource(src, info, 4800, expectedDurationMs).catch(err => {
-          markSourceFail(src.id);
+    const racePool = async (srcPool, reqInfo, timeoutMs) => {
+      const winner = await Promise.any(srcPool.map(src =>
+        requestFromSource(src, reqInfo, timeoutMs, expectedDurationMs, excludeUrlSet).catch(err => {
+          markSourceFail(src.id, err);
           throw err;
         })
       ));
@@ -182,10 +251,38 @@ function createLxManager(options) {
       if (switched) {
         try { store.setActive(winner.sourceId); } catch (_) {}
       }
-      return { ...winner, switched };
-    } catch (_) {
+      const out = { ...winner, switched };
+      putCachedUrl(key, out);
+      return out;
+    };
+
+    const runRace = async () => {
+      // 音质阶梯自动降级（flac24bit -> flac -> 320k -> 128k），同时保留 7.5s 宽裕并发超时
+      // 防止响应 4-6s 的高可用音源被 3.6s 过早掐断。
+      const qualityChain = buildQualityChain(info?.type || '128k');
+      for (let qi = 0; qi < qualityChain.length; qi++) {
+        const q = qualityChain[qi];
+        const reqInfo = { ...info, type: q };
+        const roundTimeout = qi === 0 ? 7500 : 6000;
+        try {
+          return await racePool(pool, reqInfo, roundTimeout);
+        } catch (_) {
+          const fallbackPool = candidates.filter(s => !pool.includes(s));
+          if (fallbackPool.length) {
+            try {
+              return await racePool(fallbackPool, reqInfo, 5500);
+            } catch (_) {}
+          }
+        }
+      }
       throw new Error('当前歌曲暂无法获取完整音源');
+    };
+    const promise = runRace();
+    if (canDedupe) {
+      inflightUrlRaces.set(key, promise);
+      promise.finally(() => { if (inflightUrlRaces.get(key) === promise) inflightUrlRaces.delete(key); }).catch(() => {});
     }
+    return promise;
   };
 
   const request = async (action, info) => {
@@ -202,7 +299,7 @@ function createLxManager(options) {
   return {
     filePath,
     reload() {
-      generation++; pendingRuntimes.clear();
+      generation++; pendingRuntimes.clear(); urlCache.clear(); inflightUrlRaces.clear();
       for (const id of Array.from(runtimes.keys())) disposeRuntime(id);
       store.reload();
     },
@@ -210,7 +307,7 @@ function createLxManager(options) {
     importScript: (raw) => store.importScript(raw),
     importScripts: (files) => store.importScripts(files),
     remove: (ids) => {
-      generation++; pendingRuntimes.clear();
+      generation++; pendingRuntimes.clear(); urlCache.clear(); inflightUrlRaces.clear();
       const targets = Array.isArray(ids) ? ids : [ids];
       for (const id of targets) disposeRuntime(id);
       return store.remove(targets);
@@ -220,11 +317,33 @@ function createLxManager(options) {
       return store.list();
     },
     getActiveId: () => store.getActiveId(),
+    warmUp() {
+      const all = store.list();
+      if (!all.length) return;
+      const active = store.getActiveSource();
+      const ordered = active ? [active, ...all.filter(s => s.id !== active.id)] : all;
+      for (const src of ordered.slice(0, 3)) {
+        if (!runtimes.has(src.id) && !pendingRuntimes.has(src.id)) {
+          getRuntime(src.id).catch(() => {});
+        }
+      }
+    },
     async supportedSources(action) {
-      const source = store.getActiveSource();
-      if (!source) return [];
-      const runtime = await getRuntime(source.id);
-      return Object.keys(runtime.sourceInfo.sources).filter(key => runtime.sourceInfo.sources[key].actions.includes(action));
+      const all = store.list();
+      if (!all.length) return [];
+      const active = store.getActiveSource();
+      const ordered = active ? [active, ...all.filter(s => s.id !== active.id)] : all;
+      const union = new Set();
+      for (const src of ordered.slice(0, 6)) {
+        try {
+          const runtime = await withTimeout(getRuntime(src.id), 4500, 'init_timeout');
+          for (const key of Object.keys(runtime.sourceInfo.sources || {})) {
+            if (runtime.sourceInfo.sources[key]?.actions?.includes(action)) union.add(key);
+          }
+          if (union.size >= 4) break;
+        } catch (_) {}
+      }
+      return Array.from(union);
     },
     getActiveSource: () => {
       const source = store.getActiveSource();

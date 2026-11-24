@@ -105,6 +105,8 @@ data class MusicPlaylist(
     val updatedAt: Long = 0,
     val isFavorite: Boolean = false,
     val warning: String = "",
+    val customCover: String = "",
+    val preserveQueue: Boolean = false,
 ) {
     fun toJson(): JSONObject {
         val json = JSONObject()
@@ -120,6 +122,7 @@ data class MusicPlaylist(
         json.put("updatedAt", updatedAt)
         if (isFavorite) json.put("isFavorite", true)
         if (warning.isNotEmpty()) json.put("warning", warning)
+        if (customCover.isNotEmpty()) json.put("customCover", customCover)
         return json
     }
 
@@ -133,17 +136,21 @@ data class MusicPlaylist(
             json.optJSONArray("songIds")?.let { array ->
                 for (index in 0 until array.length()) array.optString(index).takeIf { it.isNotEmpty() }?.let(ids::add)
             }
+            val name = json.optString("name")
+            val rawIsFavorite = json.optBoolean("isFavorite") || name == "我喜欢的" || name == "我的收藏"
+            val normalizedName = if (rawIsFavorite && (name.isEmpty() || name == "我喜欢的")) "我的收藏" else name
             return MusicPlaylist(
                 id = json.optString("id"),
-                name = json.optString("name"),
+                name = normalizedName,
                 kind = json.optString("kind").ifEmpty { "lx" },
                 songs = songs,
                 songIds = ids.ifEmpty { songs.map { it.key } },
                 pcTracksJson = json.optJSONArray("pcTracks")?.toString(),
                 createdAt = json.optLong("createdAt"),
                 updatedAt = json.optLong("updatedAt"),
-                isFavorite = json.optBoolean("isFavorite"),
+                isFavorite = rawIsFavorite,
                 warning = json.optString("warning"),
+                customCover = json.optString("customCover"),
             )
         }
 
@@ -288,14 +295,18 @@ data class FeedSection(
     }
 }
 
-/** 四平台融合首页快照：板块、推荐、新歌、榜单与每日三十首。 */
+/** 四平台融合首页快照：板块、推荐、新歌、榜单、猜你喜欢与每日三十首。 */
 data class HomeFeed(
     val source: String = "all",
     val sections: List<FeedSection> = emptyList(),
     val playlists: List<FeedPlaylist> = emptyList(),
     val newSongs: List<Song> = emptyList(),
     val charts: List<FeedPlaylist> = emptyList(),
+    val bannerCharts: List<FeedPlaylist> = emptyList(),
     val similar: List<Song> = emptyList(),
+    val forYou: List<Song> = emptyList(),
+    val personalized: Boolean = false,
+    val topArtists: List<String> = emptyList(),
     val daily: FeedPlaylist? = null,
     val dailySongs: List<Song> = emptyList(),
 ) {
@@ -312,7 +323,13 @@ data class HomeFeed(
         val chartsArray = JSONArray()
         charts.forEach { chartsArray.put(it.toJson()) }
         json.put("charts", chartsArray)
+        val bannerChartsArray = JSONArray()
+        bannerCharts.forEach { bannerChartsArray.put(it.toJson()) }
+        json.put("bannerCharts", bannerChartsArray)
         json.put("similar", JSONArray().apply { similar.forEach { put(it.toJson()) } })
+        json.put("forYou", JSONArray().apply { forYou.forEach { put(it.toJson()) } })
+        json.put("personalized", personalized)
+        json.put("topArtists", JSONArray(topArtists))
         daily?.let { json.put("daily", it.toJson()) }
         json.put("dailySongs", JSONArray().apply { dailySongs.forEach { put(it.toJson()) } })
         return json
@@ -323,7 +340,7 @@ data class HomeFeed(
         fun listSig(items: List<FeedPlaylist>): String = items.joinToString(",") { "${it.id}:${it.count}" }
         fun songSig(songs: List<Song>): String = songs.joinToString(",") { "${it.source}:${it.id}" }
         val sectionSig = sections.joinToString("|") { "${it.id}:${listSig(it.items)}" }
-        return "$sectionSig#${listSig(charts)}#${songSig(newSongs)}#${songSig(similar)}#${daily?.count ?: 0}#${dailySongs.size}"
+        return "$sectionSig#${listSig(charts)}#${listSig(bannerCharts)}#${songSig(newSongs)}#${songSig(forYou)}#${songSig(similar)}#${daily?.count ?: 0}#${dailySongs.size}"
     }
 
     companion object {
@@ -345,6 +362,10 @@ data class HomeFeed(
             json.optJSONArray("charts")?.let { array ->
                 for (index in 0 until array.length()) array.optJSONObject(index)?.let { charts.add(FeedPlaylist.fromJson(it)) }
             }
+            val bannerCharts = mutableListOf<FeedPlaylist>()
+            json.optJSONArray("bannerCharts")?.let { array ->
+                for (index in 0 until array.length()) array.optJSONObject(index)?.let { bannerCharts.add(FeedPlaylist.fromJson(it)) }
+            }
             val newSongs = mutableListOf<Song>()
             json.optJSONArray("newSongs")?.let { array ->
                 for (index in 0 until array.length()) Song.fromJson(array.optJSONObject(index))?.let(newSongs::add)
@@ -352,6 +373,14 @@ data class HomeFeed(
             val similar = mutableListOf<Song>()
             json.optJSONArray("similar")?.let { array ->
                 for (index in 0 until array.length()) Song.fromJson(array.optJSONObject(index))?.let(similar::add)
+            }
+            val forYou = mutableListOf<Song>()
+            json.optJSONArray("forYou")?.let { array ->
+                for (index in 0 until array.length()) Song.fromJson(array.optJSONObject(index))?.let(forYou::add)
+            }
+            val topArtists = mutableListOf<String>()
+            json.optJSONArray("topArtists")?.let { array ->
+                for (index in 0 until array.length()) array.optString(index).takeIf { it.isNotEmpty() }?.let(topArtists::add)
             }
             val dailySongs = mutableListOf<Song>()
             json.optJSONArray("dailySongs")?.let { array ->
@@ -364,7 +393,11 @@ data class HomeFeed(
                     ?: FeedPlaylist.listFromJson(json.optJSONArray("playlists")?.toString()),
                 newSongs = newSongs,
                 charts = charts,
+                bannerCharts = bannerCharts,
                 similar = similar,
+                forYou = forYou,
+                personalized = json.optBoolean("personalized", false),
+                topArtists = topArtists,
                 daily = json.optJSONObject("daily")?.let { FeedPlaylist.fromJson(it) },
                 dailySongs = dailySongs,
             )

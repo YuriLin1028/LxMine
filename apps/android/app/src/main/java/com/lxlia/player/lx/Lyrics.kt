@@ -33,7 +33,11 @@ object LyricParser {
                     val time = (if (relative) part.groupValues[1].toLong() else start + part.groupValues[1].toLong()) + offset
                     words.add(LyricWord(part.groupValues[3], time, part.groupValues[2].toLongOrNull() ?: 0))
                 }
-                val text = words.joinToString("") { it.text }
+                val text = if (words.isNotEmpty()) {
+                    words.joinToString("") { it.text }
+                } else {
+                    body.replace(Regex("[<(]\\d+,\\d+(?:,\\d+)?[>)]"), "").trim()
+                }
                 if (text.isNotEmpty()) result.add(LyricLine(start + offset, text, words))
                 continue
             }
@@ -102,6 +106,26 @@ object LyricParser {
         }
         return answer
     }
+
+    fun alignAuxToMain(main: List<LyricLine>, aux: List<LyricLine>, maxDiffMs: Long = 650L): List<LyricLine> {
+        if (aux.isEmpty()) return emptyList()
+        if (main.isEmpty()) return aux
+        return aux.mapNotNull { item ->
+            val clean = item.text.trim()
+            if (clean.isEmpty()) return@mapNotNull null
+            var bestTime = item.timeMs
+            var bestDiff = maxDiffMs + 1
+            for (m in main) {
+                val diff = kotlin.math.abs(m.timeMs - item.timeMs)
+                if (diff < bestDiff) {
+                    bestDiff = diff
+                    bestTime = m.timeMs
+                    if (diff == 0L) break
+                }
+            }
+            LyricLine(if (bestDiff <= maxDiffMs) bestTime else item.timeMs, clean, emptyList())
+        }
+    }
 }
 
 data class PublicLyricBundle(
@@ -117,7 +141,7 @@ object LyricService {
         return when (song.source) {
             "wy" -> {
                 val data = runCatching {
-                    JSONObject(Http.get("https://music.163.com/api/song/lyric?id=$id&lv=-1&kv=-1&tv=-1&yv=-1", "https://music.163.com/"))
+                    JSONObject(Http.get("https://music.163.com/api/song/lyric?id=$id&lv=-1&kv=-1&tv=-1&rv=-1&yv=-1&ytv=-1&yrv=-1", "https://music.163.com/"))
                 }.getOrNull() ?: return PublicLyricBundle()
                 PublicLyricBundle(
                     lines = LyricParser.parse(text(data, "yrc") ?: text(data, "lrc")),

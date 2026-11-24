@@ -221,6 +221,7 @@ class LxHost(private val http: OkHttpClient) {
             val url = payload.optString("url")
             if (url.isEmpty()) throw IllegalArgumentException("HTTP 请求地址为空")
             val method = payload.optString("method", "get").uppercase()
+            val probeOnly = payload.optBoolean("probeOnly", false) || method == "HEAD"
             val headers = mutableMapOf<String, String>()
             payload.optJSONObject("headers")?.let { objectHeaders ->
                 objectHeaders.keys().forEach { key -> headers[key] = objectHeaders.optString(key) }
@@ -261,7 +262,7 @@ class LxHost(private val http: OkHttpClient) {
 
                 override fun onResponse(call: Call, response: Response) {
                     response.use { result ->
-                        val text = runCatching { result.body?.string() ?: "" }.getOrDefault("")
+                        val text = if (probeOnly) "" else runCatching { result.body?.string() ?: "" }.getOrDefault("")
                         val headerMap = JSONObject()
                         result.headers.names().forEach { name ->
                             val joined = result.headers.values(name).joinToString(", ")
@@ -408,5 +409,8 @@ class LxHost(private val http: OkHttpClient) {
         )
 
     suspend fun catalogue(operation: String, paramsJson: String): String =
-        bridge("window.__lxCatalogue(__REQUEST_ID__,${quote(operation)},$paramsJson)", 30000)
+        bridge(
+            "window.__lxCatalogue(__REQUEST_ID__,${quote(operation)},$paramsJson)",
+            if (operation == "race-music-url") 45000 else 30000,
+        )
 }

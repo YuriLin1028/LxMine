@@ -38,6 +38,18 @@ class LocalServer(private val context: Context, private val http: OkHttpClient) 
     val requests = AtomicLong(0)
     val audioSent = AtomicLong(0)
 
+    private val workers = java.util.concurrent.Executors.newFixedThreadPool(8) { r ->
+        Thread(r, "lxmine-http-worker").apply { isDaemon = true }
+    }
+    private val coverCache = object : LinkedHashMap<String, Pair<String, ByteArray>>(32, 0.75f, true) {
+        override fun removeEldestEntry(eldest: MutableMap.MutableEntry<String, Pair<String, ByteArray>>?): Boolean = size > 24
+    }
+
+    fun clearCaches() {
+        assetCache.clear()
+        synchronized(coverCache) { coverCache.clear() }
+    }
+
     fun start() {
         if (serverSocket != null) return
         val socket = ServerSocket(0, 24, InetAddress.getByName("127.0.0.1"))
@@ -50,7 +62,7 @@ class LocalServer(private val context: Context, private val http: OkHttpClient) 
                 } catch (_: Exception) {
                     break
                 }
-                thread(isDaemon = true) { handle(client) }
+                runCatching { workers.execute { handle(client) } }.onFailure { runCatching { client.close() } }
             }
         }
     }
@@ -137,6 +149,8 @@ class LocalServer(private val context: Context, private val http: OkHttpClient) 
         fun toStringAscii(): String = String(bytes(), Charsets.ISO_8859_1)
     }
 
+    private val assetCache = java.util.concurrent.ConcurrentHashMap<String, ByteArray>()
+
     private fun serveAsset(output: OutputStream, target: String, method: String) {
         val raw = target.split('?').first()
         val name = raw.trimStart('/').ifEmpty { "harmony-stage.html" }
@@ -144,7 +158,13 @@ class LocalServer(private val context: Context, private val http: OkHttpClient) 
             writeEmpty(output, 404, "Not Found")
             return
         }
-        val bytes = runCatching { assets.open("mine-stage/$name").use { it.readBytes() } }.getOrNull()
+        val bytes = assetCache[name] ?: runCatching {
+            assets.open("mine-stage/$name").use { it.readBytes() }
+        }.getOrNull()?.also { loaded ->
+            if (loaded.size <= 6 * 1024 * 1024 && assetCache.size < 96) {
+                assetCache[name] = loaded
+            }
+        }
         if (bytes == null) {
             writeEmpty(output, 404, "Not Found")
             return
@@ -152,22 +172,28 @@ class LocalServer(private val context: Context, private val http: OkHttpClient) 
         val mime = when {
             name.endsWith(".html") -> "text/html; charset=utf-8"
             name.endsWith(".css") -> "text/css; charset=utf-8"
-            name.endsWith(".js") -> "application/javascript; charset=utf-8"
+            name.endsWith(".js") || name.endsWith(".mjs") -> "application/javascript; charset=utf-8"
             name.endsWith(".json") -> "application/json; charset=utf-8"
             name.endsWith(".png") -> "image/png"
             name.endsWith(".jpg") || name.endsWith(".jpeg") -> "image/jpeg"
             name.endsWith(".webp") -> "image/webp"
             name.endsWith(".svg") -> "image/svg+xml"
             name.endsWith(".woff2") -> "font/woff2"
+            name.endsWith(".wasm") -> "application/wasm"
             name.endsWith(".mp3") -> "audio/mpeg"
             else -> "application/octet-stream"
+        }
+        val cacheHeader = if (target.contains("revision=") || name.startsWith("folia-stage/assets/")) {
+            "public, max-age=31536000, immutable"
+        } else {
+            "public, max-age=3600"
         }
         val header = buildString {
             append("HTTP/1.1 200 OK\r\n")
             append("Content-Type: $mime\r\n")
             append("Content-Length: ${bytes.size}\r\n")
             append("Access-Control-Allow-Origin: *\r\n")
-            append("Cache-Control: no-cache\r\n")
+            append("Cache-Control: $cacheHeader\r\n")
             append("Connection: close\r\n\r\n")
         }
         output.write(header.toByteArray(Charsets.ISO_8859_1))
@@ -193,6 +219,21 @@ class LocalServer(private val context: Context, private val http: OkHttpClient) 
             writeEmpty(output, 400, "Bad Request")
             return
         }
+        val cached = synchronized(coverCache) { coverCache[remote] }
+        if (cached != null) {
+            val (mime, bytes) = cached
+            val header = buildString {
+                append("HTTP/1.1 200 OK\r\n")
+                append("Content-Type: $mime\r\n")
+                append("Content-Length: ${bytes.size}\r\n")
+                append("Access-Control-Allow-Origin: *\r\n")
+                append("Cache-Control: max-age=86400\r\n")
+                append("Connection: close\r\n\r\n")
+            }
+            output.write(header.toByteArray(Charsets.ISO_8859_1))
+            output.write(bytes)
+            return
+        }
         val request = Request.Builder().url(remote).header("User-Agent", "Mozilla/5.0 LxMine/1.0").build()
         runCatching { http.newCall(request).execute() }.onSuccess { response ->
             response.use { result ->
@@ -207,12 +248,15 @@ class LocalServer(private val context: Context, private val http: OkHttpClient) 
                     return@use
                 }
                 val mime = result.header("content-type") ?: "image/jpeg"
+                if (bytes.size <= 1500 * 1024) {
+                    synchronized(coverCache) { coverCache[remote] = mime to bytes }
+                }
                 val header = buildString {
                     append("HTTP/1.1 200 OK\r\n")
                     append("Content-Type: $mime\r\n")
                     append("Content-Length: ${bytes.size}\r\n")
                     append("Access-Control-Allow-Origin: *\r\n")
-                    append("Cache-Control: max-age=600\r\n")
+                    append("Cache-Control: max-age=86400\r\n")
                     append("Connection: close\r\n\r\n")
                 }
                 output.write(header.toByteArray(Charsets.ISO_8859_1))

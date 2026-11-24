@@ -49,7 +49,7 @@
 
   var state = {
     version: PERF_PROBE_VERSION,
-    enabled: true,
+    enabled: typeof location !== 'undefined' && /[?&]perf=1\b/.test(location.search || ''),
     startedAt: readNow(),
     lastResetAt: readNow(),
     renderState: null,

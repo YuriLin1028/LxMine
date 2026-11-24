@@ -1,5 +1,16 @@
+@file:OptIn(androidx.compose.foundation.layout.ExperimentalLayoutApi::class)
+
 package com.lxlia.player.ui
 
+import androidx.compose.animation.AnimatedContent
+import androidx.compose.animation.core.spring
+import androidx.compose.animation.core.tween
+import androidx.compose.animation.fadeIn
+import androidx.compose.animation.fadeOut
+import androidx.compose.animation.slideInHorizontally
+import androidx.compose.animation.slideOutHorizontally
+import androidx.compose.animation.togetherWith
+import androidx.compose.foundation.layout.FlowRow
 import androidx.compose.foundation.background
 import androidx.compose.foundation.Canvas
 import androidx.compose.foundation.border
@@ -46,6 +57,7 @@ import androidx.compose.ui.semantics.Role
 import androidx.compose.ui.semantics.contentDescription
 import androidx.compose.ui.semantics.selected
 import androidx.compose.ui.semantics.semantics
+import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.text.TextStyle
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextOverflow
@@ -60,38 +72,52 @@ import kotlin.math.roundToInt
 /** 设置页：分组顺序（音乐源、播放、歌词、系统与互联、关于）与鸿蒙 AlignedSettings 一致。 */
 @Composable
 fun SettingsTab(vm: AppViewModel) {
-    if (vm.sourcesOpen) {
-        SourcesPage(vm)
-        return
-    }
-    val scroll = rememberScrollState(initial = if (vm.settingsPanel == "main") vm.settingsScrollOffset else 0)
-    var previousPanel by rememberSaveable { mutableStateOf(vm.settingsPanel) }
-    LaunchedEffect(vm.settingsPanel) {
-        if (previousPanel != vm.settingsPanel) {
-            if (previousPanel == "main") vm.settingsScrollOffset = scroll.value
-            scroll.scrollTo(if (vm.settingsPanel == "main") vm.settingsScrollOffset else 0)
-            previousPanel = vm.settingsPanel
-        }
-    }
-    LaunchedEffect(scroll) {
-        snapshotFlow { scroll.value to scroll.isScrollInProgress }.collect { (offset, moving) ->
-            if (vm.tab == "设置" && !vm.showPlayer && !vm.sourcesOpen) {
-                if (vm.settingsPanel == "main") vm.settingsScrollOffset = offset
-                vm.homeScroll(offset.toFloat(), canTrackDock = moving)
+    val route = if (vm.sourcesOpen) "sources" else vm.settingsPanel
+    AnimatedContent(
+        targetState = route,
+        transitionSpec = {
+            val enteringSub = targetState != "main" && initialState == "main"
+            val returningMain = targetState == "main" && initialState != "main"
+            val slideSpec = spring<androidx.compose.ui.unit.IntOffset>(dampingRatio = 0.84f, stiffness = 420f)
+            when {
+                enteringSub -> (slideInHorizontally(slideSpec) { it / 5 } + fadeIn(tween(220)))
+                    .togetherWith(slideOutHorizontally(slideSpec) { -it / 10 } + fadeOut(tween(180)))
+                returningMain -> (slideInHorizontally(slideSpec) { -it / 10 } + fadeIn(tween(220)))
+                    .togetherWith(slideOutHorizontally(slideSpec) { it / 5 } + fadeOut(tween(180)))
+                else -> fadeIn(tween(200)).togetherWith(fadeOut(tween(160)))
             }
-        }
-    }
-    Column(
-        modifier = Modifier
-            .fillMaxSize()
-            .verticalScroll(scroll)
-            .padding(top = (vm.headerHeight() + 12).dp, bottom = 180.dp),
-        verticalArrangement = Arrangement.spacedBy(2.dp),
-    ) {
-        when (vm.settingsPanel) {
-            "lyrics" -> LyricSettingsPanel(vm)
-            "sync" -> SyncPanel(vm)
-            else -> SettingsMainPanel(vm)
+        },
+        label = "settings-route",
+    ) { currentRoute ->
+        if (currentRoute == "sources") {
+            SourcesPage(vm)
+        } else {
+            val scroll = rememberScrollState(initial = if (currentRoute == "main") vm.settingsScrollOffset else 0)
+            val density = LocalDensity.current.density.coerceAtLeast(1f)
+            LaunchedEffect(scroll, currentRoute, density) {
+                snapshotFlow { scroll.value to scroll.isScrollInProgress }.collect { (offset, moving) ->
+                    if (vm.tab == "设置" && !vm.showPlayer && !vm.sourcesOpen && currentRoute == vm.settingsPanel) {
+                        if (currentRoute == "main") vm.settingsScrollOffset = offset
+                        vm.homeScroll(offset / density, canTrackDock = moving)
+                    }
+                }
+            }
+            Column(
+                modifier = Modifier
+                    .fillMaxSize()
+                    .verticalScroll(scroll)
+                    .padding(top = (vm.headerHeight() + 12).dp, bottom = 180.dp),
+                verticalArrangement = Arrangement.spacedBy(2.dp),
+            ) {
+                when (currentRoute) {
+                    "playback" -> PlaybackSettingsPanel(vm)
+                    "appearance" -> AppearanceSettingsPanel(vm)
+                    "lyrics" -> LyricSettingsPanel(vm)
+                    "general" -> GeneralSettingsPanel(vm)
+                    "sync" -> SyncPanel(vm)
+                    else -> SettingsMainPanel(vm)
+                }
+            }
         }
     }
 }
@@ -198,6 +224,13 @@ private fun SelectRow(
 
 @Composable
 private fun SettingsMainPanel(vm: AppViewModel) {
+    val qualityShort = when (vm.quality) { "flac" -> "无损"; "320k" -> "高品质"; else -> "标准" }
+    val themeShort = when (vm.appearance) { "light" -> "浅色"; "dark" -> "深色"; else -> "跟随系统" }
+    val styleLabel = MINE_RADIO_MODES.firstOrNull { it.id == vm.styleName }?.label ?: "默认动效"
+    val scalePct = (vm.lyricPrefs.lyricScale * 100f).roundToInt()
+    val spacingPct = (vm.lyricPrefs.lyricLineSpacing * 100f).roundToInt()
+    val limitLabel = if (vm.lyricPrefs.lyricMaxLines > 0) "${vm.lyricPrefs.lyricMaxLines} 行" else "铺满"
+
     SectionLabel("音乐源")
     SettingsCard {
         LinkRow(
@@ -208,177 +241,51 @@ private fun SettingsMainPanel(vm: AppViewModel) {
             onClick = { vm.openSources() },
         )
     }
-    SectionLabel("播放")
-    SettingsCard {
-        SelectRow(
-            title = "音质",
-            detail = "播放和下载优先使用该档位",
-            labels = listOf("标准 128k", "高品质 320k", "无损 flac"),
-            values = listOf("128k", "320k", "flac"),
-            current = vm.quality,
-            onSelect = { vm.setQuality(it) },
-        )
-        SelectRow(
-            title = "播放顺序",
-            detail = "列表循环 / 单曲 / 随机 / 顺序",
-            labels = listOf("列表循环", "单曲循环", "随机播放", "顺序播放"),
-            values = listOf("列表循环", "单曲循环", "随机播放", "顺序播放"),
-            current = vm.mode,
-            onSelect = { vm.setPlayMode(it) },
-        )
-        SelectRow(
-            title = "MineRadio 动效",
-            detail = "仅播放页生效，关闭后保留模糊封面与纯文字歌词",
-            labels = MINE_RADIO_MODES.map { it.label },
-            values = MINE_RADIO_MODES.map { it.id },
-            current = vm.styleName,
-            onSelect = { vm.setStyleName(it) },
-        )
-        val pickBgLauncher = androidx.activity.compose.rememberLauncherForActivityResult(
-            contract = androidx.activity.result.contract.ActivityResultContracts.GetContent(),
-        ) { uri -> if (uri != null) vm.importStageBgImage(uri) }
-        Column(
-            modifier = Modifier.fillMaxWidth().padding(horizontal = 18.dp, vertical = 14.dp),
-            verticalArrangement = Arrangement.spacedBy(6.dp),
-        ) {
-            Row(
-                modifier = Modifier.fillMaxWidth(),
-                horizontalArrangement = Arrangement.SpaceBetween,
-                verticalAlignment = Alignment.CenterVertically,
-            ) {
-                RowCopy(
-                    title = "播放页背景透明度",
-                    detail = "实时调节封面或自定义背景图的透明程度，所有动效模式生效",
-                    modifier = Modifier.weight(1f),
-                )
-                Row(
-                    horizontalArrangement = Arrangement.spacedBy(8.dp),
-                    verticalAlignment = Alignment.CenterVertically,
-                ) {
-                    Text(
-                        "${(vm.stageBgOpacity * 100).roundToInt()}%",
-                        fontSize = 13.sp,
-                        fontWeight = FontWeight.Medium,
-                        color = ACCENT,
-                    )
-                    if (abs(vm.stageBgOpacity - 0.78f) > 0.005f) {
-                        Box(
-                            modifier = Modifier
-                                .clip(RoundedCornerShape(14.dp))
-                                .background(if (AppAppearance.light) Color(0x14000000) else Color(0x18FFFFFF))
-                                .clickable { vm.updateStageBgOpacity(0.78f) }
-                                .padding(horizontal = 10.dp, vertical = 5.dp),
-                        ) {
-                            Text("恢复默认", fontSize = 11.sp, color = TEXT)
-                        }
-                    }
-                }
-            }
-            GlassSlider(
-                value = (vm.stageBgOpacity * 100f).roundToInt().coerceIn(0, 100).toFloat(),
-                onValueChange = { percent -> vm.updateStageBgOpacity(percent / 100f) },
-                valueRange = 0f..100f,
-                step = 1f,
-            )
-        }
-        Row(
-            modifier = Modifier.fillMaxWidth().padding(horizontal = 18.dp, vertical = 14.dp),
-            horizontalArrangement = Arrangement.spacedBy(8.dp),
-            verticalAlignment = Alignment.CenterVertically,
-        ) {
-            RowCopy(
-                title = "播放页自定义背景图",
-                detail = if (vm.stageBgImagePath.isNotEmpty()) "已启用自定义背景图（所有播放页模式生效）" else "默认跟随当前歌曲专辑封面",
-                modifier = Modifier.weight(1f),
-            )
-            Box(
-                modifier = Modifier
-                    .clip(RoundedCornerShape(16.dp))
-                    .background(ACCENT)
-                    .clickable { pickBgLauncher.launch("image/*") }
-                    .padding(horizontal = 12.dp, vertical = 7.dp),
-            ) {
-                Text("选择图片", fontSize = 12.sp, fontWeight = FontWeight.Medium, color = Color(0xFF081018))
-            }
-            if (vm.stageBgImagePath.isNotEmpty()) {
-                Box(
-                    modifier = Modifier
-                        .clip(RoundedCornerShape(16.dp))
-                        .background(if (AppAppearance.light) Color(0x14000000) else Color(0x18FFFFFF))
-                        .clickable { vm.clearStageBgImage() }
-                        .padding(horizontal = 12.dp, vertical = 7.dp),
-                ) {
-                    Text("恢复默认", fontSize = 12.sp, color = TEXT)
-                }
-            }
-        }
-        ToggleRow(
-            title = "旋转锁定时允许播放页横屏",
-            detail = "开启后即使系统开启竖屏锁定，横置手机仍可进入横屏沉浸播放；关闭则跟随系统方向锁定",
-            value = vm.allowLandscapeWhenLocked,
-            onChange = { vm.setAllowLandscapeWhenLocked(it) },
-        )
-        ToggleRow(
-            title = "允许与其他应用同时播放",
-            detail = "开启后与其他视频、游戏或导航等应用混音播放，互不打断",
-            value = vm.mixWithOthers,
-            onChange = { vm.setMixWithOthers(it) },
-        )
-    }
-    SectionLabel("歌词")
+
+    SectionLabel("个性化与播放")
     SettingsCard {
         LinkRow(
+            title = "播放与音效",
+            detail = "$qualityShort · ${com.lxlia.player.audio.AudioFxPresets.summary(vm.audioFx)}${if (vm.autoMixEnabled) " · 混韵天成" else ""}",
+            onClick = { vm.openSettingsPanel("playback") },
+        )
+        LinkRow(
+            title = "外观与背景",
+            detail = "$themeShort · $styleLabel",
+            onClick = { vm.openSettingsPanel("appearance") },
+        )
+        LinkRow(
             title = "歌词设置",
-            detail = "详情页颜色、字号、翻译／罗马音与时间偏移",
+            detail = "字号 $scalePct% · 行距 $spacingPct% · $limitLabel",
             onClick = { vm.openSettingsPanel("lyrics") },
         )
     }
+
     SectionLabel("系统与互联")
     SettingsCard {
-        SelectRow(
-            title = "外观",
-            detail = "全局配色，播放页背景随之调整",
-            labels = listOf("深色", "浅色", "跟随系统"),
-            values = listOf("dark", "light", "system"),
-            current = vm.appearance,
-            onSelect = { vm.appearance = it; vm.save() },
-        )
-        ToggleRow(
-            title = "启动时继续播放上次内容",
-            detail = "默认关闭，保留歌曲和进度，打开软件保持暂停",
-            value = vm.resumeOnStartup,
-            onChange = { vm.setResumeOnStartup(it) },
-        )
-        ToggleRow(
-            title = "双击刷新同步重算推荐",
-            detail = "双击首页左上角标题刷新时，同时重洗猜你喜欢与每日推荐内容",
-            value = vm.refreshAlgoOnDoubleTap,
-            onChange = { vm.setRefreshAlgoOnDoubleTap(it) },
-        )
-        ToggleRow(
-            title = "同局域网自动同步歌单",
-            detail = "发现同网络开启自动同步的手机/电脑时，歌单与喜欢变动自动合并同步",
-            value = vm.lanAutoSync,
-            onChange = { vm.setLanAutoSync(it) },
-        )
-        LinkRow(
-            title = "局域网同步",
-            detail = "手机、平板与电脑之间双向同步歌单、音源和设置",
-            label = "管理",
-            onClick = { vm.openSettingsPanel("sync") },
-        )
         LinkRow(
             title = "下载管理",
             detail = "${vm.downloadItems.count { it.state == "complete" }} 首已完成",
             label = "查看",
             onClick = { vm.openDownloads() },
         )
+        LinkRow(
+            title = "局域网同步",
+            detail = if (vm.lanAutoSync) "已开启自动同步 · 手机、平板与电脑双向合并" else "手机、平板与电脑之间双向同步歌单、音源与设置",
+            onClick = { vm.openSettingsPanel("sync") },
+        )
+        LinkRow(
+            title = "通用与交互",
+            detail = "启动行为、推荐刷新与不感兴趣管理",
+            onClick = { vm.openSettingsPanel("general") },
+        )
     }
+
     SectionLabel("关于")
     SettingsCard {
         LinkRow(
             title = "LxMine",
-            detail = "LX 音源 · MineRadio 视觉 · 手机和平板同源界面",
+            detail = "LX 音源 · MineRadio 视觉 · 全端统一体验",
             label = vm.currentAppVersion(),
             onClick = { },
         )
@@ -392,9 +299,349 @@ private fun SettingsMainPanel(vm: AppViewModel) {
 }
 
 @Composable
+private fun PlaybackSettingsPanel(vm: AppViewModel) {
+    val effectiveBands = com.lxlia.player.audio.AudioFxPresets.effectiveBands(vm.audioFx)
+    SectionLabel("播放选项")
+    SettingsCard {
+        SelectRow(
+            title = "音质",
+            detail = "播放和下载优先使用该档位",
+            labels = listOf("标准 128k", "高品质 320k", "无损 FLAC"),
+            values = listOf("128k", "320k", "flac"),
+            current = vm.quality,
+            onSelect = { vm.setQuality(it) },
+        )
+        SelectRow(
+            title = "播放顺序",
+            detail = "列表循环 / 单曲 / 随机 / 顺序",
+            labels = listOf("列表循环", "单曲循环", "随机播放", "顺序播放"),
+            values = listOf("列表循环", "单曲循环", "随机播放", "顺序播放"),
+            current = vm.mode,
+            onSelect = { vm.setPlayMode(it) },
+        )
+        var autoMixTipOpen by remember { mutableStateOf(false) }
+        Row(
+            modifier = Modifier.fillMaxWidth().padding(18.dp),
+            verticalAlignment = Alignment.CenterVertically,
+            horizontalArrangement = Arrangement.spacedBy(12.dp),
+        ) {
+            Column(Modifier.weight(1f), verticalArrangement = Arrangement.spacedBy(5.dp)) {
+                Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(6.dp)) {
+                    Text("混韵天成", fontSize = 16.sp, color = TEXT)
+                    Box(
+                        modifier = Modifier
+                            .size(20.dp)
+                            .clip(CircleShape)
+                            .background(ACCENT.copy(alpha = 0.2f))
+                            .tapNoRipple { autoMixTipOpen = true },
+                        contentAlignment = Alignment.Center,
+                    ) {
+                        Text("!", fontSize = 11.sp, fontWeight = FontWeight.Bold, color = ACCENT)
+                    }
+                }
+                Text("切歌时提前预载下一首并平滑淡出衔接", fontSize = 12.sp, color = MUTED, maxLines = 2)
+            }
+            GlassSwitch(checked = vm.autoMixEnabled, onCheckedChange = { vm.setAutoMixEnabled(it) })
+        }
+        if (autoMixTipOpen) {
+            GlassDialog(onDismiss = { autoMixTipOpen = false }) {
+                Text("混韵天成", fontSize = 18.sp, fontWeight = FontWeight.Bold, color = TEXT)
+                Text(
+                    "开启后，系统将自动分析前后两首歌曲的节奏、尾奏与前奏区间，在歌曲结尾提前预载下一首并以平滑过渡曲线无缝衔接，避免切歌生硬中断。",
+                    fontSize = 14.sp,
+                    color = TEXT,
+                    lineHeight = 20.sp,
+                )
+                Box(Modifier.fillMaxWidth()) {
+                    Text(
+                        "知道了",
+                        color = ACCENT,
+                        fontSize = 14.sp,
+                        fontWeight = FontWeight.Medium,
+                        modifier = Modifier.align(Alignment.CenterEnd).tapNoRipple { autoMixTipOpen = false }.padding(8.dp),
+                    )
+                }
+            }
+        }
+        ToggleRow(
+            title = "播放/暂停淡入淡出",
+            detail = "开始播放时音量渐强、暂停时音量渐弱，避免声音戛然而止",
+            value = vm.playPauseFadeEnabled,
+            onChange = { vm.setPlayPauseFadeEnabled(it) },
+        )
+        ToggleRow(
+            title = "切歌自动归位舞台视角",
+            detail = "开启后每次切歌将 360° 舞台视角平滑回正；关闭则保持上一首的旋转角度",
+            value = vm.stageResetCameraOnSong,
+            onChange = { vm.setStageResetCameraOnSong(it) },
+        )
+        ToggleRow(
+            title = "旋转锁定时允许播放页横屏",
+            detail = "开启后即使系统开启竖屏锁定，横置手机仍可进入横屏沉浸播放",
+            value = vm.allowLandscapeWhenLocked,
+            onChange = { vm.setAllowLandscapeWhenLocked(it) },
+        )
+        ToggleRow(
+            title = "允许与其他应用同时播放",
+            detail = "开启后与其他视频、游戏或导航等应用混音播放，互不打断",
+            value = vm.mixWithOthers,
+            onChange = { vm.setMixWithOthers(it) },
+        )
+    }
+
+    SectionLabel("音效与均衡器")
+    SettingsCard {
+        Column(Modifier.fillMaxWidth().padding(18.dp), verticalArrangement = Arrangement.spacedBy(12.dp)) {
+            Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically) {
+                RowCopy("当前音效", "可在播控栏「更多」中随时快速切换", Modifier.weight(1f))
+                Text(com.lxlia.player.audio.AudioFxPresets.summary(vm.audioFx), fontSize = 13.sp, fontWeight = FontWeight.Medium, color = ACCENT)
+            }
+            FlowRow(horizontalArrangement = Arrangement.spacedBy(7.dp), verticalArrangement = Arrangement.spacedBy(7.dp)) {
+                com.lxlia.player.audio.AudioFxPresets.ALL.forEach { preset ->
+                    val selected = vm.audioFx.preset == preset.id
+                    Box(
+                        modifier = Modifier
+                            .clip(RoundedCornerShape(15.dp))
+                            .background(if (selected) ACCENT else CHIP_BG)
+                            .clickable {
+                                vm.setAudioFx(
+                                    com.lxlia.player.audio.AudioFxConfig(
+                                        preset = preset.id,
+                                        customBands = if (preset.id == "custom") vm.audioFx.customBands else preset.bands,
+                                        spatial = preset.spatial,
+                                        reverb = preset.reverb,
+                                        spatialMode = vm.audioFx.spatialMode,
+                                    )
+                                )
+                            }
+                            .padding(horizontal = 11.dp, vertical = 7.dp),
+                    ) {
+                        Text(preset.label, fontSize = 12.sp, fontWeight = if (selected) FontWeight.SemiBold else FontWeight.Normal, color = if (selected) ON_ACCENT else TEXT)
+                    }
+                }
+            }
+            Column(Modifier.fillMaxWidth(), verticalArrangement = Arrangement.spacedBy(6.dp)) {
+                RowCopy("空间音频（Spatial Audio）", vm.spatialHardwareStatus.label)
+                Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                    listOf("off" to "关闭", "system" to "系统自适应", "binaural" to "双耳模拟").forEach { (id, label) ->
+                        val active = vm.audioFx.spatialMode == id
+                        Box(
+                            modifier = Modifier
+                                .weight(1f)
+                                .clip(RoundedCornerShape(14.dp))
+                                .background(if (active) ACCENT else CHIP_BG)
+                                .clickable { vm.setSpatialMode(id) }
+                                .padding(vertical = 8.dp),
+                            contentAlignment = Alignment.Center,
+                        ) {
+                            Text(label, fontSize = 12.sp, fontWeight = if (active) FontWeight.SemiBold else FontWeight.Normal, color = if (active) ON_ACCENT else TEXT)
+                        }
+                    }
+                }
+            }
+            Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(10.dp)) {
+                RowCopy("3D 空间环绕", "实时 Mid-Side 立体声展宽 + Haas 交叉延迟，耳机外放皆明显", Modifier.weight(1f))
+                GlassSwitch(checked = vm.audioFx.spatial, onCheckedChange = { vm.setAudioFx(vm.audioFx.copy(spatial = it)) })
+            }
+            Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                Text("空间混响", fontSize = 14.sp, color = TEXT, modifier = Modifier.weight(1f))
+                listOf("none" to "无混响", "small" to "室内混响", "hall" to "音乐厅").forEach { (id, label) ->
+                    val active = vm.audioFx.reverb == id
+                    Box(
+                        modifier = Modifier
+                            .clip(RoundedCornerShape(12.dp))
+                            .background(if (active) ACCENT else CHIP_BG)
+                            .clickable { vm.setAudioFx(vm.audioFx.copy(reverb = id)) }
+                            .padding(horizontal = 10.dp, vertical = 6.dp),
+                    ) {
+                        Text(label, fontSize = 12.sp, fontWeight = if (active) FontWeight.SemiBold else FontWeight.Normal, color = if (active) ON_ACCENT else TEXT)
+                    }
+                }
+            }
+            com.lxlia.player.audio.AudioFxPresets.BAND_LABELS.forEachIndexed { idx, bandLabel ->
+                val db = effectiveBands.getOrElse(idx) { 0 }
+                Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                    Text(bandLabel, fontSize = 12.sp, color = MUTED, modifier = Modifier.width(46.dp))
+                    Box(Modifier.weight(1f)) {
+                        GlassSlider(
+                            value = db.toFloat(),
+                            onValueChange = { v ->
+                                val next = effectiveBands.toMutableList()
+                                next[idx] = v.roundToInt().coerceIn(-12, 12)
+                                vm.setAudioFx(vm.audioFx.copy(preset = "custom", customBands = next))
+                            },
+                            valueRange = -12f..12f,
+                            step = 1f,
+                        )
+                    }
+                    Text("${if (db > 0) "+" else ""}${db}dB", fontSize = 12.sp, color = TEXT, modifier = Modifier.width(40.dp))
+                    SliderResetIcon(active = db != 0) {
+                        val next = effectiveBands.toMutableList()
+                        next[idx] = 0
+                        vm.setAudioFx(vm.audioFx.copy(preset = "custom", customBands = next))
+                    }
+                }
+            }
+        }
+    }
+}
+
+@Composable
+private fun AppearanceSettingsPanel(vm: AppViewModel) {
+    var tipOpen by remember { mutableStateOf(false) }
+    val styleMenu = rememberGlassMenuTrigger(widthDp = 228f) {
+        buildStyleMenuItems(vm) { tipOpen = true }
+    }
+    val pickStageBgLauncher = androidx.activity.compose.rememberLauncherForActivityResult(
+        contract = androidx.activity.result.contract.ActivityResultContracts.GetContent(),
+    ) { uri -> if (uri != null) vm.importStageBgImage(uri) }
+    val pickPageBgLauncher = androidx.activity.compose.rememberLauncherForActivityResult(
+        contract = androidx.activity.result.contract.ActivityResultContracts.GetContent(),
+    ) { uri -> if (uri != null) vm.importPageBgImage(uri) }
+
+    SectionLabel("主题与动效")
+    SettingsCard {
+        SelectRow(
+            title = "外观",
+            detail = "深浅色全局适配，自定义背景蒙层同步自动优化可读性",
+            labels = listOf("深色", "浅色", "跟随系统"),
+            values = listOf("dark", "light", "system"),
+            current = vm.appearance,
+            onSelect = { vm.appearance = it; vm.save() },
+        )
+        val styleIndex = MINE_RADIO_MODES.indexOfFirst { it.id == vm.styleName }.coerceAtLeast(0)
+        Row(
+            modifier = Modifier.fillMaxWidth().padding(start = 18.dp, end = 12.dp, top = 12.dp, bottom = 12.dp),
+            verticalAlignment = Alignment.CenterVertically,
+            horizontalArrangement = Arrangement.spacedBy(10.dp),
+        ) {
+            Column(Modifier.weight(1f), verticalArrangement = Arrangement.spacedBy(4.dp)) {
+                Text("MineRadio 动效", fontSize = 16.sp, color = TEXT)
+                Text(
+                    if (vm.styleName == com.lxlia.player.audio.SMART_STAGE_MODE_ID && vm.resolvedStyleLabel().isNotEmpty())
+                        "随声绘色已开启 · 当前匹配：${vm.resolvedStyleLabel()}"
+                    else "选择播放页动效；选「随声绘色」由 AI 按歌曲内容与封面自动匹配",
+                    fontSize = 12.sp,
+                    color = MUTED,
+                    maxLines = 3,
+                )
+            }
+            GlassSurface(
+                modifier = Modifier.width(148.dp).height(40.dp).then(styleMenu.modifier).tapNoRipple { styleMenu.show() },
+                shape = RoundedCornerShape(20.dp),
+                tone = GlassTone.UltraThin,
+                interactive = true,
+            ) {
+                Box(Modifier.fillMaxSize(), contentAlignment = Alignment.Center) {
+                    Text(MINE_RADIO_MODES.getOrElse(styleIndex) { MINE_RADIO_MODES.first() }.label, fontSize = 13.sp, color = TEXT, maxLines = 1, modifier = Modifier.padding(horizontal = 12.dp))
+                }
+            }
+        }
+    }
+
+    SectionLabel("播放页背景")
+    SettingsCard {
+        Row(
+            modifier = Modifier.fillMaxWidth().padding(horizontal = 18.dp, vertical = 14.dp),
+            horizontalArrangement = Arrangement.spacedBy(8.dp),
+            verticalAlignment = Alignment.CenterVertically,
+        ) {
+            RowCopy(
+                title = "播放页自定义背景图",
+                detail = if (vm.stageBgImagePath.isNotEmpty()) "已启用自定义背景图（所有播放页模式生效）" else "默认跟随当前歌曲专辑封面",
+                modifier = Modifier.weight(1f),
+            )
+            Box(
+                modifier = Modifier.clip(RoundedCornerShape(16.dp)).background(ACCENT).clickable { pickStageBgLauncher.launch("image/*") }.padding(horizontal = 12.dp, vertical = 7.dp),
+            ) { Text("选择图片", fontSize = 12.sp, fontWeight = FontWeight.Medium, color = ON_ACCENT) }
+            if (vm.stageBgImagePath.isNotEmpty()) {
+                Box(
+                    modifier = Modifier.clip(RoundedCornerShape(16.dp)).background(CHIP_BG).clickable { vm.clearStageBgImage() }.padding(horizontal = 12.dp, vertical = 7.dp),
+                ) { Text("恢复默认", fontSize = 12.sp, color = TEXT) }
+            }
+        }
+        Column(modifier = Modifier.fillMaxWidth().padding(horizontal = 18.dp, vertical = 12.dp), verticalArrangement = Arrangement.spacedBy(6.dp)) {
+            Row(modifier = Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween, verticalAlignment = Alignment.CenterVertically) {
+                RowCopy("播放页背景透明度", "实时调节封面或自定义背景图的透明程度", Modifier.weight(1f))
+                Row(horizontalArrangement = Arrangement.spacedBy(8.dp), verticalAlignment = Alignment.CenterVertically) {
+                    Text("${(vm.stageBgOpacity * 100).roundToInt()}%", fontSize = 13.sp, fontWeight = FontWeight.Medium, color = ACCENT)
+                    SliderResetIcon(active = abs(vm.stageBgOpacity - 0.78f) > 0.005f, onClick = { vm.updateStageBgOpacity(0.78f) })
+                }
+            }
+            GlassSlider(value = (vm.stageBgOpacity * 100f).roundToInt().coerceIn(0, 100).toFloat(), onValueChange = { vm.updateStageBgOpacity(it / 100f) }, valueRange = 0f..100f, step = 1f)
+        }
+    }
+
+    SectionLabel("非播放页背景（首页 / 曲库 / 设置）")
+    SettingsCard {
+        Row(
+            modifier = Modifier.fillMaxWidth().padding(horizontal = 18.dp, vertical = 14.dp),
+            horizontalArrangement = Arrangement.spacedBy(8.dp),
+            verticalAlignment = Alignment.CenterVertically,
+        ) {
+            RowCopy(
+                title = "页面自定义背景图",
+                detail = if (vm.pageBgImagePath.isNotEmpty()) "已启用自定义背景，自动适配深浅色可读蒙层" else "默认使用纯净深浅主题底色",
+                modifier = Modifier.weight(1f),
+            )
+            Box(
+                modifier = Modifier.clip(RoundedCornerShape(16.dp)).background(ACCENT).clickable { pickPageBgLauncher.launch("image/*") }.padding(horizontal = 12.dp, vertical = 7.dp),
+            ) { Text("选择图片", fontSize = 12.sp, fontWeight = FontWeight.Medium, color = ON_ACCENT) }
+            if (vm.pageBgImagePath.isNotEmpty()) {
+                Box(
+                    modifier = Modifier.clip(RoundedCornerShape(16.dp)).background(CHIP_BG).clickable { vm.clearPageBgImage() }.padding(horizontal = 12.dp, vertical = 7.dp),
+                ) { Text("恢复默认", fontSize = 12.sp, color = TEXT) }
+            }
+        }
+        if (vm.pageBgImagePath.isNotEmpty()) {
+            Column(modifier = Modifier.fillMaxWidth().padding(horizontal = 18.dp, vertical = 12.dp), verticalArrangement = Arrangement.spacedBy(6.dp)) {
+                Row(modifier = Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween, verticalAlignment = Alignment.CenterVertically) {
+                    RowCopy("背景显示强度", "深浅模式下自动叠加文字可读保护蒙层", Modifier.weight(1f))
+                    Row(horizontalArrangement = Arrangement.spacedBy(8.dp), verticalAlignment = Alignment.CenterVertically) {
+                        Text("${(vm.pageBgOpacity * 100).roundToInt()}%", fontSize = 13.sp, fontWeight = FontWeight.Medium, color = ACCENT)
+                        SliderResetIcon(active = abs(vm.pageBgOpacity - 0.35f) > 0.005f, onClick = { vm.updatePageBgOpacity(0.35f) })
+                    }
+                }
+                GlassSlider(value = (vm.pageBgOpacity * 100f).roundToInt().coerceIn(10, 85).toFloat(), onValueChange = { vm.updatePageBgOpacity(it / 100f) }, valueRange = 10f..85f, step = 1f)
+            }
+        }
+    }
+
+    if (tipOpen) {
+        SmartStageTipDialog(onDismiss = { tipOpen = false })
+    }
+}
+
+@Composable
+private fun GeneralSettingsPanel(vm: AppViewModel) {
+    SectionLabel("行为与交互")
+    SettingsCard {
+        ToggleRow(
+            title = "启动时继续播放上次内容",
+            detail = "默认关闭，保留歌曲和进度，打开软件保持暂停",
+            value = vm.resumeOnStartup,
+            onChange = { vm.setResumeOnStartup(it) },
+        )
+        ToggleRow(
+            title = "双击刷新同步重算推荐",
+            detail = "双击首页左上角标题刷新时，同时重洗猜你喜欢与每日推荐内容",
+            value = vm.refreshAlgoOnDoubleTap,
+            onChange = { vm.setRefreshAlgoOnDoubleTap(it) },
+        )
+        LinkRow(
+            title = "清空「不感兴趣」屏蔽列表",
+            detail = if (vm.dislikedKeys.isNotEmpty()) "已屏蔽 ${vm.dislikedKeys.size} 首歌曲，点击恢复推荐" else "暂无屏蔽歌曲",
+            label = if (vm.dislikedKeys.isNotEmpty()) "清空" else "无",
+            onClick = { if (vm.dislikedKeys.isNotEmpty()) vm.clearDislikedSongs() },
+        )
+    }
+}
+
+@Composable
 private fun LyricSettingsPanel(vm: AppViewModel) {
     val previewText = vm.lyrics.lastOrNull { it.timeMs <= vm.positionMs }?.text ?: "音乐在这里，与你相遇"
-    val scalePercent = (vm.lyricPrefs.lyricScale * 100f).roundToInt().coerceIn(75, 140)
+    val scalePercent = (vm.lyricPrefs.lyricScale * 100f).roundToInt().coerceIn(55, 150)
+    val spacingPercent = (vm.lyricPrefs.lyricLineSpacing * 100f).roundToInt().coerceIn(85, 180)
     Box(
         modifier = Modifier
             .fillMaxWidth()
@@ -402,14 +649,25 @@ private fun LyricSettingsPanel(vm: AppViewModel) {
             .background(Color(0xFF151619))
             .padding(24.dp),
     ) {
-        Column(Modifier.fillMaxWidth(), horizontalAlignment = Alignment.CenterHorizontally, verticalArrangement = Arrangement.spacedBy(14.dp)) {
+        Column(
+            Modifier.fillMaxWidth(),
+            horizontalAlignment = Alignment.CenterHorizontally,
+            verticalArrangement = Arrangement.spacedBy((10f * vm.lyricPrefs.lyricLineSpacing).dp),
+        ) {
             Text(
                 previewText,
                 fontSize = (22f * vm.lyricPrefs.lyricScale).sp,
-                fontWeight = FontWeight.Medium,
+                fontWeight = FontWeight.Bold,
                 color = parseColor(vm.previewPrimary()),
                 maxLines = 2,
                 textAlign = androidx.compose.ui.text.style.TextAlign.Center,
+            )
+            Text(
+                "Music meets you right here",
+                fontSize = (15f * vm.lyricPrefs.lyricScale).sp,
+                fontWeight = FontWeight.Medium,
+                color = parseColor(vm.previewSecondary()).copy(alpha = 0.82f),
+                maxLines = 1,
             )
             Box(
                 Modifier
@@ -420,7 +678,55 @@ private fun LyricSettingsPanel(vm: AppViewModel) {
             )
         }
     }
-    SectionLabel("播放详情页歌词")
+    SectionLabel("排版与显示")
+    SettingsCard {
+        Column(Modifier.fillMaxWidth().padding(18.dp), verticalArrangement = Arrangement.spacedBy(10.dp)) {
+            Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                RowCopy("歌词字体大小", "调整播放详情页歌词字号比例（55%–150%）", Modifier.weight(1f))
+                Text("$scalePercent%", fontSize = 14.sp, fontWeight = FontWeight.Medium, color = ACCENT)
+                SliderResetIcon(active = abs(vm.lyricPrefs.lyricScale - 1f) >= 0.01f, onClick = { vm.setLyricScale(1f) })
+            }
+            GlassSlider(value = scalePercent.toFloat(), onValueChange = { vm.setLyricScale(it / 100f) }, valueRange = 55f..150f, step = 1f)
+        }
+        Column(Modifier.fillMaxWidth().padding(18.dp), verticalArrangement = Arrangement.spacedBy(10.dp)) {
+            Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                RowCopy("歌词行间距", "英文与大字号下适当加大行距更舒展（85%–180%）", Modifier.weight(1f))
+                Text("$spacingPercent%", fontSize = 14.sp, fontWeight = FontWeight.Medium, color = ACCENT)
+                SliderResetIcon(active = abs(vm.lyricPrefs.lyricLineSpacing - 1.2f) >= 0.01f, onClick = { vm.setLyricLineSpacing(1.2f) })
+            }
+            GlassSlider(value = spacingPercent.toFloat(), onValueChange = { vm.setLyricLineSpacing(it / 100f) }, valueRange = 85f..180f, step = 1f)
+        }
+        Column(Modifier.fillMaxWidth().padding(18.dp), verticalArrangement = Arrangement.spacedBy(10.dp)) {
+            RowCopy("同时显示行数", "默认铺满屏幕，也可固定为单行或 3 / 5 / 7 / 9 行聚焦显示")
+            FlowRow(horizontalArrangement = Arrangement.spacedBy(8.dp), verticalArrangement = Arrangement.spacedBy(6.dp)) {
+                listOf(0 to "铺满屏幕", 1 to "1 行", 3 to "3 行", 5 to "5 行", 7 to "7 行", 9 to "9 行").forEach { (cnt, label) ->
+                    val active = vm.lyricPrefs.lyricMaxLines == cnt
+                    Box(
+                        modifier = Modifier
+                            .clip(RoundedCornerShape(15.dp))
+                            .background(if (active) ACCENT else CHIP_BG)
+                            .clickable { vm.setLyricMaxLines(cnt) }
+                            .padding(horizontal = 12.dp, vertical = 7.dp),
+                    ) {
+                        Text(label, fontSize = 12.sp, fontWeight = if (active) FontWeight.SemiBold else FontWeight.Normal, color = if (active) ON_ACCENT else TEXT)
+                    }
+                }
+            }
+        }
+        ToggleRow(
+            title = "显示翻译",
+            detail = "自动跨平台补齐外语歌曲中文翻译歌词",
+            value = vm.lyricPrefs.showTranslation,
+            onChange = { vm.setShowTranslation(it) },
+        )
+        ToggleRow(
+            title = "显示音译 / 罗马音",
+            detail = "日韩外语歌词显示罗马音（无官源时自动智能转写）",
+            value = vm.lyricPrefs.showRomaji,
+            onChange = { vm.setShowRomaji(it) },
+        )
+    }
+    SectionLabel("颜色与时间")
     SettingsCard {
         SelectRow(
             title = "颜色来源",
@@ -431,54 +737,21 @@ private fun LyricSettingsPanel(vm: AppViewModel) {
             onSelect = { vm.setLyricColorMode(it) },
         )
         if (vm.lyricPrefs.colorMode.startsWith("custom")) {
-            ColorInputRow("主色", vm.lyricPrefs.primary, "#7DD3FC") { vm.setLyricPrimary(it) }
+            ColorPickerTriggerRow("主色", vm.lyricPrefs.primary) { vm.colorPickerTarget = "primary" }
             if (vm.lyricPrefs.colorMode.endsWith("gradient")) {
-                ColorInputRow("辅色", vm.lyricPrefs.secondary, "#A5B4FC") { vm.setLyricSecondary(it) }
+                ColorPickerTriggerRow("辅色", vm.lyricPrefs.secondary) { vm.colorPickerTarget = "secondary" }
             }
         }
-        Column(Modifier.fillMaxWidth().padding(18.dp), verticalArrangement = Arrangement.spacedBy(12.dp)) {
-            Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-                RowCopy("歌词字体大小", "调整播放详情页歌词字号比例（75%–140%）", Modifier.weight(1f))
-                Text("$scalePercent%", fontSize = 15.sp, fontWeight = FontWeight.Medium, color = TEXT)
-                if (abs(vm.lyricPrefs.lyricScale - 1f) >= 0.01f) {
-                    Box(
-                        Modifier.height(36.dp).padding(start = 4.dp).tapNoRipple { vm.setLyricScale(1f) },
-                        contentAlignment = Alignment.Center,
-                    ) {
-                        Text("重置", fontSize = 14.sp, color = BLUE)
-                    }
-                }
-            }
-            GlassSlider(
-                value = scalePercent.toFloat(),
-                onValueChange = { percent -> vm.setLyricScale(percent / 100f) },
-                valueRange = 75f..140f,
-                step = 1f,
-            )
-        }
-        ToggleRow(
-            title = "显示翻译",
-            detail = "在主歌词下方显示中文等翻译歌词（数据源提供时）",
-            value = vm.lyricPrefs.showTranslation,
-            onChange = { vm.setShowTranslation(it) },
-        )
-        ToggleRow(
-            title = "显示音译 / 罗马音",
-            detail = "外语歌词显示音译或罗马音（数据源提供时）",
-            value = vm.lyricPrefs.showRomaji,
-            onChange = { vm.setShowRomaji(it) },
-        )
-    }
-    SectionLabel("时间")
-    SettingsCard {
         var offsetDraft by remember { mutableStateOf(vm.lyricOffset.toString()) }
+        LaunchedEffect(vm.lyricOffset) {
+            if (parseLyricOffset(offsetDraft) != vm.lyricOffset) {
+                offsetDraft = vm.lyricOffset.toString()
+            }
+        }
         Column(Modifier.fillMaxWidth().padding(18.dp), verticalArrangement = Arrangement.spacedBy(12.dp)) {
             Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(8.dp)) {
                 RowCopy("时间偏移", "正值提前显示，负值延后显示", Modifier.weight(1f))
-                Box(
-                    Modifier.width(74.dp).height(40.dp),
-                    contentAlignment = Alignment.Center,
-                ) {
+                Box(Modifier.width(74.dp).height(40.dp), contentAlignment = Alignment.Center) {
                     BasicTextField(
                         value = offsetDraft,
                         cursorBrush = SolidColor(CONTROL_BLUE),
@@ -493,61 +766,82 @@ private fun LyricSettingsPanel(vm: AppViewModel) {
                     )
                 }
                 Text("ms", fontSize = 12.sp, color = MUTED)
-                Box(
-                    Modifier.width(64.dp).height(40.dp).tapNoRipple {
-                        offsetDraft = "0"
-                        vm.setLyricOffset(0)
-                    },
-                    contentAlignment = Alignment.Center,
-                ) {
-                    Text("重置", fontSize = 16.sp, color = BLUE)
-                }
+                SliderResetIcon(active = vm.lyricOffset != 0L, onClick = { offsetDraft = "0"; vm.setLyricOffset(0) })
             }
             GlassSlider(
                 value = vm.lyricOffset.toFloat(),
-                onValueChange = { value ->
-                    val offset = value.toLong()
-                    offsetDraft = offset.toString()
-                    vm.setLyricOffset(offset)
-                },
+                onValueChange = { value -> val offset = value.toLong(); offsetDraft = offset.toString(); vm.setLyricOffset(offset) },
                 valueRange = -10000f..10000f,
-                step = 100f,
+                step = 50f,
             )
+        }
+    }
+    SectionLabel("车载与蓝牙歌词")
+    SettingsCard {
+        ToggleRow(
+            title = "蓝牙车载歌词",
+            detail = "连接蓝牙车载音响时通过 AVRCP 协议同步推送实时歌词（是否显示及刷新频率取决于车型车机支持）",
+            value = vm.bluetoothCarLyricsEnabled,
+            onChange = { vm.setBluetoothCarLyricsEnabled(it) },
+        )
+        if (vm.bluetoothCarLyricsEnabled) {
+            SelectRow(
+                title = "车机显示方式",
+                detail = "默认将歌词写入曲目名（兼容绝大多数车机），也可按车型切换",
+                labels = listOf("歌词替换歌名（推荐）", "歌词替换歌手", "歌词 + 歌名拼接"),
+                values = listOf(
+                    com.lxlia.player.audio.BluetoothCarLyrics.MODE_TITLE,
+                    com.lxlia.player.audio.BluetoothCarLyrics.MODE_ARTIST,
+                    com.lxlia.player.audio.BluetoothCarLyrics.MODE_COMBINED,
+                ),
+                current = vm.bluetoothCarLyricsMode,
+                onSelect = { vm.setBluetoothCarLyricsMode(it) },
+            )
+            Row(
+                modifier = Modifier.fillMaxWidth().padding(horizontal = 18.dp, vertical = 12.dp),
+                verticalAlignment = Alignment.CenterVertically,
+                horizontalArrangement = Arrangement.spacedBy(8.dp),
+            ) {
+                Text(
+                    if (vm.bluetoothAudioConnected) "已检测到蓝牙音频设备，播放歌曲时自动向车机同步歌词"
+                    else "未检测到蓝牙音频设备（连接车载蓝牙后将自动生效）",
+                    fontSize = 12.sp,
+                    color = if (vm.bluetoothAudioConnected) ACCENT else MUTED,
+                )
+            }
         }
     }
 }
 
 @Composable
-private fun ColorInputRow(label: String, value: String, placeholder: String, onChange: (String) -> Unit) {
-    var draft by remember(value) { mutableStateOf(value) }
+private fun ColorPickerTriggerRow(label: String, value: String, onClick: () -> Unit) {
     Row(
-        modifier = Modifier.fillMaxWidth().padding(18.dp),
+        modifier = Modifier
+            .fillMaxWidth()
+            .clickable(onClick = onClick)
+            .padding(horizontal = 18.dp, vertical = 14.dp),
         verticalAlignment = Alignment.CenterVertically,
-        horizontalArrangement = Arrangement.spacedBy(12.dp),
+        horizontalArrangement = Arrangement.spacedBy(10.dp),
     ) {
-        RowCopy(label, "#RRGGBB", Modifier.weight(1f))
-        Box(Modifier.size(24.dp).clip(RoundedCornerShape(12.dp)).background(parseColor(value)))
-        Box(
-            Modifier.width(116.dp).height(40.dp),
-            contentAlignment = Alignment.Center,
+        RowCopy(label, "点击打开可视化色盘自由选色", Modifier.weight(1f))
+        Row(
+            modifier = Modifier
+                .clip(RoundedCornerShape(18.dp))
+                .background(CHIP_BG)
+                .border(0.6.dp, BORDER_SUBTLE, RoundedCornerShape(18.dp))
+                .padding(start = 6.dp, end = 10.dp, top = 5.dp, bottom = 5.dp),
+            verticalAlignment = Alignment.CenterVertically,
+            horizontalArrangement = Arrangement.spacedBy(8.dp),
         ) {
-            BasicTextField(
-                value = draft,
-                cursorBrush = SolidColor(CONTROL_BLUE),
-                onValueChange = { next ->
-                    draft = next
-                    if (Regex("^#[0-9a-fA-F]{6}$").matches(next)) onChange(next)
-                },
-                singleLine = true,
-                textStyle = TextStyle(color = TEXT, fontSize = 16.sp),
-                modifier = Modifier.fillMaxWidth().padding(horizontal = 10.dp),
-                decorationBox = { inner ->
-                    Box {
-                        if (draft.isEmpty()) Text(placeholder, color = MUTED, fontSize = 16.sp)
-                        inner()
-                    }
-                },
+            Box(
+                Modifier
+                    .size(22.dp)
+                    .clip(CircleShape)
+                    .background(parseColor(value))
+                    .border(1.dp, BORDER_SUBTLE, CircleShape)
             )
+            Text(value.uppercase(), fontSize = 13.sp, fontWeight = FontWeight.Medium, color = TEXT)
+            Text("调色 ›", fontSize = 12.sp, fontWeight = FontWeight.Medium, color = ACCENT)
         }
     }
 }
@@ -576,7 +870,7 @@ private fun SyncPanel(vm: AppViewModel) {
         }
         ToggleRow(
             title = "同局域网自动同步歌单",
-            detail = "开启后与同样开启此项的设备自动合并歌单与喜欢列表（保留最新修改，不覆盖音源与设置）",
+            detail = "开启后与同样开启此项的设备自动合并歌单与收藏列表（保留最新修改，不覆盖音源与设置）",
             value = vm.lanAutoSync,
             onChange = { vm.setLanAutoSync(it) },
         )
@@ -651,6 +945,8 @@ private fun SyncPanel(vm: AppViewModel) {
                 "harmony" -> "HarmonyOS"
                 "android" -> "Android"
                 "win32", "windows" -> "Windows"
+                "darwin", "macos" -> "macOS"
+                "linux" -> "Linux"
                 else -> device.platform
             }
             val meta = buildList {
@@ -676,8 +972,11 @@ private fun SyncPanel(vm: AppViewModel) {
 @Composable
 private fun SourcesPage(vm: AppViewModel) {
     val scroll = rememberScrollState()
-    LaunchedEffect(scroll) {
-        snapshotFlow { scroll.value }.collect { vm.homeScroll(it.toFloat()) }
+    val density = LocalDensity.current.density.coerceAtLeast(1f)
+    LaunchedEffect(scroll, density) {
+        snapshotFlow { scroll.value to scroll.isScrollInProgress }.collect { (offset, moving) ->
+            vm.homeScroll(offset / density, canTrackDock = moving)
+        }
     }
     Column(
         modifier = Modifier
@@ -686,7 +985,10 @@ private fun SourcesPage(vm: AppViewModel) {
             .padding(top = vm.headerHeight().dp, bottom = 180.dp),
         verticalArrangement = Arrangement.spacedBy(0.dp),
     ) {
-        Row(Modifier.fillMaxWidth().height(90.dp), horizontalArrangement = Arrangement.spacedBy(12.dp)) {
+        Row(
+            Modifier.fillMaxWidth().padding(top = 12.dp, bottom = 14.dp),
+            horizontalArrangement = Arrangement.spacedBy(12.dp),
+        ) {
             GlassSurfaceButton("批量导入音源", Modifier.weight(1f)) { vm.showFilePicker(forSource = true) }
             GlassSurfaceButton("粘贴脚本", Modifier.weight(1f)) { vm.openSheet("添加音源") }
         }
@@ -740,8 +1042,8 @@ private fun SourceRow(vm: AppViewModel, source: SyncSourcePayload) {
             if (vm.activeId == source.id) {
                 Canvas(Modifier.size(16.dp)) {
                     val joint = Offset(size.width * 0.42f, size.height * 0.72f)
-                    drawLine(INK, Offset(size.width * 0.2f, size.height * 0.5f), joint, 2.dp.toPx(), StrokeCap.Round)
-                    drawLine(INK, joint, Offset(size.width * 0.83f, size.height * 0.28f), 2.dp.toPx(), StrokeCap.Round)
+                    drawLine(ON_ACCENT, Offset(size.width * 0.2f, size.height * 0.5f), joint, 2.dp.toPx(), StrokeCap.Round)
+                    drawLine(ON_ACCENT, joint, Offset(size.width * 0.83f, size.height * 0.28f), 2.dp.toPx(), StrokeCap.Round)
                 }
             }
         }

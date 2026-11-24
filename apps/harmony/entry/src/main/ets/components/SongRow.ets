@@ -1,6 +1,7 @@
 import { musicButtonPress } from './MaterialControls';
 import { Song } from '../model/Song';
 import { songKey } from '../services/MusicLibrary';
+import { isHarmonyPc } from '../services/HarmonyPcWindowService';
 import { ACCENT, TEXT, MUTED, formatTime, sourceBadge } from './Theme';
 import { MaterialIcon } from './MaterialControls';
 
@@ -46,8 +47,11 @@ export struct SongRow {
 
   @Builder private actions() {
     Menu() {
-      MenuItem({ content: this.isRowLiked() ? '取消喜欢' : '喜欢' }).onClick(() => this.onLike())
+      MenuItem({ content: this.isRowLiked() ? '取消收藏' : '收藏' }).onClick(() => this.onLike())
       MenuItem({ content: '添加到歌单' }).onClick(() => this.onMore())
+      if (this.showDownload && !this.hideDownload && this.song.source !== 'local') {
+        MenuItem({ content: '下载歌曲' }).onClick(() => this.onDownload())
+      }
       if (this.showSwitchPlatform && this.song.source !== 'local') {
         MenuItem({ content: '切换歌曲平台' }).onClick(() => this.onSwitchPlatform())
       }
@@ -67,7 +71,7 @@ export struct SongRow {
             }.width('100%').height('100%').justifyContent(FlexAlign.Center)
              .linearGradient({ angle: 135, colors: [[this.gradFor(this.song.name)[0], 0], [this.gradFor(this.song.name)[1], 1]] })
             if (this.song.coverUrl) {
-              Image(this.song.coverUrl).width('100%').height('100%').objectFit(ImageFit.Cover)
+              Image(this.song.coverUrl).sourceSize({ width: 128, height: 128 }).autoResize(true).width('100%').height('100%').objectFit(ImageFit.Cover)
             }
           }.width(48).height(48).padding(0).borderRadius(10).clip(true).backgroundColor('#17191C')
           if (sourceBadge(this.song.source) !== null) {
@@ -82,17 +86,13 @@ export struct SongRow {
         }.alignItems(HorizontalAlign.Start).layoutWeight(1)
         if (this.wide) {
           Text(formatTime(this.song.durationMs)).fontSize(11).fontColor(MUTED)
-          MaterialIcon({ icon: this.isRowLiked() ? $r('app.media.ic_heart_fill') : $r('app.media.ic_heart'), tint: !this.isRowLiked(), label: this.isRowLiked() ? '取消喜欢' : '喜欢', selected: this.isRowLiked(), grouped: true, action: () => this.onLike() })
+          MaterialIcon({ icon: this.isRowLiked() ? $r('app.media.ic_heart_fill') : $r('app.media.ic_heart'), tint: !this.isRowLiked(), label: this.isRowLiked() ? '取消收藏' : '收藏', selected: this.isRowLiked(), grouped: true, action: () => this.onLike() })
           if (this.showSwitchPlatform && this.song.source !== 'local') {
             MaterialIcon({ icon: $r('app.media.ic_switch_platform'), label: '切换歌曲平台', grouped: true, action: () => this.onSwitchPlatform() })
           }
           MaterialIcon({ icon: $r('app.media.ic_plus'), label: '加入歌单', grouped: true, action: () => this.onMore() })
           if (this.showRemove) {
             MaterialIcon({ icon: $r('app.media.ic_trash'), label: this.removeLabel, grouped: true, action: () => this.onRemove() })
-          }
-        } else {
-          if (this.showSwitchPlatform && this.song.source !== 'local') {
-            MaterialIcon({ icon: $r('app.media.ic_switch_platform'), diameter: 34, label: '切换歌曲平台', grouped: true, action: () => this.onSwitchPlatform() })
           }
         }
         if (this.showDownload && !this.hideDownload && this.song.source !== 'local') {
@@ -109,7 +109,7 @@ export struct SongRow {
       if (this.expanded && !this.wide) {
         Row({ space: 12 }) {
           Blank()
-          MaterialIcon({ icon: this.isRowLiked() ? $r('app.media.ic_heart_fill') : $r('app.media.ic_heart'), tint: !this.isRowLiked(), label: this.isRowLiked() ? '取消喜欢' : '喜欢', selected: this.isRowLiked(), grouped: true, action: () => this.onLike() })
+          MaterialIcon({ icon: this.isRowLiked() ? $r('app.media.ic_heart_fill') : $r('app.media.ic_heart'), tint: !this.isRowLiked(), label: this.isRowLiked() ? '取消收藏' : '收藏', selected: this.isRowLiked(), grouped: true, action: () => this.onLike() })
           if (this.showSwitchPlatform && this.song.source !== 'local') {
             MaterialIcon({ icon: $r('app.media.ic_switch_platform'), label: '切换歌曲平台', grouped: true, action: () => this.onSwitchPlatform() })
           }
@@ -121,7 +121,8 @@ export struct SongRow {
         }.width('100%').padding({ right: 20, bottom: 8 })
       }
     }.width('100%').borderRadius(12).backgroundColor(this.active ? '#0FFFFFFF' : Color.Transparent)
-      .bindContextMenu(this.actions, ResponseType.LongPress)
+      .hoverEffect(HoverEffect.Highlight)
+      .bindContextMenu(this.actions, isHarmonyPc() ? ResponseType.RightClick : ResponseType.LongPress)
       .onClick(() => this.onPlay())
   }
 }

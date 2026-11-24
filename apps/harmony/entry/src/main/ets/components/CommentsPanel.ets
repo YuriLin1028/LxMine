@@ -19,6 +19,7 @@ function relativeTime(ms: number): string {
 export struct CommentsPanel {
   @Prop @Watch('songChanged') song: Song | null = null;
   @Prop wide: boolean = false;
+  @Prop light: boolean = false;
   @Prop statusInset: number = 28;
   @Prop bottomInset: number = 16;
   onClose: () => void = () => {};
@@ -93,35 +94,45 @@ export struct CommentsPanel {
   build() {
     Stack({ alignContent: Alignment.TopStart }) {
       Column().width('100%').height('100%').backgroundColor(INK)
-      Column() {
-        PageHeader({ title: this.song?.name ?? '歌曲评论',
-          subtitle: this.song ? `${this.song.singer}${this.data ? ' · ' + this.data.platform : ''}` : '网络平台评论',
-          wide: this.wide, topInset: this.statusInset, backLabel: '返回歌曲', onBack: () => this.onClose() })
-        Scroll(this.scroller) {
-          Column({ space: 16 }) {
-            if (this.data) {
-              this.notice(this.data.platform)
-              if (this.data.hot.length) {
-                Text('热门评论').fontSize(18).fontWeight(FontWeight.Medium).fontColor(TEXT).width('100%')
-                ForEach(this.data.hot, (comment: SongComment) => {
-                  this.commentRow(comment)
-                  Divider().color('#12FFFFFF').strokeWidth(1)
-                }, (comment: SongComment) => 'hot-' + comment.id)
-              }
-              if (this.data.latest.length) {
-                Text('最新评论').fontSize(18).fontWeight(FontWeight.Medium).fontColor(TEXT).width('100%').margin({ top: 4 })
-                ForEach(this.data.latest, (comment: SongComment, index: number) => {
-                  this.commentRow(comment)
-                  if (index < (this.data?.latest.length ?? 0) - 1) Divider().color('#12FFFFFF').strokeWidth(1)
-                }, (comment: SongComment) => 'new-' + comment.id)
-              }
-              Text(`共 ${this.data.total} 条评论，仅显示近期公开内容`).fontSize(11).fontColor(MUTED).width('100%').textAlign(TextAlign.Center).margin({ top: 6 })
-            } else {
-              this.stateBlock()
+      Scroll(this.scroller) {
+        Column({ space: 16 }) {
+          if (this.data) {
+            this.notice(this.data.platform)
+            if (this.data.hot.length) {
+              Text('热门评论').fontSize(18).fontWeight(FontWeight.Medium).fontColor(TEXT).width('100%')
+              ForEach(this.data.hot, (comment: SongComment) => {
+                this.commentRow(comment)
+                Divider().color('#12FFFFFF').strokeWidth(1)
+              }, (comment: SongComment) => 'hot-' + comment.id)
             }
-          }.width('100%').constraintSize({ maxWidth: 860 }).padding({ left: this.wide ? 32 : 20, right: this.wide ? 32 : 20, top: 6, bottom: this.bottomInset + 40 }).alignItems(HorizontalAlign.Start)
-        }.layoutWeight(1).align(Alignment.TopStart).scrollBar(BarState.Off).edgeEffect(EdgeEffect.Spring)
-      }.width('100%').height('100%')
+            if (this.data.latest.length) {
+              Text('最新评论').fontSize(18).fontWeight(FontWeight.Medium).fontColor(TEXT).width('100%').margin({ top: 4 })
+              ForEach(this.data.latest, (comment: SongComment, index: number) => {
+                this.commentRow(comment)
+                if (index < (this.data?.latest.length ?? 0) - 1) Divider().color('#12FFFFFF').strokeWidth(1)
+              }, (comment: SongComment) => 'new-' + comment.id)
+            }
+            Text(`共 ${this.data.total} 条评论，仅显示近期公开内容`).fontSize(11).fontColor(MUTED).width('100%').textAlign(TextAlign.Center).margin({ top: 6 })
+          } else {
+            this.stateBlock()
+          }
+        }.width('100%').constraintSize({ maxWidth: 860 }).padding({ left: this.wide ? 32 : 20, right: this.wide ? 32 : 20, top: this.statusInset + 84, bottom: this.bottomInset + 40 }).alignItems(HorizontalAlign.Start)
+      }
+        .width('100%').height('100%').align(Alignment.TopStart).scrollBar(BarState.Off).edgeEffect(EdgeEffect.Spring).fadingEdge(false)
+        .linearGradientBlur(28, { fractionStops: [[1.0, 0.0], [0.8, 0.07], [0.24, 0.14], [0.0, 0.21]], direction: GradientDirection.Bottom })
+      Column()
+        .width('100%').height(this.statusInset + 92)
+        .linearGradient({
+          direction: GradientDirection.Bottom,
+          colors: this.light
+            ? [['#DCEEF1F6', 0.0], ['#68EEF1F6', 0.56], ['#00EEF1F6', 1.0]]
+            : [['#CC0D0F14', 0.0], ['#660D0F14', 0.56], ['#000D0F14', 1.0]]
+        })
+        .hitTestBehavior(HitTestMode.None)
+      PageHeader({ title: this.song?.name ?? '歌曲评论',
+        subtitle: this.song ? `${this.song.singer}${this.data ? ' · ' + this.data.platform : ''}` : '网络平台评论',
+        wide: this.wide, topInset: this.statusInset, backLabel: '返回歌曲', onBack: () => this.onClose() })
+        .position({ x: 0, y: 0 })
     }.width('100%').height('100%').expandSafeArea([SafeAreaType.SYSTEM], [SafeAreaEdge.TOP, SafeAreaEdge.BOTTOM])
   }
 }

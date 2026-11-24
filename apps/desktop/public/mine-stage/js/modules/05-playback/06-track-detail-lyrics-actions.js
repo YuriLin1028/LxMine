@@ -873,6 +873,21 @@ function applyLyricsState(lines, hasNativeKaraoke, timingSource, translationLine
   lyricsTranslationLines = cloneLyricLines(prepared.translationLines);
   lyricsTranslationSource = prepared.translationSource;
   lyricsLines = cloneLyricLines(prepared.lines);
+  if (lyricsTranslationLines.length && lyricsLines.length) {
+    for (var i = 0; i < lyricsLines.length; i++) {
+      if (lyricsLines[i] && !lyricsLines[i].translation) {
+        var bestT = '';
+        var bestD = 0.68;
+        for (var j = 0; j < lyricsTranslationLines.length; j++) {
+          var tr = lyricsTranslationLines[j];
+          if (!tr || !tr.text) continue;
+          var d = Math.abs((Number(tr.t) || 0) - (Number(lyricsLines[i].t) || 0));
+          if (d <= bestD) { bestD = d; bestT = tr.text; }
+        }
+        if (bestT) lyricsLines[i].translation = bestT;
+      }
+    }
+  }
   renderLyrics(renderOptions || {});
   updateCustomLyricControls();
 }
@@ -924,6 +939,21 @@ function applyCustomLyricState(song, silent, renderOptions) {
   lyricsTranslationLines = cloneLyricLines(prepared.translationLines);
   lyricsTranslationSource = prepared.translationSource;
   lyricsLines = cloneLyricLines(prepared.lines);
+  if (lyricsTranslationLines.length && lyricsLines.length) {
+    for (var i = 0; i < lyricsLines.length; i++) {
+      if (lyricsLines[i] && !lyricsLines[i].translation) {
+        var bestT = '';
+        var bestD = 0.68;
+        for (var j = 0; j < lyricsTranslationLines.length; j++) {
+          var tr = lyricsTranslationLines[j];
+          if (!tr || !tr.text) continue;
+          var d = Math.abs((Number(tr.t) || 0) - (Number(lyricsLines[i].t) || 0));
+          if (d <= bestD) { bestD = d; bestT = tr.text; }
+        }
+        if (bestT) lyricsLines[i].translation = bestT;
+      }
+    }
+  }
   renderLyrics(renderOptions || {});
   updateCustomLyricControls();
   return true;

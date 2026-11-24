@@ -5,7 +5,7 @@ import { PRODUCT_NAME, VERSION_NAME } from 'BuildProfile';
 
 export const UPDATE_REPO: string = 'YuriLin1028/LxMine';
 export const HARMONY_INVITE_URL: string =
-  'https://appgallery.huawei.com/link/invite-test-wap?taskId=829a9176e89afda4703cbcc9273a0bfb&invitationCode=1Klp9jEJXOp';
+  'https://appgallery.huawei.com/link/invite-test-wap?taskId=4bce68afbce8009046507ba1485a6273&invitationCode=1Klp9jEJXOp';
 
 export function isStoreEdition(): boolean {
   return PRODUCT_NAME.toString() === 'store';
@@ -88,8 +88,6 @@ const HAP_RELEASE_ENDPOINTS: string[] = [
   'https://yurilin1028.github.io/LxMine/harmony-hap-release.json',
   `https://gh-proxy.org/https://raw.githubusercontent.com/${UPDATE_REPO}/gh-pages/harmony-hap-release.json`,
   `https://ghfast.top/https://raw.githubusercontent.com/${UPDATE_REPO}/gh-pages/harmony-hap-release.json`,
-  `https://api.github.com/repos/${UPDATE_REPO}/releases/latest`,
-  'https://yurilin1028.github.io/LxMine/release.json',
 ];
 
 const DOWNLOAD_MIRRORS: MirrorEntry[] = [
@@ -171,17 +169,42 @@ async function fetchStoreReleaseEndpoint(url: string): Promise<RawStoreReleasePa
   }
 }
 
+function raceWithGrace<T>(tasks: Promise<T | null>[], graceMs: number = 1200): Promise<T[]> {
+  return new Promise<T[]>((resolve) => {
+    const collected: T[] = [];
+    let pending = tasks.length;
+    let settled = false;
+    let graceTimer = -1;
+    const finish = (): void => {
+      if (settled) return;
+      settled = true;
+      if (graceTimer !== -1) clearTimeout(graceTimer);
+      resolve(collected);
+    };
+    if (pending === 0) { finish(); return; }
+    for (const task of tasks) {
+      task.then((item: T | null) => {
+        if (item !== null) {
+          collected.push(item);
+          if (graceTimer === -1 && pending > 1) {
+            graceTimer = setTimeout(finish, graceMs);
+          }
+        }
+      }).catch(() => {}).finally(() => {
+        pending -= 1;
+        if (pending <= 0) finish();
+      });
+    }
+  });
+}
+
 export async function checkHarmonyUpdate(): Promise<AppUpdateInfo> {
   const current = currentHarmonyVersion();
   if (isStoreEdition()) {
     const storeTasks = STORE_RELEASE_ENDPOINTS.map(async (endpoint: string): Promise<RawStoreReleasePayload | null> => {
       return await fetchStoreReleaseEndpoint(endpoint);
     });
-    const storeSettled = await Promise.all(storeTasks);
-    const validStores: RawStoreReleasePayload[] = [];
-    for (const item of storeSettled) {
-      if (item !== null) validStores.push(item);
-    }
+    const validStores = await raceWithGrace<RawStoreReleasePayload>(storeTasks, 1200);
     if (!validStores.length) {
       throw new Error('无法连接邀请测试更新渠道，请检查网络');
     }
@@ -207,11 +230,7 @@ export async function checkHarmonyUpdate(): Promise<AppUpdateInfo> {
     const data = await fetchReleaseEndpoint(endpoint);
     return data ? { idx, data } : null;
   });
-  const settled = await Promise.all(tasks);
-  const valid: ReleaseResult[] = [];
-  for (const item of settled) {
-    if (item !== null) valid.push(item);
-  }
+  const valid = await raceWithGrace<ReleaseResult>(tasks, 1200);
   if (!valid.length) {
     throw new Error('无法连接更新服务器，请检查网络');
   }

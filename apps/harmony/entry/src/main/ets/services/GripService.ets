@@ -1,7 +1,24 @@
 import { motion } from '@kit.MultimodalAwarenessKit';
 import { abilityAccessCtrl, common } from '@kit.AbilityKit';
+import { deviceInfo } from '@kit.BasicServicesKit';
 
 export type GripSide = 'left' | 'right' | 'center';
+
+/**
+ * 识别当前设备是否支持华为「智感握姿」单手握持感知：
+ * 仅在手机形态（含折叠屏）且系统具备 Motion 握持能力时支持；平板、PC、车机等自动隐藏设置项。
+ */
+export function isGripSupportedDevice(): boolean {
+  try {
+    const devType = (deviceInfo.deviceType || '').toLowerCase();
+    if (devType !== 'phone' && devType !== 'default') return false;
+    if (!canIUse('SystemCapability.MultimodalAwareness.Motion')) return false;
+    return typeof motion?.on === 'function';
+  } catch (_) {
+    return false;
+  }
+}
+
 // 使用系统握持事件；不根据点击位置猜测。只在前台订阅，切后台及时释放。
 export class GripService {
   private subscribed: boolean = false;
@@ -16,7 +33,7 @@ export class GripService {
   };
   async start(context: common.UIAbilityContext, receive: (side: GripSide) => void): Promise<boolean | null> {
     this.stop(); const generation = this.generation; this.receive = receive;
-    if (!canIUse('SystemCapability.MultimodalAwareness.Motion')) return false;
+    if (!isGripSupportedDevice()) return false;
     try {
       const manager = abilityAccessCtrl.createAtManager();
       const permission = await manager.requestPermissionsFromUser(context, ['ohos.permission.DETECT_GESTURE']);

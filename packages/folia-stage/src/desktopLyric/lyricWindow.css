@@ -1,0 +1,76 @@
+html,
+body,
+#root {
+    margin: 0;
+    padding: 0;
+    width: 100%;
+    height: 100%;
+    background: transparent;
+    overflow: hidden;
+    font-family: system-ui, 'Microsoft YaHei', sans-serif;
+    user-select: none;
+}
+
+.desktop-lyric-window {
+    position: relative;
+    display: flex;
+    align-items: center;
+    gap: 12px;
+    width: calc(100% - 16px);
+    height: calc(100% - 16px);
+    margin: 8px;
+    padding: 14px 44px 14px 22px;
+    box-sizing: border-box;
+    border-radius: 18px;
+    background: rgba(12, 14, 20, 0.78);
+    border: 1px solid rgba(255, 255, 255, 0.12);
+    box-shadow: 0 10px 30px rgba(0, 0, 0, 0.45);
+    backdrop-filter: blur(18px);
+}
+
+.desktop-lyric-drag {
+    flex: 1;
+    min-width: 0;
+    -webkit-app-region: drag;
+}
+
+.desktop-lyric-current {
+    font-size: 22px;
+    font-weight: 600;
+    line-height: 1.25;
+    color: rgba(255, 255, 255, 0.96);
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    text-shadow: 0 0 18px rgba(140, 170, 255, 0.35);
+}
+
+.desktop-lyric-next {
+    margin-top: 4px;
+    font-size: 13px;
+    line-height: 1.3;
+    color: rgba(255, 255, 255, 0.45);
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
+}
+
+.desktop-lyric-close {
+    position: absolute;
+    top: 8px;
+    right: 10px;
+    width: 24px;
+    height: 24px;
+    border: none;
+    border-radius: 50%;
+    background: rgba(255, 255, 255, 0.1);
+    color: rgba(255, 255, 255, 0.75);
+    font-size: 16px;
+    line-height: 1;
+    cursor: pointer;
+    -webkit-app-region: no-drag;
+}
+
+.desktop-lyric-close:hover {
+    background: rgba(255, 255, 255, 0.2);
+}

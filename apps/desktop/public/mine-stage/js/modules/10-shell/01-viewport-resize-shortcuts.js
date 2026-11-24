@@ -1,24 +1,76 @@
 // ============================================================
-function refreshMainRendererViewport(reason) {
+var _viewportSettleTimer = 0;
+var _lastLyricWrapBucket = 0;
+window.__lxmineViewportDirty = false;
+function flushPendingMainRendererViewport() {
+  if (!window.__lxmineViewportDirty) return false;
+  if (typeof isDeepBackgroundMode === 'function' && isDeepBackgroundMode()) return false;
+  window.__lxmineViewportDirty = false;
   if (typeof camera !== 'undefined' && camera) {
     camera.aspect = Math.max(1, innerWidth) / Math.max(1, innerHeight);
     camera.updateProjectionMatrix();
   }
   applyRendererPowerMode();
-  if (typeof requestStageLyricCameraSnap === 'function' && (desktopRuntimeState.fullscreen || document.fullscreenElement)) {
-    requestStageLyricCameraSnap(reason === 'resize' ? 4 : 10);
+  if (typeof requestStageLyricCameraSnap === 'function') {
+    requestStageLyricCameraSnap(6);
+  }
+  if (typeof renderRefreshState !== 'undefined' && renderRefreshState) {
+    renderRefreshState.converged = false;
+    renderRefreshState.tickCount = 0;
+  }
+  return true;
+}
+window.flushPendingMainRendererViewport = flushPendingMainRendererViewport;
+function refreshMainRendererViewport(reason, deferBufferResize) {
+  if (typeof isDeepBackgroundMode === 'function' && isDeepBackgroundMode()) {
+    window.__lxmineViewportDirty = true;
+    return;
+  }
+  if (reason === 'resize-settled') {
+    if (window.__lxmineViewportDirty) flushPendingMainRendererViewport();
+  } else {
+    window.__lxmineViewportDirty = true;
+    if (!deferBufferResize && typeof wakeMainLoopFromBackground === 'function') {
+      wakeMainLoopFromBackground();
+    }
+  }
+  if ((reason === 'resize-settled' || reason === 'sync') && typeof lyricWrapWidthBucket === 'function') {
+    var nextWrapBucket = lyricWrapWidthBucket();
+    if (_lastLyricWrapBucket && nextWrapBucket !== _lastLyricWrapBucket && typeof refreshCurrentLyricStyle === 'function' && typeof stageLyrics !== 'undefined' && stageLyrics && stageLyrics.current) {
+      _lastLyricWrapBucket = nextWrapBucket;
+      refreshCurrentLyricStyle();
+    } else {
+      _lastLyricWrapBucket = nextWrapBucket;
+    }
   }
 }
 function scheduleMainRendererViewportRefresh(reason) {
-  refreshMainRendererViewport(reason || 'sync');
-  [48, 140, 320].forEach(function (delay) {
-    setTimeout(function () { refreshMainRendererViewport(reason || 'sync'); }, delay);
-  });
+  window.__lxmineViewportDirty = true;
+  if (typeof isDeepBackgroundMode === 'function' && isDeepBackgroundMode()) return;
+  if (typeof markRenderInteraction === 'function') markRenderInteraction('viewport-resize', 280);
+  if (typeof wakeMainLoopFromBackground === 'function') wakeMainLoopFromBackground();
+  if (reason === 'resize') {
+    if (_viewportSettleTimer) clearTimeout(_viewportSettleTimer);
+    _viewportSettleTimer = setTimeout(function () {
+      _viewportSettleTimer = 0;
+      refreshMainRendererViewport('resize-settled', false);
+    }, 90);
+    return;
+  }
+  if (_viewportSettleTimer) {
+    clearTimeout(_viewportSettleTimer);
+    _viewportSettleTimer = 0;
+  }
+  refreshMainRendererViewport(reason || 'sync', false);
+  _viewportSettleTimer = setTimeout(function () {
+    _viewportSettleTimer = 0;
+    refreshMainRendererViewport(reason || 'sync', false);
+  }, 120);
 }
 window.addEventListener('resize', function () {
   scheduleMainRendererViewportRefresh('resize');
   if (desktopRuntimeState.fullscreen || desktopFullscreenActive || document.fullscreenElement || document.body.classList.contains('desktop-fullscreen')) layoutFullscreenDiyZone();
-});
+}, { passive: true });
 document.addEventListener('keydown', function (e) {
   if (isTypingTarget(e.target)) return;
   if (handleConfiguredLocalHotkey(e)) return;

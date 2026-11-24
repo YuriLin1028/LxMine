@@ -238,6 +238,7 @@ function removeSourceFallbackCard(card) {
   }, 260);
 }
 function showSourceFallbackNotice(title, body) {
+  if (typeof window !== 'undefined' && window.__LXMINE_NATIVE_STAGE) return;
   var stack = ensureSourceFallbackStack();
   if (stack) {
     var card = document.createElement('div');

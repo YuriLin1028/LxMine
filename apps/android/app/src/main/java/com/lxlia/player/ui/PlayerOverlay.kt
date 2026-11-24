@@ -2,16 +2,17 @@ package com.lxlia.player.ui
 
 import androidx.compose.animation.core.Spring
 import androidx.compose.animation.core.spring
+import androidx.compose.foundation.background
+import androidx.compose.foundation.gestures.detectTapGestures
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
+import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
+import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
-import androidx.compose.foundation.layout.size
-import androidx.compose.foundation.shape.CircleShape
-import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
@@ -21,15 +22,14 @@ import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
-import androidx.compose.ui.draw.clip
+import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.graphicsLayer
-import androidx.compose.ui.platform.LocalDensity
+import androidx.compose.ui.input.pointer.pointerInput
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import com.lxlia.player.model.MINE_RADIO_MODES
-import kotlinx.coroutines.delay
 
 /**
  * 播放详情页原生层：舞台与歌词由 Web 渲染，这里只保留顶排操作球与空歌词提示。
@@ -81,13 +81,21 @@ fun PlayerOverlay(vm: AppViewModel, controlsReveal: androidx.compose.runtime.Sta
             }
         }
         if (!show && reveal.value < 0.05f) return@Box
+        val topWash = if (AppAppearance.light) Color(0x70EEF1F6) else Color(0x6E080A0E)
+        Box(
+            Modifier
+                .fillMaxWidth()
+                .height((vm.statusInset + 86).dp)
+                .background(Brush.verticalGradient(listOf(topWash, Color.Transparent)))
+        )
         Row(
             modifier = Modifier
                 .fillMaxWidth()
                 .blockHiddenPlayerChrome(controlsVisible)
+                .pointerInput(Unit) { detectTapGestures { } }
                 .padding(
-                    start = if (vm.wide) 32.dp else 20.dp,
-                    end = if (vm.wide) 32.dp else 20.dp,
+                    start = maxOf(if (vm.wide) 32f else 20f, vm.leftInset + 12f).dp,
+                    end = maxOf(if (vm.wide) 32f else 20f, vm.rightInset + 12f).dp,
                     top = topOffset,
                 ),
             horizontalArrangement = Arrangement.spacedBy(8.dp),
@@ -95,7 +103,7 @@ fun PlayerOverlay(vm: AppViewModel, controlsReveal: androidx.compose.runtime.Sta
         ) {
             MaterialIconButton("ic_back.svg", "返回", diameter = 38.dp, onClick = { vm.showPlayer = false })
             Spacer(Modifier.weight(1f))
-            QualityBall(vm)
+            // 统一对齐鸿蒙顶栏顺序：投播 -> 分享 -> 耳返 -> 动效 -> 沉浸
             CastBall(vm)
             val shareContext = androidx.compose.ui.platform.LocalContext.current
             androidx.compose.runtime.key(vm.foreground) {
@@ -105,48 +113,68 @@ fun PlayerOverlay(vm: AppViewModel, controlsReveal: androidx.compose.runtime.Sta
                     }
                 })
             }
-            MaterialIconButton("ic_comment_official.svg", "查看评论", diameter = 38.dp, onClick = { vm.commentsOpen = true })
+            MaterialIconButton(
+                icon = if (vm.earMonitorState.active) "mic_on.svg" else "mic.svg",
+                label = "耳返",
+                diameter = 38.dp,
+                selected = vm.earMonitorState.active,
+                systemSymbol = false,
+                onClick = { vm.openSheet("耳返监听") },
+            )
             StyleBall(vm)
-            if (vm.landscape) {
-                MaterialIconButton("fullscreen.svg", "沉浸模式", diameter = 38.dp, onClick = { vm.toggleStageControls(false) })
-            }
+            // 横屏与竖屏统一显示沉浸模式入口；双指上滑或返回键退出沉浸。
+            MaterialIconButton("fullscreen.svg", "沉浸模式", diameter = 38.dp, onClick = { vm.toggleStageControls(false) })
         }
     }
 }
 
-@Composable
-private fun QualityBall(vm: AppViewModel) {
-    val menu = rememberGlassMenuTrigger {
-        listOf("标准 128k" to "128k", "高品质 320k" to "320k", "无损 flac" to "flac").map { (label, value) ->
-            GlassMenuItem(label, selected = vm.quality == value) { vm.setQuality(value) }
-        }
-    }
-    MaterialIconButton(
-        "ic_quality_official.svg",
-        "音质切换（当前 ${vm.quality.uppercase()}）",
-        modifier = menu.modifier,
-        diameter = 38.dp,
-        systemSymbol = false,
-        onClick = { menu.show() },
+/** 构造与鸿蒙 NativePlayer / AlignedSettings 完全一致的「选择动效」锚点毛玻璃菜单项。 */
+internal fun buildStyleMenuItems(
+    vm: AppViewModel,
+    onShowSmartTip: () -> Unit,
+): List<GlassMenuItem> = MINE_RADIO_MODES.map { mode ->
+    val selected = vm.styleName == mode.id
+    val isSmart = mode.id == com.lxlia.player.audio.SMART_STAGE_MODE_ID
+    GlassMenuItem(
+        label = mode.label,
+        selected = selected,
+        subtitle = if (isSmart && selected && vm.resolvedStyleLabel().isNotEmpty()) "当前匹配：${vm.resolvedStyleLabel()}" else "",
+        badgeText = if (isSmart) "!" else "",
+        showCheck = true,
+        onBadgeClick = if (isSmart) onShowSmartTip else null,
+        onClick = { vm.setStyleName(mode.id) },
     )
 }
 
 @Composable
 private fun StyleBall(vm: AppViewModel) {
-    val menu = rememberGlassMenuTrigger {
-        MINE_RADIO_MODES.map { mode ->
-            GlassMenuItem(mode.label, selected = vm.styleName == mode.id) { vm.setStyleName(mode.id) }
-        }
+    var tipOpen by remember { mutableStateOf(false) }
+    val styleMenu = rememberGlassMenuTrigger(widthDp = 228f) {
+        buildStyleMenuItems(vm) { tipOpen = true }
     }
     MaterialIconButton(
         "ic_style_wand.svg",
         "选择动效",
-        modifier = menu.modifier,
+        modifier = styleMenu.modifier,
         diameter = 38.dp,
         rawNoTint = true,
         systemSymbol = false,
-        onClick = { menu.show() },
+        onClick = { styleMenu.show() },
     )
+    if (tipOpen) {
+        SmartStageTipDialog(onDismiss = { tipOpen = false })
+    }
+}
+
+@Composable
+internal fun SmartStageTipDialog(onDismiss: () -> Unit) {
+    GlassDialog(onDismiss = onDismiss) {
+        Text("随声绘色", fontSize = 18.sp, fontWeight = FontWeight.Bold, color = TEXT)
+        Text(com.lxlia.player.audio.SMART_STAGE_MODE_TIP, fontSize = 14.sp, color = TEXT, lineHeight = 20.sp)
+        Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.End) {
+            SheetHeaderTextAction("知道了", color = ACCENT, onClick = onDismiss)
+        }
+    }
 }
 
 /** 投播：安卓用系统音频路由（蓝牙/耳机等），没有可用路由时明确提示。 */
@@ -165,13 +193,13 @@ private fun CastBall(vm: AppViewModel) {
             if (routes.isEmpty()) {
                 Text("此设备暂不支持投播，可用蓝牙从系统设置切换输出", color = MUTED, fontSize = 13.sp)
             } else {
-                androidx.compose.foundation.layout.Column {
+                Column {
                     routes.forEach { name ->
                         Text(
                             name,
                             color = TEXT,
                             fontSize = 15.sp,
-                            modifier = Modifier.padding(vertical = 10.dp).tapNoRipple {
+                            modifier = Modifier.fillMaxWidth().padding(vertical = 10.dp).tapNoRipple {
                                 AudioRoutes.select(context, name)
                                 open = false
                             },
@@ -179,13 +207,8 @@ private fun CastBall(vm: AppViewModel) {
                     }
                 }
             }
-            Box(Modifier.fillMaxWidth()) {
-                Text(
-                    "关闭",
-                    color = ACCENT,
-                    fontSize = 14.sp,
-                    modifier = Modifier.align(Alignment.CenterEnd).tapNoRipple { open = false }.padding(8.dp),
-                )
+            Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.End) {
+                SheetHeaderTextAction("关闭", color = ACCENT) { open = false }
             }
         }
     }

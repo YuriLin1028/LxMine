@@ -83,6 +83,17 @@
   LxBuffer.prototype.slice = function (start, end) {
     return new LxBuffer(this.bytes.slice(start, end));
   };
+  LxBuffer.from = function (input, encoding) {
+    return new LxBuffer(input, encoding);
+  };
+  LxBuffer.alloc = function (size, fill) {
+    var u8 = new Uint8Array(Math.max(0, Number(size) || 0));
+    if (fill !== undefined) u8.fill(typeof fill === 'number' ? (fill & 0xff) : String(fill).charCodeAt(0) & 0xff);
+    return new LxBuffer(u8);
+  };
+  LxBuffer.isBuffer = function (obj) {
+    return obj instanceof LxBuffer;
+  };
   LxBuffer.concat = function (list) {
     var total = 0;
     for (var i = 0; i < list.length; i += 1) total += toU8(list[i].bytes || list[i]).length;
@@ -145,6 +156,7 @@
         form: options.form,
         formData: options.formData,
         timeout: options.timeout,
+        probeOnly: !!options.probeOnly,
       };
       try {
         native.httpRequest(id, JSON.stringify(payload));
@@ -201,6 +213,8 @@
   };
 
   window.lx = lx;
+  window.LxBuffer = LxBuffer;
+  if (typeof window.Buffer === 'undefined') window.Buffer = LxBuffer;
   try {
     window.globalThis = window;
   } catch (error) {

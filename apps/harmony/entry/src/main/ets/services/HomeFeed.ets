@@ -375,10 +375,14 @@ export async function enrichPersonalizedHome(
   host?: LxHost,
   algoSeed: number = 0,
   searchHistory: string[] = [],
+  dislikedKeys: string[] = [],
 ): Promise<HomeFeed> {
   const now = Date.now();
   const scores = new Map<string, number>();
   const recentBlocked = new Set<string>();
+  const dislikedSet = new Set<string>(dislikedKeys);
+  const isDisliked = (s: Song): boolean => dislikedSet.has(`${s.source}:${s.id}`) || dislikedSet.has(canonicalSongKey(s));
+  for (const dk of dislikedKeys) recentBlocked.add(dk);
   const platformAffinity = new Map<string, number>();
   const addArtistScore = (singer: string, weight: number): void => {
     const parts = singer.split(/[\/、,&;，]+/);
@@ -445,9 +449,9 @@ export async function enrichPersonalizedHome(
       const mc = await hydrateSongCovers(host, moodSongs);
       moodSongs = applyCoversToSongs(moodSongs, mc);
     }
-    const forYou = moodSongs.slice(0, 16);
+    const forYou = moodSongs.filter((s: Song) => !isDisliked(s)).slice(0, 16);
     const usedForYou = new Set<string>(forYou.map(canonicalSongKey));
-    const freshPool = feed.newSongs.filter((s: Song) => !usedForYou.has(canonicalSongKey(s)));
+    const freshPool = feed.newSongs.filter((s: Song) => !isDisliked(s) && !usedForYou.has(canonicalSongKey(s)));
     const dailyBase = freshPool.length > 26 ? freshPool.slice(18).concat(moodSongs.slice(16)) : freshPool.concat(moodSongs.slice(16));
     const dailySongs = dailyShuffle(dailyBase, daySeed);
     const usedDaily = new Set<string>(dailySongs.map(canonicalSongKey));
@@ -461,23 +465,52 @@ export async function enrichPersonalizedHome(
     };
   }
 
-  // 选取 5 个核心兴趣词 + 1 个时段氛围词，跨用户偏好平台多路召回。
+  // 1. 协同过滤召回：基于我喜欢的与最近播放种子歌曲通过相似曲目图谱扩展（解决单纯按歌手搜索导致推荐单一/呆傻）
+  const seedCandidates: Song[] = [];
+  const favList = playlists.find((pl: MusicPlaylist) => Boolean(pl.isFavorite));
+  for (const s of (favList?.songs ?? []).slice(0, 24)) {
+    if (s && s.source !== 'local') seedCandidates.push(s);
+  }
+  for (const s of recentSongs.slice(0, 16)) {
+    if (s && s.source !== 'local') seedCandidates.push(s);
+  }
+  let collabItems: Song[] = [];
+  if (host && seedCandidates.length > 0) {
+    const rotatedSeeds: Song[] = [];
+    const offset = (algoSeed * 3 + Math.floor(now / 86400000)) % seedCandidates.length;
+    for (let i = 0; i < Math.min(6, seedCandidates.length); i += 1) {
+      rotatedSeeds.push(seedCandidates[(offset + i * 2) % seedCandidates.length]);
+    }
+    try {
+      const rawMix = await host.catalogue('personalized-mix', JSON.stringify({
+        seeds: rotatedSeeds,
+        excludeKeys: Array.from(recentBlocked).slice(0, 80)
+      }));
+      const parsedMix = JSON.parse(rawMix) as FeedSongsResult;
+      if (parsedMix && Array.isArray(parsedMix.items)) {
+        collabItems = parsedMix.items.filter((s: Song) => !recentBlocked.has(canonicalSongKey(s)) && !isDisliked(s));
+      }
+    } catch (_) {}
+  }
+
+  // 2. 选取轮换核心兴趣词 + 时段氛围词，跨用户偏好平台多路召回，与协同过滤交错融合。
   const ranked: string[] = [];
-  const startIdx = algoSeed > 0 && allRanked.length > 4 ? (algoSeed % allRanked.length) : 0;
+  const startIdx = allRanked.length > 4 ? ((algoSeed * 2 + Math.floor(now / 86400000)) % allRanked.length) : 0;
   for (let k = 0; k < Math.min(5, allRanked.length); k += 1) {
     ranked.push(allRanked[(startIdx + k) % allRanked.length]);
   }
   const moodQuery = timeOfDayMoodQuery(new Date().getHours(), algoSeed);
   const queries: string[] = ranked.concat([moodQuery]);
-  const searchPage = algoSeed > 0 ? ((algoSeed % 2) + 1) : 1;
+  const searchPage = algoSeed > 0 ? ((algoSeed % 3) + 1) : 1;
   const fetchedLists = await Promise.all(queries.map((q: string, idx: number): Promise<Song[]> => {
     const src = preferredPlatforms[idx % Math.min(3, preferredPlatforms.length)];
     return searchLx(src, q, searchPage, 14)
       .then((res): Song[] => res.items.length ? res.items : [])
       .catch((): Song[] => []);
   }));
-  let rawHabitPool = mergeRoundRobin(fetchedLists, canonicalSongKey)
-    .filter((song: Song) => !recentBlocked.has(canonicalSongKey(song)));
+  const allSources: Song[][] = collabItems.length ? [collabItems, ...fetchedLists] : fetchedLists;
+  let rawHabitPool = mergeRoundRobin(allSources, canonicalSongKey)
+    .filter((song: Song) => !recentBlocked.has(canonicalSongKey(song)) && !isDisliked(song));
   if (!rawHabitPool.length && searchPage > 1) {
     const retryLists = await Promise.all(ranked.slice(0, 3).map((artist: string): Promise<Song[]> =>
       searchLx('wy', artist, 1, 12).then((res): Song[] => res.items).catch((): Song[] => [])
@@ -511,7 +544,8 @@ export async function enrichPersonalizedHome(
   let forYou = diversify(rawHabitPool, 16, usedGlobal);
   const dailyPersonal = diversify(rawHabitPool, 18, usedGlobal);
   // 每日三十首的平台探索配额优先从新歌尾段取，避开新歌速递前排 20 首。
-  const newTailFirst = feed.newSongs.length > 22 ? feed.newSongs.slice(20).concat(feed.newSongs.slice(0, 20)) : feed.newSongs;
+  const newTailFirst = (feed.newSongs.length > 22 ? feed.newSongs.slice(20).concat(feed.newSongs.slice(0, 20)) : feed.newSongs)
+    .filter((s: Song) => !isDisliked(s));
   const dailyFresh = diversify(newTailFirst, 30 - dailyPersonal.length, usedGlobal);
   let dailySongs = dailyShuffle(dailyPersonal.concat(dailyFresh), daySeed);
 

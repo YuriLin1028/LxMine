@@ -38,9 +38,20 @@ function portableSong(track) {
     coverUrl: track.coverUrl || track.cover || '', qualitys: track.qualitys || Object.keys(hashes), hash: track.hash, hashes };
 }
 function portableLists(lists) {
-  return lists.map(list => ({ id: list.portableId || list.id, name: list.name, kind: 'lx', createdAt: list.createdAt, updatedAt: list.updatedAt,
-    isFavorite: !!list.isFavorite, songs: list.tracks.map(portableSong).filter(Boolean),
-    pcTracks: list.tracks.filter(track => !sourceOf(track)) }));
+  return lists.map(list => {
+    const isFav = list.isFavorite === true || list.name === '我喜欢的' || list.name === '我的收藏';
+    return {
+      id: list.portableId || (isFav ? 'lxmine-favorite' : list.id),
+      name: isFav && (!list.name || list.name === '我喜欢的') ? '我的收藏' : list.name,
+      kind: 'lx',
+      customCover: list.customCover || '',
+      createdAt: list.createdAt,
+      updatedAt: list.updatedAt,
+      isFavorite: isFav,
+      songs: list.tracks.map(portableSong).filter(Boolean),
+      pcTracks: list.tracks.filter(track => !sourceOf(track)),
+    };
+  });
 }
 function incomingSongToTrack(song) {
   if (!song || typeof song !== 'object') return null;
@@ -76,8 +87,14 @@ function incomingLists(lists) {
     if (tracks.length > 5000) throw new Error('同步歌曲数量超出限制');
     const cleaned = tracks.map(sanitizeTrack);
     if (cleaned.some(track => !track)) throw new Error('同步数据含无效歌曲');
-    return { id, portableId: list.id.slice(0, 128), name: list.name.slice(0, 80), createdAt: Number(list.createdAt) || Date.now(), updatedAt: Number(list.updatedAt) || Date.now(),
-      isFavorite: !!list.isFavorite, tracks: [...new Map(cleaned.map(track => [track.builtInIdentity, track])).values()] };
+    const isFav = list.isFavorite === true || list.name === '我喜欢的' || list.name === '我的收藏';
+    const customCoverRaw = typeof list.customCover === 'string' ? list.customCover.trim() : '';
+    const customCover = customCoverRaw && (customCoverRaw.startsWith('data:image/') || /^https?:\/\//i.test(customCoverRaw) || customCoverRaw.startsWith('file://'))
+      ? customCoverRaw.slice(0, 600000)
+      : '';
+    const normalizedName = isFav && (!list.name || list.name === '我喜欢的') ? '我的收藏' : list.name.slice(0, 80);
+    return { id, portableId: list.id.slice(0, 128), name: normalizedName, customCover, createdAt: Number(list.createdAt) || Date.now(), updatedAt: Number(list.updatedAt) || Date.now(),
+      isFavorite: isFav, tracks: [...new Map(cleaned.map(track => [track.builtInIdentity, track])).values()] };
   });
 }
 function incomingSources(values) {
@@ -147,18 +164,48 @@ class LanSyncData {
     const merged = current.slice();
     let changed = false;
     for (const item of incoming) {
-      const index = merged.findIndex(existing =>
-        (item.isFavorite && existing.isFavorite) ||
-        existing.id === item.id ||
-        (item.portableId && existing.portableId === item.portableId)
-      );
+      const itemFav = item.isFavorite === true || item.name === '我喜欢的' || item.name === '我的收藏';
+      const index = merged.findIndex(existing => {
+        const existingFav = existing.isFavorite === true || existing.name === '我喜欢的' || existing.name === '我的收藏';
+        return (itemFav && existingFav) ||
+          existing.id === item.id ||
+          (item.portableId && existing.portableId === item.portableId);
+      });
       if (index < 0) {
-        if (merged.length < 100) { merged.push(item); changed = true; }
+        if (merged.length < 100) { merged.push({ ...item, isFavorite: itemFav }); changed = true; }
         continue;
       }
       const existing = merged[index];
+      if (itemFav) {
+        // Favorites: never let an empty list wipe a non-empty one; union-merge so neither device loses likes during auto-sync.
+        const incomingTracks = Array.isArray(item.tracks) ? item.tracks : [];
+        const existingTracks = Array.isArray(existing.tracks) ? existing.tracks : [];
+        if (!incomingTracks.length && existingTracks.length) continue;
+        const primary = (Number(item.updatedAt) || 0) >= (Number(existing.updatedAt) || 0) ? incomingTracks : existingTracks;
+        const secondary = primary === incomingTracks ? existingTracks : incomingTracks;
+        const combinedMap = new Map();
+        for (const t of primary) if (t && t.builtInIdentity) combinedMap.set(t.builtInIdentity, t);
+        for (const t of secondary) if (t && t.builtInIdentity && !combinedMap.has(t.builtInIdentity)) combinedMap.set(t.builtInIdentity, t);
+        const combined = [...combinedMap.values()];
+        const prevSig = existingTracks.map(t => t.builtInIdentity).join('|');
+        const nextSig = combined.map(t => t.builtInIdentity).join('|');
+        const nextCover = item.customCover || existing.customCover || '';
+        if (prevSig !== nextSig || !existing.isFavorite || nextCover !== (existing.customCover || '')) {
+          merged[index] = {
+            ...existing,
+            name: (item.name && item.name !== '我喜欢的' ? item.name : (existing.name && existing.name !== '我喜欢的' ? existing.name : '我的收藏')),
+            isFavorite: true,
+            portableId: existing.portableId || item.portableId || 'lxmine-favorite',
+            customCover: nextCover,
+            updatedAt: Math.max(Number(existing.updatedAt) || 0, Number(item.updatedAt) || 0),
+            tracks: combined,
+          };
+          changed = true;
+        }
+        continue;
+      }
       if ((Number(item.updatedAt) || 0) > (Number(existing.updatedAt) || 0)) {
-        merged[index] = { ...item, id: existing.id, portableId: existing.portableId || item.portableId };
+        merged[index] = { ...item, id: existing.id, portableId: existing.portableId || item.portableId, customCover: item.customCover || existing.customCover || '' };
         changed = true;
       }
     }

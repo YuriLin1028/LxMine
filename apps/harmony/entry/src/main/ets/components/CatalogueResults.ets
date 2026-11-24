@@ -37,7 +37,7 @@ export struct CatalogueResults {
         }
       }, (item: CatalogueEntity) => `${item.source}:${item.kind}:${item.id}`)
       if (this.hasMore) { ListItem() { Button(this.loading ? '加载中…' : '加载更多').attributeModifier(musicButtonPress).buttonStyle(ButtonStyleMode.TEXTUAL).fontColor(ACCENT).backgroundColor(Color.Transparent).enabled(!this.loading).onClick(() => this.onMore()) } }
-    }.width('100%').height('100%').contentStartOffset(this.contentTop).contentEndOffset(180).scrollBar(BarState.Off).edgeEffect(EdgeEffect.Spring)
+    }.width('100%').height('100%').contentStartOffset(this.contentTop).contentEndOffset(180).scrollBar(BarState.Off).edgeEffect(EdgeEffect.Spring).fadingEdge(false)
       .onDidScroll((offset: number, state: ScrollState) => { if (state !== ScrollState.Idle) this.onScroll(this.scroller.currentOffset().yOffset); })
   }
 }

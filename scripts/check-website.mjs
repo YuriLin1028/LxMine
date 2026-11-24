@@ -33,7 +33,7 @@ assert.throws(() => normalizeRelease({ ...snapshot, draft: true }));
 assert.throws(() => normalizeRelease({ ...snapshot, prerelease: true }));
 assert.throws(() => normalizeRelease({ ...snapshot, html_url: 'https://example.com/release' }));
 const mismatched = structuredClone(snapshot);
-mismatched.assets[0].browser_download_url = mismatched.assets[0].browser_download_url.replace('/v1.1.0/', '/v0.0.1/');
+mismatched.assets[0].browser_download_url = mismatched.assets[0].browser_download_url.replace(`/${release.tag}/`, '/v0.0.1/');
 assert.equal(normalizeRelease(mismatched).assets.length, release.assets.length - 1);
 assert.equal(normalizeRelease({ ...snapshot, assets: [null, ...snapshot.assets] }).assets.length, release.assets.length);
 const legacyAssets = snapshot.assets.map(({ digest, ...asset }) => asset);

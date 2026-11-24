@@ -89,12 +89,13 @@ export class StageAudioProxy {
       (match ? `Content-Range: bytes ${start}-${end}/${size}\r\n` : '') + `Content-Length: ${end - start + 1}\r\nConnection: close\r\n\r\n` });
     const file = fileIo.openSync(path, fileIo.OpenMode.READ_ONLY);
     let position = start;
+    const chunkBuf = new ArrayBuffer(65536);
     try {
       while (position <= end) {
-        const bytes = new ArrayBuffer(Math.min(65536, end - position + 1));
-        const read = fileIo.readSync(file.fd, bytes, { offset: position === start ? start : 0, length: bytes.byteLength });
+        const chunkLen = Math.min(65536, end - position + 1);
+        const read = fileIo.readSync(file.fd, chunkBuf, { offset: position, length: chunkLen });
         if (!read) throw new Error('离线音频文件不完整');
-        await connection.send({ data: read === bytes.byteLength ? bytes : bytes.slice(0, read) }); position += read;
+        await connection.send({ data: chunkBuf.slice(0, read) }); position += read;
       }
     } finally { fileIo.closeSync(file); await connection.close().catch(() => {}); this.connections.delete(connection.clientId); }
   }

@@ -48,8 +48,28 @@ class LxMineApp : Application(), ImageLoaderFactory {
         downloads.initialize()
 
         PlaybackController.urlResolver = { song -> engine.resolveUrl(song) }
-        PlaybackController.previewFallbackResolver = { song ->
-            engine.resolveUrl(song, excludeSourceIds = listOfNotNull(engine.activeId.takeIf { it.isNotEmpty() }), raceAll = true)
+        PlaybackController.currentResolvedSourceIdProvider = {
+            engine.lastWinnerSourceId.ifEmpty { engine.activeId }
+        }
+        PlaybackController.hasOtherSourceChecker = { excluded ->
+            engine.sources.any { it.id !in excluded }
+        }
+        PlaybackController.previewFallbackResolver = { song, attempt, excludeSourceIds, excludeUrls ->
+            val preferCross = attempt >= 1
+            val effectiveExcludeIds = when {
+                attempt == 0 -> excludeSourceIds.ifEmpty { listOfNotNull(engine.activeId.takeIf { it.isNotEmpty() }) }
+                attempt >= 2 -> excludeSourceIds
+                else -> emptyList()
+            }
+            engine.resolveUrl(
+                song,
+                excludeSourceIds = effectiveExcludeIds,
+                raceAll = true,
+                silent = true,
+                forceResolve = true,
+                preferCrossPlatform = preferCross,
+                excludeUrls = excludeUrls,
+            )
         }
         PlaybackController.localResolver = { song ->
             val local = localMusic.pathFor(song)

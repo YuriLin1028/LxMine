@@ -54,7 +54,7 @@ export struct FeedSectionPage {
       Stack({ alignContent: Alignment.TopEnd }) {
         Stack() {
           if (item.cover) {
-            Image(item.cover).width('100%').height('100%').objectFit(ImageFit.Cover)
+            Image(item.cover).sourceSize({ width: 320, height: 320 }).autoResize(true).width('100%').height('100%').objectFit(ImageFit.Cover)
           } else {
             Column() {
               Text(item.name.slice(0, 1)).fontSize(40).fontWeight(FontWeight.Bold).fontColor('#F2F1F7')
@@ -68,7 +68,7 @@ export struct FeedSectionPage {
       }.width('100%')
       Text(item.name).fontSize(13).fontColor(TEXT).maxLines(2).textOverflow({ overflow: TextOverflow.Ellipsis }).width('100%')
       Text(item.count > 0 ? `${item.count} 首` : '推荐内容').fontSize(10).fontColor(MUTED).width('100%')
-    }.width(this.wide ? '23%' : '47%').alignItems(HorizontalAlign.Start).onClick(() => this.onOpenFeed(item))
+    }.width(this.wide ? '23%' : '47%').alignItems(HorizontalAlign.Start).borderRadius(16).hoverEffect(HoverEffect.Highlight).onClick(() => this.onOpenFeed(item))
   }
   @Builder private songRow(song: Song) {
     // 标准歌曲行：搜索、歌单详情、板块详情共用同一组件，禁止自造列表样式。
@@ -88,13 +88,15 @@ export struct FeedSectionPage {
         } else {
           Image($r('app.media.ic_music')).width(34).height(34).fillColor(ACCENT)
         }
-        if ((playlist.songs ?? []).some((s: Song) => s.coverUrl.length > 0)) {
-          Image((playlist.songs ?? []).find((s: Song) => s.coverUrl.length > 0)!.coverUrl).width('100%').height('100%').objectFit(ImageFit.Cover)
+        if (playlist.customCover) {
+          Image(playlist.customCover).sourceSize({ width: 320, height: 320 }).autoResize(true).width('100%').height('100%').objectFit(ImageFit.Cover)
+        } else if ((playlist.songs ?? []).some((s: Song) => s.coverUrl.length > 0)) {
+          Image((playlist.songs ?? []).find((s: Song) => s.coverUrl.length > 0)!.coverUrl).sourceSize({ width: 320, height: 320 }).autoResize(true).width('100%').height('100%').objectFit(ImageFit.Cover)
         }
       }.width('100%').aspectRatio(1).borderRadius(14).clip(true).backgroundColor('#17191C')
       Text(playlist.name).fontSize(13).fontColor(TEXT).maxLines(1).textOverflow({ overflow: TextOverflow.Ellipsis }).width('100%')
       Text(`${playlist.songs?.length ?? playlist.songIds?.length ?? 0} 首歌曲`).fontSize(10).fontColor(MUTED).width('100%')
-    }.width(this.wide ? '23%' : '47%').alignItems(HorizontalAlign.Start).onClick(() => this.onOpenLocal(playlist))
+    }.width(this.wide ? '23%' : '47%').alignItems(HorizontalAlign.Start).borderRadius(14).hoverEffect(HoverEffect.Highlight).onClick(() => this.onOpenLocal(playlist))
   }
   build() {
     Stack() {
@@ -132,7 +134,7 @@ export struct FeedSectionPage {
         }
       }.width('100%').constraintSize({ maxWidth: 1000 }).padding({ left: this.wide ? 32 : 20, right: this.wide ? 32 : 20, top: this.contentTop + 16, bottom: 180 }).alignItems(HorizontalAlign.Start)
       }.width('100%').justifyContent(FlexAlign.Center).alignItems(VerticalAlign.Top)
-    }.width('100%').height('100%').align(Alignment.TopStart).scrollBar(BarState.Off).edgeEffect(EdgeEffect.Spring)
+    }.width('100%').height('100%').align(Alignment.TopStart).scrollBar(BarState.Off).edgeEffect(EdgeEffect.Spring).fadingEdge(false)
       .onDidScroll((x: number, y: number, state: ScrollState) => { if (state !== ScrollState.Idle) this.onScroll(this.scroller.currentOffset().yOffset); })
       if (this.orderOpen) {
         SongOrderDialog({ songs: this.orderSongs, wide: this.wide, statusInset: this.statusInset, bottomInset: this.bottomInset,

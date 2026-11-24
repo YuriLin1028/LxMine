@@ -99,7 +99,7 @@ class MainActivity : ComponentActivity() {
                                 settings.cacheMode = android.webkit.WebSettings.LOAD_NO_CACHE
                                 settings.mediaPlaybackRequiresUserGesture = false
                                 if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.KITKAT) {
-                                    WebView.setWebContentsDebuggingEnabled(true)
+                                    WebView.setWebContentsDebuggingEnabled(BuildConfig.DEBUG)
                                 }
                                 addJavascriptInterface(LxMineApp.instance.host.bridge, "LxNativeBridge")
                                 webViewClient = object : android.webkit.WebViewClient() {
@@ -119,6 +119,15 @@ class MainActivity : ComponentActivity() {
                                 }
                                 LxMineApp.instance.host.attach(this)
                                 hostView = this
+                            }
+                        },
+                        onRelease = { view ->
+                            runCatching {
+                                if (hostView === view) hostView = null
+                                (view.parent as? ViewGroup)?.removeView(view)
+                                view.stopLoading()
+                                view.removeJavascriptInterface("LxNativeBridge")
+                                view.destroy()
                             }
                         },
                     )
@@ -149,6 +158,7 @@ class MainActivity : ComponentActivity() {
         runCatching { startService(Intent(this, PlaybackService::class.java)) }
             .onFailure { viewModel.error = "播放器服务启动失败：${it.message}" }
         viewModel.onForeground()
+        PlaybackController.foregroundActive = true
         if (viewModel.updateNeedsInstallPermission && viewModel.updateDownloadedApk != null &&
             com.lxlia.player.data.AppUpdater.canInstallPackages(this)
         ) {
@@ -158,6 +168,7 @@ class MainActivity : ComponentActivity() {
 
     override fun onPause() {
         super.onPause()
+        PlaybackController.foregroundActive = false
         PlaybackController.setSpectrumEnabled(false)
         viewModel.onBackground()
     }
@@ -169,16 +180,25 @@ class MainActivity : ComponentActivity() {
             level >= android.content.ComponentCallbacks2.TRIM_MEMORY_BACKGROUND
         if (pressure && (!viewModel.foreground || !viewModel.showPlayer)) {
             viewModel.stageMounted = false
-            viewModel.dynamicStageMounted = false
+            viewModel.mineStageMounted = false
+            viewModel.foliaStageMounted = false
             viewModel.plainStageMounted = false
+            viewModel.mineStageReady = false
+            viewModel.foliaStageReady = false
             viewModel.dynamicStageReady = false
+            LxMineApp.instance.server.clearCaches()
         }
     }
 
     override fun onDestroy() {
         com.lxlia.player.data.AppUpdater.detachActivity(this)
         hostView?.let { view ->
-            runCatching { view.stopLoading(); view.destroy() }
+            runCatching {
+                (view.parent as? ViewGroup)?.removeView(view)
+                view.stopLoading()
+                view.removeJavascriptInterface("LxNativeBridge")
+                view.destroy()
+            }
         }
         hostView = null
         super.onDestroy()
@@ -212,12 +232,12 @@ class MainActivity : ComponentActivity() {
         }
     }
 
-    /** 手机端：非播放详情页锁竖屏；播放详情页依据设置决定是否突破系统竖屏锁定进入横屏。平板自由旋转。 */
+    /** 手机端：非播放详情页锁竖屏；播放详情页依据设置决定是否突破系统竖屏锁定进入横屏。平板尊重系统旋转开关自由旋转。 */
     private fun applyOrientation(detail: Boolean) {
         val smallestWidth = resources.configuration.smallestScreenWidthDp
-        val tablet = smallestWidth >= 600 || viewModel.wide
+        val tablet = smallestWidth >= 600
         val target = when {
-            tablet -> ActivityInfo.SCREEN_ORIENTATION_FULL_SENSOR
+            tablet -> ActivityInfo.SCREEN_ORIENTATION_FULL_USER
             !detail -> ActivityInfo.SCREEN_ORIENTATION_PORTRAIT
             viewModel.allowLandscapeWhenLocked -> ActivityInfo.SCREEN_ORIENTATION_FULL_SENSOR
             else -> ActivityInfo.SCREEN_ORIENTATION_FULL_USER

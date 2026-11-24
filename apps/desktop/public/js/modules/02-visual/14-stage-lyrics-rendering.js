@@ -530,7 +530,7 @@ function resetPreparedStageLyricMesh(mesh, payload, lineStep) {
     data.context.userData.progressPreviewMotionLocked = false;
     data.context.userData.progressPreviewMotionBlend = 1;
   }
-  var lineWorldStep = clampRange(Number(data.lineWorldStep) || 0.38, 0.20, 0.94);
+  var lineWorldStep = clampRange(Number(data.lineWorldStep) || 0.56, 0.36, 1.85);
   if (!singleLineSwap) mesh.position.y += enterDir * lineWorldStep;
   if (data && isFinite(Number(data.trackTargetVirtualIndex))) {
     data.trackScrollOffset = Number(data.trackTargetVirtualIndex);
@@ -812,7 +812,7 @@ function alignStageLyricResidentEffectToRow(row, effect, zOffset) {
 
 function stageLyricResidentDisplayedScrollOffset(data, fallbackOffset) {
   if (!data || !Array.isArray(data.rowLayers) || !data.rowLayers.length) return fallbackOffset;
-  var lineStepWorld = clampRange(Number(data.lineWorldStep) || 0.38, 0.20, 0.94);
+  var lineStepWorld = clampRange(Number(data.lineWorldStep) || 0.56, 0.36, 1.85);
   var samples = [];
   for (var i = 0; i < data.rowLayers.length; i++) {
     var row = data.rowLayers[i];
@@ -857,8 +857,8 @@ function primeStageLyricResidentRowTransform(data, row, transformSnapshot) {
   var targetLineIndex = Number(snapshot.targetLineIndex) || 0;
   var targetVirtualIndex = isFinite(Number(snapshot.targetVirtualIndex)) ? Number(snapshot.targetVirtualIndex) : lyricPrimaryVirtualIndex(targetLineIndex);
   var scrollOffset = isFinite(Number(snapshot.scrollOffset)) ? Number(snapshot.scrollOffset) : targetVirtualIndex;
-  var lineStepWorld = clampRange(Number(data.lineWorldStep) || 0.38, 0.20, 0.94);
-  var translationLineStepWorld = clampRange(Number(data.translationLineStepWorld) || lineStepWorld, 0.20, 0.78);
+  var lineStepWorld = clampRange(Number(data.lineWorldStep) || 0.56, 0.36, 1.85);
+  var translationLineStepWorld = clampRange(Number(data.translationLineStepWorld) || lineStepWorld, 0.32, 1.45);
   var rowVirtualIndex = isFinite(Number(row.virtualIndex)) ? Number(row.virtualIndex) : targetVirtualIndex;
   var rowLineIndex = isFinite(Number(row.lineIndex)) ? Number(row.lineIndex) : null;
   var isActive = !!row.isPrimary && rowLineIndex === targetLineIndex;
@@ -1250,6 +1250,11 @@ function ensureStageLyricPersistentTrackRows(mesh, targetIndex, options) {
   // build's continuous track, without paying its 200+ row startup cost.
   var desiredStart = Math.max(0, targetIndex + minOffset - (interactivePreview ? 4 : 6));
   var desiredEnd = Math.min(last, targetIndex + maxOffset + (interactivePreview ? 10 : 24));
+  if (window.__LXMINE_NATIVE_STAGE) {
+    var viewportWindow = lyricMeshTrackWindow(targetIndex, data.displayMode || (fx && fx.lyricDisplayMode));
+    desiredStart = viewportWindow.start;
+    desiredEnd = viewportWindow.end;
+  }
   var visibleStart = Math.max(0, targetIndex + minOffset);
   var visibleEnd = Math.min(last, targetIndex + maxOffset);
   var targetMissing = !stageLyricPersistentLineRowsResident(data, targetIndex, residentRowMap);
@@ -1284,20 +1289,22 @@ function ensureStageLyricPersistentTrackRows(mesh, targetIndex, options) {
         interactive: interactivePreview
       });
     }
-    // Once the visible window is complete, keep extending the cheap text-only
-    // track in the background until the whole song is resident.  This restores
-    // the private build's one-piece scroll without paying for off-screen glow
-    // and readability layers.
-    if (!interactivePreview && !data.trackPendingPayload) {
+    // Keep a bounded runway around targetIndex instead of pinning 200+ 2048px
+    // GPU textures for the entire track (prevents 3+ minute VRAM/GC frame drops).
+    if (!window.__LXMINE_NATIVE_STAGE && !interactivePreview && !data.trackPendingPayload) {
       var activeRunwayJob = stageLyricResidentBuild.job;
       if (activeRunwayJob && activeRunwayJob.mesh === mesh) return true;
       var runwayRange = stageLyricPersistentNextTextRunwayRange(data, targetIndex, residentRowMap);
       if (runwayRange) {
-        return startStageLyricResidentBuild(mesh, targetIndex, runwayRange.start, runwayRange.end, {
-          reason: options.reason || 'persistent-track-full-text-runway',
-          textOnly: true,
-          interactive: false
-        });
+        var boundedStart = Math.max(runwayRange.start, Math.max(0, targetIndex - 24));
+        var boundedEnd = Math.min(runwayRange.end, Math.min(last, targetIndex + 30));
+        if (boundedStart <= boundedEnd) {
+          return startStageLyricResidentBuild(mesh, targetIndex, boundedStart, boundedEnd, {
+            reason: options.reason || 'persistent-track-full-text-runway',
+            textOnly: true,
+            interactive: false
+          });
+        }
       }
     }
     trimStageLyricPersistentTrackRows(mesh, targetIndex);
@@ -1350,6 +1357,11 @@ function trimStageLyricPersistentTrackRows(mesh, targetIndex, options) {
   var interactive = options.interactive === true;
   var keepStart = Math.max(0, targetIndex + minOffset - (interactive ? 3 : 6));
   var keepEnd = Math.min(lyricsLines.length - 1, targetIndex + maxOffset + (interactive ? 5 : 24));
+  if (window.__LXMINE_NATIVE_STAGE) {
+    var viewportWindow = lyricMeshTrackWindow(targetIndex, data.displayMode || (fx && fx.lyricDisplayMode));
+    keepStart = viewportWindow.start;
+    keepEnd = viewportWindow.end;
+  }
   var preserveTargetIndex = Number(options.preserveTargetIndex);
   var preserveStart = Infinity;
   var preserveEnd = -Infinity;
@@ -1359,6 +1371,7 @@ function trimStageLyricPersistentTrackRows(mesh, targetIndex, options) {
     preserveEnd = Math.min(lyricsLines.length - 1, preserveTargetIndex + maxOffset + 2);
   }
   var releasedEffects = 0;
+  var retainedRows = [];
   for (var i = 0; i < data.rowLayers.length; i++) {
     var row = data.rowLayers[i];
     var lineIndex = row && row.isTranslation
@@ -1369,7 +1382,13 @@ function trimStageLyricPersistentTrackRows(mesh, targetIndex, options) {
     var keepForCommittedWindow = roundedLineIndex != null && roundedLineIndex >= preserveStart && roundedLineIndex <= preserveEnd;
     var keepEffects = roundedLineIndex == null || keepForTarget || keepForCommittedWindow ||
       roundedLineIndex === targetIndex || roundedLineIndex === preserveTargetIndex;
-    if (keepEffects) continue;
+    if (keepEffects) { retainedRows.push(row); continue; }
+    if (window.__LXMINE_NATIVE_STAGE || (roundedLineIndex != null && Math.abs(roundedLineIndex - targetIndex) > 36)) {
+      disposeStageLyricResidentRow(row);
+      releasedEffects += 1;
+      continue;
+    }
+    retainedRows.push(row);
     // Text rows are the continuous whole-song runway.  Only their expensive
     // off-screen effect layers are evicted; deleting the text row itself would
     // reintroduce the load/merge break the user sees while seeking.
@@ -1388,6 +1407,7 @@ function trimStageLyricPersistentTrackRows(mesh, targetIndex, options) {
       releasedEffects += 1;
     }
   }
+  data.rowLayers = retainedRows;
   updateStageLyricPersistentResidentBounds(data);
   return releasedEffects > 0;
 }
@@ -1538,6 +1558,7 @@ function stageLyricProgressSeekVisualReady(seconds) {
 function chooseStageLyricPrewarmIndex() {
   if (!lyricsLines || !lyricsLines.length) return -1;
   if (
+    !window.lxmineNativeTime &&
     (Number(stageLyricTrackSwitchBootstrapUntil) || 0) > stageLyricNowMs() &&
     (!stageLyrics || stageLyrics.currentIdx < 0)
   ) {
@@ -1707,7 +1728,7 @@ function runStageLyricCooperativePrewarm(job) {
   var startedAt = stageLyricNowMs();
   var done = false;
   try {
-    done = stepCooperativeLyricMeshBuild(job.state, 1, 4.2);
+    done = stepCooperativeLyricMeshBuild(job.state, 32, 4.2);
   } catch (e) {
     cancelStageLyricPrewarmBuildOnly();
     return;
@@ -2081,16 +2102,17 @@ function updateStageLyrics3D(dt) {
   stageLyrics.glowFollowX *= 0.92;
   stageLyrics.glowFollowY *= 0.92;
   stageLyrics.glowFollowRoll *= 0.90;
-  var layoutScale = clampRange(Number(fx.lyricScale) || 1, 0.35, 1.65) * clampRange(Number(fx.userLyricScale) || 1, 0.75, 1.4);
+  var layoutScale = clampRange(Number(fx.lyricScale) || 1, 0.35, 1.65) * clampRange(Number(fx.userLyricScale) || 1, 0.55, 1.50);
   if (typeof window !== 'undefined' && window.innerWidth > 0 && window.innerHeight > window.innerWidth) {
     layoutScale *= clampRange((window.innerWidth / Math.max(1, window.innerHeight)) * 1.18, 0.48, 0.85);
   }
-  var layoutX = clampRange(Number(fx.lyricOffsetX) || 0, -4.0, 4.0);
+  var nativeStageUpright = !!(typeof window !== 'undefined' && window.__LXMINE_NATIVE_STAGE);
+  var layoutX = nativeStageUpright ? 0 : clampRange(Number(fx.lyricOffsetX) || 0, -4.0, 4.0);
   var layoutY = clampRange(Number(fx.lyricOffsetY) || 0, -2.4, 2.7);
   var layoutZ = clampRange(Number(fx.lyricOffsetZ) || 0, -3.2, 3.2);
-  var layoutTiltX = clampRange(Number(fx.lyricTiltX) || 0, -84, 84);
-  var layoutTiltY = clampRange(Number(fx.lyricTiltY) || 0, -84, 84);
-  var skullMouthLyrics = !!(camera && fx && fx.preset === SKULL_PRESET_INDEX && skullParticleGroup && skullParticleGroup.visible);
+  var layoutTiltX = nativeStageUpright ? 0 : clampRange(Number(fx.lyricTiltX) || 0, -84, 84);
+  var layoutTiltY = nativeStageUpright ? 0 : clampRange(Number(fx.lyricTiltY) || 0, -84, 84);
+  var skullMouthLyrics = !nativeStageUpright && !!(camera && fx && fx.preset === SKULL_PRESET_INDEX && skullParticleGroup && skullParticleGroup.visible);
   var shelfDetailOpen = !!(shelfManager && shelfManager.hasOpenContent && shelfManager.hasOpenContent());
   var skullShelfDetailOpen = !!(fx && fx.preset === SKULL_PRESET_INDEX && shelfDetailOpen);
   var normalShelfDetailOpen = !!(shelfDetailOpen && !skullShelfDetailOpen);
@@ -2178,17 +2200,38 @@ function updateStageLyrics3D(dt) {
     setStageLyricViewBasisFromCameraOrQuaternion(null);
     lyricLayoutBase.copy(camera.position).addScaledVector(lyricCameraDir, lockBaseDistance);
     lyricCameraTarget.copy(lyricLayoutBase);
-    applyStageLyricLayoutOffset(lyricCameraTarget, layoutX, layoutY, layoutZ);
-    stageLyricTargetQuaternion(camera.quaternion, layoutTiltX, layoutTiltY);
-    if (stageLyrics.snapCameraLockFrames > 0) {
+    if (nativeStageUpright) {
+      // Remove any camera Z-roll/tilt so lyrics stay dead-level & centered across every preset.
+      var uprightWorldUp = stageLyrics._uprightWorldUp || (stageLyrics._uprightWorldUp = new THREE.Vector3(0, 1, 0));
+      var uprightRight = stageLyrics._uprightRight || (stageLyrics._uprightRight = new THREE.Vector3());
+      var uprightUp = stageLyrics._uprightUp || (stageLyrics._uprightUp = new THREE.Vector3());
+      var uprightBack = stageLyrics._uprightBack || (stageLyrics._uprightBack = new THREE.Vector3());
+      var uprightMat = stageLyrics._uprightMat || (stageLyrics._uprightMat = new THREE.Matrix4());
+      var uprightQuat = stageLyrics._uprightQuat || (stageLyrics._uprightQuat = new THREE.Quaternion());
+      uprightRight.crossVectors(lyricCameraDir, uprightWorldUp);
+      if (uprightRight.lengthSq() < 1e-6) uprightRight.set(1, 0, 0);
+      else uprightRight.normalize();
+      uprightUp.crossVectors(uprightRight, lyricCameraDir).normalize();
+      uprightBack.copy(lyricCameraDir).negate().normalize();
+      uprightMat.makeBasis(uprightRight, uprightUp, uprightBack);
+      uprightQuat.setFromRotationMatrix(uprightMat);
+      lyricCameraTarget.addScaledVector(uprightRight, layoutX).addScaledVector(uprightUp, layoutY).addScaledVector(lyricCameraDir, layoutZ);
       stageLyrics.group.position.copy(lyricCameraTarget);
-      stageLyrics.group.quaternion.copy(lyricTargetQuat);
-      if (stageLyrics.snapCameraLockFrames > 0) stageLyrics.snapCameraLockFrames -= 1;
+      stageLyrics.group.quaternion.copy(uprightQuat);
+      stageLyrics.snapCameraLockFrames = 0;
     } else {
-      var lockPosEase = wallpaperLyricLock ? (wallpaperShelfLyrics ? 0.42 : 0.34) : 0.24;
-      var lockQuatEase = wallpaperLyricLock ? (wallpaperShelfLyrics ? 0.44 : 0.36) : 0.22;
-      stageLyrics.group.position.lerp(lyricCameraTarget, lockPosEase);
-      stageLyrics.group.quaternion.slerp(lyricTargetQuat, lockQuatEase);
+      applyStageLyricLayoutOffset(lyricCameraTarget, layoutX, layoutY, layoutZ);
+      stageLyricTargetQuaternion(camera.quaternion, layoutTiltX, layoutTiltY);
+      if (stageLyrics.snapCameraLockFrames > 0) {
+        stageLyrics.group.position.copy(lyricCameraTarget);
+        stageLyrics.group.quaternion.copy(lyricTargetQuat);
+        if (stageLyrics.snapCameraLockFrames > 0) stageLyrics.snapCameraLockFrames -= 1;
+      } else {
+        var lockPosEase = wallpaperLyricLock ? (wallpaperShelfLyrics ? 0.42 : 0.34) : 0.24;
+        var lockQuatEase = wallpaperLyricLock ? (wallpaperShelfLyrics ? 0.44 : 0.36) : 0.22;
+        stageLyrics.group.position.lerp(lyricCameraTarget, lockPosEase);
+        stageLyrics.group.quaternion.slerp(lyricTargetQuat, lockQuatEase);
+      }
     }
   } else {
     if (stageLyrics.group.userData) stageLyrics.group.userData.skullMouthLocked = false;
@@ -2251,7 +2294,7 @@ function updateStageLyrics3D(dt) {
     if (isCurrent && data.trackPersistent && data.trackPendingPayload && stageLyricPersistentTargetRowsReady(mesh, data.trackPendingPayload.trackIndex)) {
       commitStageLyricPersistentPendingTarget(mesh);
     }
-    var lineStepWorld = clampRange(Number(data.lineWorldStep) || lyricMotion.slide, 0.20, 0.94);
+    var lineStepWorld = clampRange(Number(data.lineWorldStep) || lyricMotion.slide, 0.36, 1.85);
     var singleLineSwap = stageLyricUsesSingleLineSwap(mesh);
     var style = mesh.userData.motionStyle || lyricMotion.style;
     var seed = mesh.userData.floatSeed || 0;
@@ -2304,14 +2347,8 @@ function updateStageLyrics3D(dt) {
     if (isCurrent && data.textMat && data.textMat.uniforms && data.textMat.uniforms.uProgress) {
       var targetProgress = clampRange(Number(mesh.userData.targetLyricProgress) || 0, 0, 1);
       shownProgress = clampRange(Number(data.textMat.uniforms.uProgress.value) || 0, 0, 1);
-      if (mesh.userData.nativeKaraokeProgress) {
-        shownProgress = targetProgress;
-      } else {
-        var progressDiff = targetProgress - shownProgress;
-        var progressEase = Math.abs(progressDiff) > 0.42 ? Math.max(0.52, lyricMotion.progressEase * 1.55) : lyricMotion.progressEase;
-        if (mesh.userData.age < 0.16) progressEase = Math.max(progressEase, 0.28);
-        shownProgress = clampRange(shownProgress + progressDiff * progressEase, 0, 1);
-      }
+      shownProgress = LxMineLyrics.progressStep(shownProgress, targetProgress,
+        mesh.userData.nativeKaraokeProgress, lyricMotion.progressEase, mesh.userData.age);
       data.textMat.uniforms.uProgress.value = shownProgress;
       mesh.userData.shownLyricProgress = shownProgress;
     }
@@ -2416,7 +2453,7 @@ function updateStageLyrics3D(dt) {
         deltaTime: dt,
         previewMotionLock: previewMotionLock,
         motionBlend: previewMotionBlend,
-        ease: contextIntro < 0.98 ? 0.19 : 0.135
+        ease: LxMineLyrics.scrollEase(mesh.userData.age)
       });
       if (data.textMat && data.textMat.uniforms.uSolar) {
         var solarTarget = stageLyrics.highBloom * shelfDetailLyricDim;
@@ -2491,25 +2528,30 @@ function updateStageLyrics3D(dt) {
           mesh.position.y += ((0.20 + enterOffsetY + progressLift + (verticalFloatOn ? (Math.sin(t * 0.55 + seed) * 0.046 + Math.sin(t * 1.35 + seed) * 0.012) * previewMotionBlend : 0)) - mesh.position.y) * (enterDir ? 0.115 : 0.080);
           mesh.position.z += ((1.48 - Math.abs(enterDir) * 0.045 * (1 - a) + (verticalFloatOn ? Math.cos(t * 0.48 + seed) * 0.070 * previewMotionBlend : 0)) - mesh.position.z) * 0.090;
         }
-        var rootRotationTarget = (Math.sin(t * 0.34 + seed) * (style === 'smooth' ? 0.006 : (style === 'float' ? 0.026 : 0.018)) + textJitterX * 0.18 + glitchCameraDrive * glitchAmount * 0.014) * previewMotionBlend;
-        mesh.rotation.z = previewMotionBlend < 1 ? mesh.rotation.z + (rootRotationTarget - mesh.rotation.z) * 0.18 : rootRotationTarget;
+        var rootRotationTarget = nativeStageUpright
+          ? 0
+          : (Math.sin(t * 0.34 + seed) * (style === 'smooth' ? 0.006 : (style === 'float' ? 0.026 : 0.018)) + textJitterX * 0.18 + glitchCameraDrive * glitchAmount * 0.014) * previewMotionBlend;
+        mesh.rotation.z = nativeStageUpright ? 0 : (previewMotionBlend < 1 ? mesh.rotation.z + (rootRotationTarget - mesh.rotation.z) * 0.18 : rootRotationTarget);
       }
       if (data.sparks && data.sparkMat) data.sparks.visible = fx.lyricGlowParticles || getLyricSparkOpacity(data) > 0.015;
-      if (data.sparks && data.basePositions) {
-        var pos = data.sparks.geometry.attributes.position;
-        var arr = pos.array, base = data.basePositions;
-        data.sparks.rotation.z += ((fx.lyricGlowParticles ? 0.0009 : 0.00025) + stageLyrics.beatGlow * 0.0007) * (dt * 60);
-        data.sparks.rotation.x = Math.sin(t * 0.12 + seed) * 0.012;
-        for (var si = 0; si < arr.length / 3; si++) {
-          var s = si * 12.989 + seed;
-          var particleBeat = fx.lyricGlowParticles ? stageLyrics.beatGlow : 0;
-          var dustBreath = fx.lyricGlowParticles ? (0.62 + 0.38 * Math.sin(t * (0.32 + (si % 7) * 0.025) + s)) : 0.18;
-          var drift = fx.lyricGlowParticles ? 1 : 0.30;
-          arr[si * 3] = base[si * 3] + Math.sin(t * (0.18 + (si % 5) * 0.025) + s) * (0.045 + bass * 0.030 + particleBeat * 0.052) * drift + Math.cos(t * 0.11 + s) * 0.018 * dustBreath;
-          arr[si * 3 + 1] = base[si * 3 + 1] + Math.cos(t * (0.16 + (si % 6) * 0.024) + s) * (0.042 + mid * 0.026 + particleBeat * 0.046) * drift + Math.sin(t * 0.13 + s) * 0.016 * dustBreath;
-          arr[si * 3 + 2] = base[si * 3 + 2] + Math.sin(t * (0.24 + (si % 4) * 0.035) + s) * (0.036 + particleBeat * 0.028) * drift;
+      if (data.sparks && data.sparks.visible && data.basePositions) {
+        data._sparkTick = ((data._sparkTick || 0) + 1) & 1;
+        if (data._sparkTick === 0) {
+          var pos = data.sparks.geometry.attributes.position;
+          var arr = pos.array, base = data.basePositions;
+          data.sparks.rotation.z += ((fx.lyricGlowParticles ? 0.0018 : 0.0005) + stageLyrics.beatGlow * 0.0014) * (dt * 60);
+          data.sparks.rotation.x = Math.sin(t * 0.12 + seed) * 0.012;
+          for (var si = 0; si < arr.length / 3; si++) {
+            var s = si * 12.989 + seed;
+            var particleBeat = fx.lyricGlowParticles ? stageLyrics.beatGlow : 0;
+            var dustBreath = fx.lyricGlowParticles ? (0.62 + 0.38 * Math.sin(t * (0.32 + (si % 7) * 0.025) + s)) : 0.18;
+            var drift = fx.lyricGlowParticles ? 1 : 0.30;
+            arr[si * 3] = base[si * 3] + Math.sin(t * (0.18 + (si % 5) * 0.025) + s) * (0.045 + bass * 0.030 + particleBeat * 0.052) * drift + Math.cos(t * 0.11 + s) * 0.018 * dustBreath;
+            arr[si * 3 + 1] = base[si * 3 + 1] + Math.cos(t * (0.16 + (si % 6) * 0.024) + s) * (0.042 + mid * 0.026 + particleBeat * 0.046) * drift + Math.sin(t * 0.13 + s) * 0.016 * dustBreath;
+            arr[si * 3 + 2] = base[si * 3 + 2] + Math.sin(t * (0.24 + (si % 4) * 0.035) + s) * (0.036 + particleBeat * 0.028) * drift;
+          }
+          pos.needsUpdate = true;
         }
-        pos.needsUpdate = true;
       }
       return true;
     }
@@ -2601,20 +2643,8 @@ function lyricKaraokeWordRanges(line) {
   var key = lyricKaraokeMetricsKey(line);
   if (line._karaokeMetricKey === key && Array.isArray(line._karaokeWordRanges)) return line._karaokeWordRanges;
   var ctx = lyricKaraokeMeasureContext();
-  var text = String(line.text || '');
-  var fontSize = 128;
-  var fullWidth = Math.max(1, lyricMeasureTextAtSize(ctx, text, fontSize, lyricFontWeightValue()));
-  var ranges = line.words.map(function (w) {
-    var c0 = Math.max(0, Math.min(text.length, Math.floor(Number(w.c0) || 0)));
-    var c1 = Math.max(c0, Math.min(text.length, Math.ceil(Number(w.c1) || c0)));
-    var p0 = lyricMeasureTextAtSize(ctx, text.slice(0, c0), fontSize, lyricFontWeightValue()) / fullWidth;
-    var p1 = lyricMeasureTextAtSize(ctx, text.slice(0, c1), fontSize, lyricFontWeightValue()) / fullWidth;
-    if (!isFinite(p0)) p0 = c0 / Math.max(1, line.charCount || text.length);
-    if (!isFinite(p1)) p1 = c1 / Math.max(1, line.charCount || text.length);
-    return {
-      p0: clampRange(p0, 0, 1),
-      p1: clampRange(Math.max(p1, p0), 0, 1)
-    };
+  var ranges = LxMineLyrics.wordRanges(line, function (text) {
+    return lyricMeasureTextAtSize(ctx, text, 128, lyricFontWeightValue());
   });
   line._karaokeMetricKey = key;
   line._karaokeWordRanges = ranges;
@@ -2624,32 +2654,7 @@ function lyricLineHasNativeKaraoke(line) {
   return !!(line && Array.isArray(line.words) && line.words.length && Number(line.charCount) > 0);
 }
 function getLyricLineProgress(line, nextLine, now) {
-  if (!line) return 0;
-  if (lyricLineHasNativeKaraoke(line)) {
-    now = Math.max(0, Number(now) || 0);
-    var ranges = lyricKaraokeWordRanges(line);
-    var lastP = 0;
-    for (var i = 0; i < line.words.length; i++) {
-      var w = line.words[i];
-      var ws = w.t;
-      var we = w.t + Math.max(0.08, w.d || 0.24);
-      if (now < ws) return lastP;
-      var local = now >= we ? 1 : (now - ws) / Math.max(0.08, we - ws);
-      local = Math.max(0, Math.min(1, local));
-      var range = ranges && ranges[i] || null;
-      var p0 = range ? range.p0 : ((w.c0 || 0) / line.charCount);
-      var p1 = range ? range.p1 : ((w.c1 || 0) / line.charCount);
-      var p = p0 + (p1 - p0) * local;
-      lastP = Math.max(lastP, p);
-      if (now < we) return lastP;
-    }
-    return 1;
-  }
-  now += 0.020;
-  var nextT = nextLine && nextLine.t > line.t ? nextLine.t : Math.min((audio && audio.duration) || now + 4, line.t + (line.duration || 4.8));
-  var span = Math.max(0.75, nextT - line.t);
-  var prog = Math.max(0, Math.min(1, (now - line.t) / span));
-  return prog * prog * (3 - 2 * prog);
+  return LxMineLyrics.lineProgress(line, nextLine, now, audio && audio.duration, lyricKaraokeWordRanges(line));
 }
 
 function lyricLineDisplayTextAt(index) {
@@ -2658,7 +2663,20 @@ function lyricLineDisplayTextAt(index) {
 }
 function lyricLineTranslationTextAt(index) {
   var line = lyricsLines && lyricsLines[index];
-  return normalizeLyricTranslationText(line && line.translation);
+  var direct = normalizeLyricTranslationText(line && line.translation);
+  if (direct) return direct;
+  if (line && lyricsTranslationLines && lyricsTranslationLines.length) {
+    var bestText = '';
+    var bestDiff = 0.68;
+    for (var i = 0; i < lyricsTranslationLines.length; i++) {
+      var cand = lyricsTranslationLines[i];
+      if (!cand || !cand.text) continue;
+      var diff = Math.abs((Number(cand.t) || 0) - (Number(line.t) || 0));
+      if (diff <= bestDiff) { bestDiff = diff; bestText = cand.text; }
+    }
+    return normalizeLyricTranslationText(bestText);
+  }
+  return '';
 }
 function stageLyricContextEntry(index, currentIndex) {
   var line = lyricsLines && lyricsLines[index];
@@ -2666,7 +2684,7 @@ function stageLyricContextEntry(index, currentIndex) {
   if (!text) return null;
   var delta = index - currentIndex;
   var abs = Math.abs(delta);
-  var translation = normalizeLyricTranslationText(line && line.translation);
+  var translation = lyricLineTranslationTextAt(index);
   if (delta === 0) return { text: text, role: 'current', alpha: 1, scale: 1, translation: translation, lineIndex: index, virtualIndex: lyricPrimaryVirtualIndex(index) };
   var mode = normalizeLyricDisplayMode(fx && fx.lyricDisplayMode);
   var contextOpacity = lyricContextOpacityValue();
@@ -2694,15 +2712,16 @@ function makeStageLyricTranslationEntry(entry, isCurrent) {
     : (entry && entry.parentIndex != null
       ? Number(entry.parentIndex)
       : (entry && entry.virtualIndex != null ? Number(entry.virtualIndex) : 0));
-  var baseAlpha = entry.alpha == null ? (isCurrent ? 1 : 0.58) : entry.alpha;
+  var baseTranslationOpacity = lyricTranslationOpacityValue();
   return {
     text: text,
     role: 'translation',
     parentRole: parentRole,
     translationLine: true,
-    alpha: isCurrent ? clampRange(lyricTranslationOpacityValue() + 0.08, 0.48, 1) : clampRange(baseAlpha * 0.62, 0.24, 0.60),
-    scale: isCurrent ? clampRange(scale * 1.08, 0.70, 1.12) : clampRange(scale * 0.92, 0.50, 0.96),
-    weight: 650,
+    alpha: isCurrent
+      ? 1
+      : (entry && entry.alpha != null ? clampRange(Number(entry.alpha), 0.18, 0.92) : clampRange(baseTranslationOpacity, 0.22, 0.92)),
+    scale: clampRange(scale, 0.38, 0.80),
     lineOffset: 0,
     parentIndex: parentIndex,
     lineIndex: entry && entry.lineIndex != null ? Number(entry.lineIndex) : undefined,
@@ -2827,6 +2846,13 @@ function lyricMeshTrackWindow(index, mode, options) {
   var hasTranslations = translationMode !== 'off';
   var total = last + 1;
   var lightweightTrack = !!options.lightweightTrack;
+  if (window.__LXMINE_NATIVE_STAGE && mode === 'cinema') {
+    var nativePageSize = Math.min(total, lineCount + 8);
+    var nativePageStep = 4;
+    var nativeStart = Math.floor((idx - Math.floor(nativePageSize / 2)) / nativePageStep) * nativePageStep;
+    nativeStart = Math.max(0, Math.min(last - nativePageSize + 1, nativeStart));
+    return { start: nativeStart, end: nativeStart + nativePageSize - 1, lightweight: lightweightTrack };
+  }
   if (lightweightTrack) {
     var denseMultiLine = mode !== 'single' || translationMode === 'multi' || translationMode === 'dual';
     var lightFullTrackLimit = hasTranslations ? (denseMultiLine ? 6 : 10) : (denseMultiLine ? 10 : 14);
@@ -2997,7 +3023,8 @@ function buildStageLyricDisplayPayload(index, options) {
     trackEntries: track.entries,
     trackStart: track.start,
     trackEnd: track.end,
-    trackLightweight: !!track.lightweight
+    trackLightweight: !!track.lightweight,
+    trackTextOnly: !!(window.__LXMINE_NATIVE_STAGE && options.lightweightTrack)
   };
 }
 function buildStageLyricPlaybackPayload(index) {
@@ -3018,22 +3045,7 @@ function buildStageLyricPlaybackPayload(index) {
 }
 
 function findStageLyricIndexAtTime(t) {
-  if (!lyricsLines || !lyricsLines.length) return -1;
-  var target = (Number(t) || 0) + 0.05;
-  var lo = 0;
-  var hi = lyricsLines.length - 1;
-  var ans = -1;
-  while (lo <= hi) {
-    var mid = (lo + hi) >> 1;
-    var lineTime = Number(lyricsLines[mid] && lyricsLines[mid].t) || 0;
-    if (lineTime <= target) {
-      ans = mid;
-      lo = mid + 1;
-    } else {
-      hi = mid - 1;
-    }
-  }
-  return ans;
+  return window.LxMineLyrics.indexAt(lyricsLines || [], (Number(t) || 0) * 1000, 't', 1000);
 }
 
 function retireCurrentStageLyricForIdle() {
@@ -3093,25 +3105,29 @@ function tickLyricsParticles() {
   }
   var previewingSeek = stageLyricProgressPreviewActive();
   var holdLyricsOnPause = !fx || fx.lyricPauseHold !== false;
-  var pausedWithTrack = !!(holdLyricsOnPause && audio && audio.src && audio.paused && !audio.ended && lyricsLines && lyricsLines.length);
+  var nativeTrack = typeof window.lxmineNativeTime === 'function';
+  var pausedWithTrack = !!(holdLyricsOnPause && !isAnalysisPlaybackActive() && lyricsLines && lyricsLines.length &&
+    (nativeTrack || (audio && audio.src && !audio.ended)));
   if (!audio || !lyricsLines.length || (audio && audio.ended)) {
-    retireCurrentStageLyricForIdle();
-    return;
-  }
-  if (!playing && !previewingSeek) {
-    if (pausedWithTrack) {
-      if (stageLyrics.current && stageLyrics.current.userData) {
-        stageLyrics.current.userData.state = 'in';
-        stageLyrics.current.userData.age = Math.max(Number(stageLyrics.current.userData.age) || 0, 0.18);
-      }
-      return;
-    }
     retireCurrentStageLyricForIdle();
     return;
   }
   var t = stageLyricPlaybackSeconds();
   var lyricT = typeof getAdjustedLyricPlaybackTime === 'function' ? getAdjustedLyricPlaybackTime(t) : t;
   var newIdx = findStageLyricIndexAtTime(lyricT);
+  if (!playing && !previewingSeek) {
+    if (pausedWithTrack && stageLyrics.current && stageLyrics.currentIdx === newIdx) {
+      if (stageLyrics.current.userData) {
+        stageLyrics.current.userData.state = 'in';
+        stageLyrics.current.userData.age = Math.max(Number(stageLyrics.current.userData.age) || 0, 0.18);
+      }
+      return;
+    }
+    if (!pausedWithTrack) {
+      retireCurrentStageLyricForIdle();
+      return;
+    }
+  }
   if (newIdx < 0) {
     var introText = currentLyricFallbackText();
     if (!introText) {

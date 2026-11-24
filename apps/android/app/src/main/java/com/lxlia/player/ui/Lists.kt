@@ -59,20 +59,10 @@ fun SongCover(
             .size(size)
             .clip(coverShape)
             .background(Brush.linearGradient(fallbackGrad))
-            .border(0.6.dp, Color(0x28FFFFFF), coverShape),
+            .border(0.6.dp, BORDER_SUBTLE, coverShape),
         contentAlignment = Alignment.Center,
     ) {
-        val initial = name.trim().take(1)
-        if (initial.isNotEmpty()) {
-            Text(
-                initial,
-                fontSize = (size.value * 0.36f).sp,
-                fontWeight = FontWeight.Bold,
-                color = Color(0xFFF2F8FF),
-            )
-        } else {
-            AssetIcon("ic_music.svg", size = size * 0.46f, tint = Color(0xFFF2F8FF), systemSymbol = false)
-        }
+        AssetIcon("ic_music.svg", size = size * 0.46f, tint = Color(0xFFF2F8FF), systemSymbol = false)
         if (coverUrl.isNotEmpty()) {
             RemoteImage(coverUrl, modifier = Modifier.fillMaxWidth().height(size))
         }
@@ -108,10 +98,10 @@ fun SongRow(
     val canSwitch = onSwitchPlatform != null && song.source != "local"
     val rowMenu = rememberGlassMenuTrigger {
         buildList {
-            add(GlassMenuItem(if (liked) "取消喜欢" else "喜欢") { onLike() })
-            add(GlassMenuItem("加入歌单") { onMore() })
+            add(GlassMenuItem(if (liked) "取消收藏" else "收藏") { onLike() })
+            add(GlassMenuItem("添加到歌单") { onMore() })
             if (canSwitch) {
-                add(GlassMenuItem("切换平台") { onSwitchPlatform?.invoke() })
+                add(GlassMenuItem("切换歌曲平台") { onSwitchPlatform?.invoke() })
             }
             if (showDownload && song.source != "local") {
                 add(GlassMenuItem("下载歌曲") { onDownload() })
@@ -126,7 +116,7 @@ fun SongRow(
             .fillMaxWidth()
             .then(rowMenu.modifier)
             .clip(RoundedCornerShape(12.dp))
-            .background(if (active) Color(0x12FFFFFF) else Color.Transparent)
+            .background(if (active) ROW_ACTIVE_BG else Color.Transparent)
             .combinedClickable(
                 interactionSource = remember { MutableInteractionSource() },
                 indication = androidx.compose.foundation.LocalIndication.current,
@@ -166,18 +156,16 @@ fun SongRow(
             }
             if (wide) {
                 Text(formatTime(song.durationMs), fontSize = 11.sp, color = MUTED)
-                key(liked) {
-                    MaterialIconButton(
-                        icon = if (liked) "ic_heart_fill.svg" else "ic_heart.svg",
-                        label = if (liked) "取消喜欢" else "喜欢",
-                        diameter = 42.dp,
-                        rawNoTint = liked,
-                        systemSymbol = false,
-                        selected = false,
-                        grouped = true,
-                        onClick = onLike,
-                    )
-                }
+                MaterialIconButton(
+                    icon = if (liked) "ic_heart_fill.svg" else "ic_heart.svg",
+                    label = if (liked) "取消收藏" else "收藏",
+                    diameter = 42.dp,
+                    rawNoTint = liked,
+                    systemSymbol = false,
+                    selected = false,
+                    grouped = true,
+                    onClick = onLike,
+                )
                 if (canSwitch) {
                     MaterialIconButton("ic_switch_platform.svg", "切换平台", diameter = 42.dp, grouped = true, systemSymbol = false, onClick = { onSwitchPlatform?.invoke() })
                 }
@@ -189,18 +177,16 @@ fun SongRow(
                     MaterialIconButton("ic_download.svg", "下载歌曲", diameter = 42.dp, grouped = true, onClick = onDownload)
                 }
             } else {
-                key(liked) {
-                    MaterialIconButton(
-                        icon = if (liked) "ic_heart_fill.svg" else "ic_heart.svg",
-                        label = if (liked) "取消喜欢" else "喜欢",
-                        diameter = 38.dp,
-                        rawNoTint = liked,
-                        systemSymbol = false,
-                        selected = false,
-                        grouped = true,
-                        onClick = onLike,
-                    )
-                }
+                MaterialIconButton(
+                    icon = if (liked) "ic_heart_fill.svg" else "ic_heart.svg",
+                    label = if (liked) "取消收藏" else "收藏",
+                    diameter = 38.dp,
+                    rawNoTint = liked,
+                    systemSymbol = false,
+                    selected = false,
+                    grouped = true,
+                    onClick = onLike,
+                )
                 if (showDownload && song.source != "local") {
                     MaterialIconButton("ic_download.svg", "下载歌曲", diameter = 38.dp, grouped = true, onClick = onDownload)
                 }
@@ -252,9 +238,14 @@ fun SongListTools(
     modifier: Modifier = Modifier,
     disabled: Boolean = false,
     showDelete: Boolean = false,
+    deleteLabel: String = "删除歌单",
     showEdit: Boolean = false,
+    collectLabel: String = "收藏到曲库",
+    collected: Boolean = false,
+    onCollect: (() -> Unit)? = null,
     onPlayAll: () -> Unit,
     onBatchDownload: (() -> Unit)? = null,
+    onCustomCover: (() -> Unit)? = null,
     onSort: (String) -> Unit,
     onManual: () -> Unit,
     onDelete: () -> Unit = {},
@@ -273,6 +264,9 @@ fun SongListTools(
     val editMenu = rememberGlassMenuTrigger {
         buildList {
             add(GlassMenuItem("重命名歌单") { onRename() })
+            if (onCustomCover != null) {
+                add(GlassMenuItem("自定义封面") { onCustomCover() })
+            }
             if (!disabled) {
                 add(GlassMenuItem("批量移除歌曲") { onBatchDelete() })
                 add(GlassMenuItem("自定义歌曲顺序") { onManual() })
@@ -296,18 +290,29 @@ fun SongListTools(
             modifier = Modifier.weight(1f),
         )
         TextAction("播放全部", enabled = !disabled, onClick = onPlayAll)
+        if (onCollect != null) {
+            TextAction(
+                if (collected) "已收藏" else collectLabel,
+                enabled = !disabled,
+                color = if (collected) MUTED else ACCENT,
+                onClick = onCollect,
+            )
+        }
         if (onBatchDownload != null) {
             TextAction("批量下载", enabled = !disabled, onClick = onBatchDownload)
         }
         Box(sortMenu.modifier) {
             TextAction("排列", onClick = { sortMenu.show() })
         }
+        if (!showEdit && onCustomCover != null) {
+            TextAction("封面", onClick = onCustomCover)
+        }
         if (showEdit) {
             Box(editMenu.modifier) {
                 TextAction("编辑", onClick = { editMenu.show() })
             }
         } else if (showDelete) {
-            TextAction("删除歌单", color = MUTED, onClick = onDelete)
+            TextAction(deleteLabel, color = MUTED, onClick = onDelete)
         }
     }
 }

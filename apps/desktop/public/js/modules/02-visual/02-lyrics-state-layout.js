@@ -97,15 +97,32 @@ function lyricCameraLockFit(layoutScale, layoutX, layoutY, distance) {
   var fov = (camera.fov || 45) * Math.PI / 180;
   var dist = Math.max(1.4, distance || 4.85);
   var visibleH = 2 * Math.tan(fov * 0.5) * dist;
-  var visibleW = visibleH * (camera.aspect || (innerWidth / Math.max(1, innerHeight)) || 1.78);
+  var aspect = camera.aspect || (innerWidth / Math.max(1, innerHeight)) || 1.78;
+  var visibleW = visibleH * aspect;
   var bounds = getStageLyricLockBounds();
   var skullSafe = !!(fx && fx.preset === SKULL_PRESET_INDEX);
+  var curData = stageLyrics.current && stageLyrics.current.userData && stageLyrics.current.userData.lyric;
+  var hasRowLayers = !!(curData && Array.isArray(curData.rowLayers) && curData.rowLayers.length > 0);
+  if (hasRowLayers && !skullSafe) {
+    // Per-row live viewport fitting already keeps long lines cleanly inside the viewport edges.
+    // Never crush the whole song down to 0.42x on portrait phones just because of wide bounds;
+    // keep a crisp, balanced base glyph size across portrait phones, tablets, and desktops.
+    var isPortrait = aspect < 0.92;
+    var targetGroupScale = isPortrait
+      ? clampRange(0.68 + (0.92 - aspect) * 0.16, 0.68, 0.76)
+      : 0.85;
+    var safeHRow = Math.max(visibleH * 0.22, visibleH * 0.48 - Math.abs(layoutY || 0) * 0.78);
+    var scaledHRow = Math.max(0.01, bounds.h * layoutScale);
+    var heightFit = Math.min(1.18, safeHRow / scaledHRow);
+    var desiredFit = targetGroupScale / layoutScale;
+    return clampRange(Math.min(desiredFit, heightFit), 0.58, 1.18);
+  }
   var safeW = Math.max(visibleW * (skullSafe ? 0.36 : 0.42), visibleW * (skullSafe ? 0.70 : 0.84) - Math.abs(layoutX || 0) * (skullSafe ? 1.36 : 1.22));
   var safeH = Math.max(visibleH * (skullSafe ? 0.16 : 0.18), visibleH * (skullSafe ? 0.34 : 0.44) - Math.abs(layoutY || 0) * (skullSafe ? 0.98 : 0.82));
   var scaledW = Math.max(0.01, bounds.w * layoutScale);
   var scaledH = Math.max(0.01, bounds.h * layoutScale);
   var viewportFit = Math.min(1, safeW / scaledW, safeH / scaledH);
   var lockScaleCap = Math.min(1, (skullSafe ? 0.94 : LYRIC_CAMERA_LOCK_MAX_SCALE) / layoutScale);
-  return clampRange(Math.min(viewportFit, lockScaleCap), skullSafe ? 0.36 : 0.42, 1);
+  return clampRange(Math.min(viewportFit, lockScaleCap), skullSafe ? 0.36 : 0.46, 1);
 }
 // 兼容旧变量名以便其它代码不破坏

@@ -1,0 +1,79 @@
+html, body, #root {
+  width: 100%;
+  height: 100%;
+  margin: 0;
+  padding: 0;
+  overflow: hidden;
+  background: transparent !important;
+  font-family: "Segoe UI", "HarmonyOS Sans SC", "PingFang SC", "Microsoft YaHei UI", "Noto Sans CJK SC", sans-serif;
+  -webkit-font-smoothing: antialiased;
+  text-rendering: optimizeLegibility;
+  -webkit-user-select: none;
+  user-select: none;
+  -webkit-tap-highlight-color: transparent;
+}
+
+#folia-stage-root {
+  position: fixed;
+  inset: 0;
+  width: 100%;
+  height: 100%;
+  overflow: hidden;
+  background: transparent;
+  font-family: "Segoe UI", "HarmonyOS Sans SC", "PingFang SC", "Microsoft YaHei UI", "Noto Sans CJK SC", sans-serif;
+}
+
+#folia-media-bg {
+  position: absolute;
+  inset: 0;
+  background-size: cover;
+  background-position: center;
+  background-repeat: no-repeat;
+  pointer-events: none;
+  z-index: 0;
+  contain: paint;
+  backface-visibility: hidden;
+  transition: opacity 0.22s ease;
+}
+
+#folia-media-bg.album-bg {
+  inset: -16px;
+  filter: blur(18px) saturate(1.20) brightness(0.74);
+  transform: scale(1.06) translateZ(0);
+}
+
+#folia-stage-root[data-appearance="light"] #folia-media-bg.album-bg {
+  filter: blur(20px) saturate(1.14) brightness(1.04);
+}
+
+#folia-media-bg.custom-bg {
+  inset: 0;
+  filter: none;
+  transform: none;
+}
+
+#folia-bg-layer {
+  position: absolute;
+  inset: 0;
+  z-index: 1;
+  pointer-events: none;
+  transition: opacity 0.24s ease;
+}
+
+#folia-readability-scrim {
+  position: absolute;
+  inset: 0;
+  z-index: 2;
+  pointer-events: none;
+  transition: opacity 0.24s ease;
+}
+
+#effect-area {
+  position: absolute;
+  inset: 0;
+  z-index: 3;
+}
+
+html.wallpaper-host #effect-area {
+  opacity: var(--wp-overall-opacity, 0.95);
+}

@@ -22,7 +22,9 @@ export function parseLrc(lrc: string): LyricLine[] {
         words.push({ text: part[3], timeMs: (part[0].startsWith('(') ? Number(part[1]) : Number(lx[1]) + Number(part[1])) + offset, durationMs: Number(part[2]) });
         part = matcher.exec(lx[3]);
       }
-      const text = words.map((word: LyricWord) => word.text).join('');
+      const text = words.length
+        ? words.map((word: LyricWord) => word.text).join('')
+        : lx[3].replace(/[<(]\d+,\d+(?:,\d+)?[>)]/g, '').trim();
       if (text) result.push({ timeMs: Number(lx[1]) + offset, text, words });
       continue;
     }
@@ -67,4 +69,26 @@ export function findLyricIndex(lines: LyricLine[], positionMs: number): number {
     if (lines[mid].timeMs <= positionMs) { answer = mid; low = mid + 1; } else high = mid - 1;
   }
   return answer;
+}
+
+export function alignAuxLyricsToMain(main: LyricLine[], aux: LyricLine[], maxDiffMs: number = 650): LyricLine[] {
+  if (!aux.length) return [];
+  if (!main.length) return aux;
+  const aligned: LyricLine[] = [];
+  for (const item of aux) {
+    const clean = item.text.trim();
+    if (!clean) continue;
+    let bestTime = item.timeMs;
+    let bestDiff = maxDiffMs + 1;
+    for (const m of main) {
+      const diff = Math.abs(m.timeMs - item.timeMs);
+      if (diff < bestDiff) {
+        bestDiff = diff;
+        bestTime = m.timeMs;
+        if (diff === 0) break;
+      }
+    }
+    aligned.push({ timeMs: bestDiff <= maxDiffMs ? bestTime : item.timeMs, text: clean, words: [] });
+  }
+  return aligned;
 }

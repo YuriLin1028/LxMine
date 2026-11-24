@@ -1,0 +1,4 @@
+html, body, #root { width: 100%; height: 100%; margin: 0; overflow: hidden; background: #0C0E14; }
+/* 渲染层不提供任何播放器或浏览器控件，所有交互属于 ArkUI。 */
+#root { pointer-events: none; }
+#effect-area { position: absolute; inset: 0; }

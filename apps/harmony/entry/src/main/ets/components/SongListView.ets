@@ -25,10 +25,20 @@ export struct SongListView {
   onSwitchPlatform: (song: Song) => void = () => {};
   onScroll: (offset: number) => void = () => {};
   private source: ArrayDataSource<Song> = new ArrayDataSource<Song>([], (song: Song) => `${songKey(song)}|${song.coverUrl ?? ''}`);
+  private prevSelectedKey: string = '';
 
-  aboutToAppear(): void { this.songsChanged(); }
+  aboutToAppear(): void { this.prevSelectedKey = this.selectedKey; this.songsChanged(); }
   private songsChanged(): void { this.source.reset(this.songs); }
-  private metaChanged(): void { this.source.reload(); }
+  private metaChanged(): void {
+    const prev = this.prevSelectedKey;
+    const next = this.selectedKey;
+    this.prevSelectedKey = next;
+    if (prev === next) return;
+    for (let i = 0; i < this.songs.length; i += 1) {
+      const k = songKey(this.songs[i]);
+      if (k === prev || k === next) this.source.notifyChange(i);
+    }
+  }
   @Builder private emptyHeader() {}
 
   private itemKey(song: Song): string {
@@ -49,7 +59,7 @@ export struct SongListView {
             onSwitchPlatform: () => this.onSwitchPlatform(song) })
         }
       }, (song: Song) => this.itemKey(song))
-    }.width('100%').layoutWeight(1).scrollBar(BarState.Off).edgeEffect(EdgeEffect.Spring).cachedCount(8)
+    }.width('100%').layoutWeight(1).scrollBar(BarState.Off).edgeEffect(EdgeEffect.Spring).fadingEdge(false).cachedCount(8)
       .contentStartOffset(this.contentTop).contentEndOffset(this.contentBottom)
       .onDidScroll((offset: number, state: ScrollState) => {
         if (state !== ScrollState.Idle) this.onScroll(this.scroller.currentOffset().yOffset);

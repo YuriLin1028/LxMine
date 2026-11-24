@@ -18,6 +18,10 @@ const { BuiltInPlaylistLibrary } = require('./built-in-playlist-library');
 const { WallpaperEngineRuntime } = require('./wallpaper-engine-runtime');
 const { FullDesktopModeRuntime } = require('./full-desktop-mode-runtime');
 const {
+  nativeWindowHandleDecimal: wallpaperWindowHandleDecimal,
+  startWallpaperBackdropPin,
+} = require('./wallpaper-backdrop-pin');
+const {
   LoginEasterEggGate,
   LOGIN_EASTER_EGG_GATE_VERSION,
   LOGIN_EASTER_EGG_STATE_FILE,
@@ -34,6 +38,8 @@ let localServer = null;
 let mainServerPort = 0;
 let desktopLyricsWindow = null;
 let wallpaperWindow = null;
+let wallpaperPinController = null;
+let wallpaperPinStatus = null;
 let wallpaperScene = {};
 let wallpaperWindowOperation = Promise.resolve();
 function enqueueWallpaperWindow(action) {
@@ -41,14 +47,21 @@ function enqueueWallpaperWindow(action) {
   wallpaperWindowOperation = operation.catch(() => {});
   return operation;
 }
-let desktopLyricsState = {};
+let desktopLyricsState = { enabled: false, clickThrough: false };
 let desktopLyricsUserBounds = null;
+let desktopLyricsLogicalBounds = null;
 let desktopLyricsBoundsLoaded = false;
 let desktopLyricsBoundsSaveTimer = null;
 let desktopLyricsProgrammaticMove = false;
+let desktopLyricsProgrammaticMoveTimer = null;
 let desktopLyricsPointerCapture = false;
 let desktopLyricsMouseIgnored = null;
 let desktopLyricsHotBounds = null;
+let desktopLyricsPillBounds = null;
+let desktopLyricsCursorTimer = null;
+let desktopLyricsHoverActive = false;
+let desktopLyricsDragActive = false;
+let desktopLyricsDragLastAt = 0;
 let htmlFullscreenActive = false;
 let windowFullscreenActive = false;
 let windowFullscreenDisplayId = null;
@@ -59,8 +72,8 @@ let lastAppMemoryTrimAt = 0;
 let lastAppMemoryTrimReason = '';
 let memoryAutoTimer = null;
 let memoryAutoState = {
-  appTrimEnabled: true,
-  backgroundTrimEnabled: true,
+  appTrimEnabled: false,
+  backgroundTrimEnabled: false,
   enabled: false,
   mask: systemMemory.MEMORY_MASK_DEFAULT,
   intervalMin: 30,
@@ -172,7 +185,7 @@ const localMusicLibrary = new LocalMusicLibrary({ userDataPath: STABLE_USER_DATA
 require('./lansync/data.cjs').recoverSyncTransaction(STABLE_USER_DATA_PATH);
 const builtInPlaylistLibrary = new BuiltInPlaylistLibrary({ userDataPath: STABLE_USER_DATA_PATH });
 const lxMineManager = require('./lxmine-ipc.cjs').registerLxMineIpc({
-  userDataPath: STABLE_USER_DATA_PATH, trusted: isTrustedMainWindowIpc, library: builtInPlaylistLibrary,
+  userDataPath: STABLE_USER_DATA_PATH, trusted: isTrustedMainWindowIpc, library: builtInPlaylistLibrary, localMusicLibrary,
 });
 const lanSyncData = new (require('./lansync/data.cjs').LanSyncData)({ root: STABLE_USER_DATA_PATH, library: builtInPlaylistLibrary,
   sourceManager: lxMineManager, getFx: readCurrentFxAutosaveFile });
@@ -201,15 +214,37 @@ const fullDesktopModeRuntime = new FullDesktopModeRuntime({
 const wallpaperDesktopRuntime = new FullDesktopModeRuntime({
   screen, platform: process.platform, execFileImpl: execFile,
   nativeTempPath: NATIVE_HELPER_TEMP_PATH,
+  isDisposableHost: true,
   requestReconcile: reason => wallpaperDesktopRuntime.reconcile(reason),
   onStatus: status => broadcastDesktopWallpaperStatus(status),
 });
-function getWallpaperStatus(reason) {
-  return wallpaperWindow ? wallpaperDesktopRuntime.getStatus(reason) : fullDesktopModeRuntime.getStatus(reason);
+function getWallpaperStatus(reason = '') {
+  if (wallpaperWindow && !wallpaperWindow.isDestroyed() && wallpaperPinController) {
+    return {
+      ok: true,
+      supported: process.platform === 'win32',
+      enabled: true,
+      active: true,
+      embedded: true,
+      interactive: false,
+      phase: 'passive',
+      mode: 'top-level-backdrop-pin',
+      windowId: wallpaperWindow.id,
+      nativeWindowId: wallpaperPinStatus && wallpaperPinStatus.targetWindowId || '',
+      parentWindowId: wallpaperPinStatus && wallpaperPinStatus.parentWindowId || 'top-level-backdrop',
+      parentClassName: wallpaperPinStatus && wallpaperPinStatus.parentClassName || 'TopLevelBackdropPin',
+      bounds: wallpaperPinStatus && wallpaperPinStatus.bounds || null,
+      physicalBounds: wallpaperPinStatus && wallpaperPinStatus.physicalBounds || null,
+      lastError: '',
+      reason: String(reason || ''),
+    };
+  }
+  return fullDesktopModeRuntime.getStatus(reason);
 }
 let wallpaperEngineCaptureSourceId = '';
 let wallpaperEngineCaptureGrant = null;
 let gestureCameraPermissionGrant = null;
+let earMonitorMicPermissionGrant = null;
 let wallpaperEngineCaptureOperation = 0;
 let wallpaperEngineCapturePreparationOperation = 0;
 let wallpaperEngineGlassCaptureOperation = 0;
@@ -235,6 +270,9 @@ const WALLPAPER_ENGINE_CAPTURE_RETRY_DELAY_MS = 720;
 const WALLPAPER_ENGINE_MAX_CAPTURE_FPS = 240;
 const WALLPAPER_ENGINE_HOST_RESUME_TIMEOUT_MS = 30000;
 const GESTURE_CAMERA_PERMISSION_GRANT_MS = 45000;
+// Allow Chromium to throttle occluded/minimized renderer compositing when wallpaper
+// mode is off so hidden GPU frames never fight Windows 11 DWM/VRR/MPO composition;
+// Chromium's MediaWebContentsObserver still keeps active audio playback alive.
 const MAIN_WINDOW_BACKGROUND_THROTTLING = process.env.MINERADIO_KEEP_BACKGROUND_RENDERING === '1' ? false : true;
 
 function wallpaperEngineTargetFps(display, requestedFps) {
@@ -505,9 +543,11 @@ const CHROMIUM_SAFE_PERFORMANCE_SWITCHES = [
   ['autoplay-policy', 'no-user-gesture-required'],
   ['enable-gpu-rasterization'],
   ['enable-oop-rasterization'],
-  ['enable-zero-copy'],
   ['enable-accelerated-2d-canvas'],
   ['use-angle', 'd3d11'],
+  // Avoid Windows 11 + NVIDIA G-Sync/VRR + Wallpaper Engine whole-desktop MPO flicker
+  // while keeping DComp root triple-buffering healthy (avoiding GPU process CPU spikes).
+  ['disable-direct-composition-video-overlays'],
 ];
 const CHROMIUM_OPT_IN_PERFORMANCE_SWITCHES = [
   ['ignore-gpu-blocklist', null, 'MINERADIO_IGNORE_GPU_BLOCKLIST'],
@@ -826,6 +866,30 @@ function isTrustedGestureCameraMediaPermission(webContents, origin, details) {
     if (mediaType.includes('audio') || mediaTypes.some((value) => value.includes('audio'))) return false;
     if (mediaType && !mediaType.includes('video')) return false;
     if (mediaTypes.length && !mediaTypes.every((value) => value.includes('video'))) return false;
+    return true;
+  } catch (_) {
+    return false;
+  }
+}
+
+function isTrustedEarMonitorMicPermission(webContents, origin, details) {
+  const grant = earMonitorMicPermissionGrant;
+  if (!grant || (grant.expiresAt && Date.now() > grant.expiresAt)) {
+    earMonitorMicPermissionGrant = null;
+    return false;
+  }
+  try {
+    if (!webContents || webContents.isDestroyed() || webContents.id !== grant.webContentsId) return false;
+    if (!mainWindow || mainWindow.isDestroyed() || webContents !== mainWindow.webContents) return false;
+    if (!isTrustedMainDocumentUrl(origin) || !isTrustedMainDocumentUrl(grant.origin)) return false;
+    if (details && details.isMainFrame === false) return false;
+    const mediaType = String(details && details.mediaType || '').toLowerCase();
+    const mediaTypes = details && Array.isArray(details.mediaTypes)
+      ? details.mediaTypes.map((value) => String(value || '').toLowerCase()).filter(Boolean)
+      : [];
+    if (mediaType.includes('video') || mediaTypes.some((value) => value.includes('video'))) return false;
+    if (mediaType && !mediaType.includes('audio')) return false;
+    if (mediaTypes.length && !mediaTypes.every((value) => value.includes('audio'))) return false;
     return true;
   } catch (_) {
     return false;
@@ -1687,7 +1751,8 @@ function configureLocalAppPermissions() {
     const origin = requestingOrigin || (details && details.requestingUrl) || (webContents && webContents.getURL && webContents.getURL()) || '';
     if (permission === 'display-capture') return isTrustedWallpaperEngineDisplayCapturePermission(webContents, origin, details);
     if (permission === 'media') return isTrustedWallpaperEnginePreparationMediaPermission(webContents, origin, details)
-      || isTrustedGestureCameraMediaPermission(webContents, origin, details);
+      || isTrustedGestureCameraMediaPermission(webContents, origin, details)
+      || isTrustedEarMonitorMicPermission(webContents, origin, details);
     return LOCAL_APP_PERMISSION_ALLOWLIST.has(permission) && isLocalAppUrl(origin);
   });
   ses.setPermissionRequestHandler((webContents, permission, callback, details) => {
@@ -1698,7 +1763,8 @@ function configureLocalAppPermissions() {
     }
     if (permission === 'media') {
       callback(isTrustedWallpaperEnginePreparationMediaPermission(webContents, origin, details)
-        || isTrustedGestureCameraMediaPermission(webContents, origin, details));
+        || isTrustedGestureCameraMediaPermission(webContents, origin, details)
+        || isTrustedEarMonitorMicPermission(webContents, origin, details));
       return;
     }
     callback(LOCAL_APP_PERMISSION_ALLOWLIST.has(permission) && isLocalAppUrl(origin));
@@ -2119,7 +2185,11 @@ function isZoomShortcutInput(input) {
 function focusMainWindow() {
   if (!mainWindow || mainWindow.isDestroyed()) return false;
   mainWindow.__mineradioIntentionalHide = false;
+  clearMainWindowMinimizeIntent(mainWindow);
   markMainWindowExpectedVisible(mainWindow, true, 'focus-main-window');
+  try { mainWindow.setIgnoreMouseEvents(false); } catch (_) {}
+  try { mainWindow.setFocusable(true); } catch (_) {}
+  try { mainWindow.setSkipTaskbar(false); } catch (_) {}
   const desktopMode = fullDesktopModeRuntime.getStatus('focus-main-window');
   if (desktopMode.enabled === true && !wallpaperWindow) {
     setFullDesktopModeInteractive(true, 'focus-main-window').catch((error) => {
@@ -2153,7 +2223,7 @@ function createOrUpdateTray() {
   const menu = Menu.buildFromTemplate([
     { label: `显示 ${APP_NAME}`, click: () => focusMainWindow() },
     {
-      label: '退出壁纸模式',
+      label: '退出壁纸模式 (Beta)',
       visible: desktopMode.enabled === true,
       click: () => closeWallpaperWindow('tray-exit-desktop-mode').catch((error) => {
         console.warn('[FullDesktopMode] tray exit failed:', error && error.message || error);
@@ -2163,8 +2233,11 @@ function createOrUpdateTray() {
     {label:'桌面歌词',type:'checkbox',checked:desktopLyricsState.enabled===true,click:()=>{
       if(desktopLyricsState.enabled)closeDesktopLyricsWindow();else{createDesktopLyricsWindow({enabled:true,clickThrough:false});broadcastDesktopLyricsEnabledState(true);}createOrUpdateTray();
     }},
-    {label:desktopLyricsState.clickThrough===true?'解锁桌面歌词':'锁定桌面歌词',enabled:desktopLyricsState.enabled===true,click:()=>{
-      desktopLyricsState.clickThrough=desktopLyricsState.clickThrough!==true;applyDesktopLyricsMouseBehavior();broadcastDesktopLyricsLockState();createOrUpdateTray();
+    {label:isDesktopLyricsLocked()?'解锁桌面歌词':'锁定桌面歌词',enabled:desktopLyricsState.enabled===true,click:()=>{
+      desktopLyricsState.clickThrough=!isDesktopLyricsLocked();
+      if(isDesktopLyricsLocked()){desktopLyricsDragActive=false;desktopLyricsPointerCapture=false;}
+      desktopLyricsMouseIgnored=null;
+      applyDesktopLyricsMouseBehavior();broadcastDesktopLyricsLockState();createOrUpdateTray();
     }},
     {
       label: '退出',
@@ -3671,39 +3744,118 @@ function constrainDesktopLyricsBounds(bounds) {
   return next;
 }
 
-function setDesktopLyricsBounds(bounds) {
-  if (!desktopLyricsWindow || desktopLyricsWindow.isDestroyed()) return;
-  const nextBounds = constrainDesktopLyricsBounds(bounds);
-  const currentBounds = desktopLyricsWindow.getBounds();
-  if (
-    currentBounds.x === nextBounds.x
-    && currentBounds.y === nextBounds.y
-    && currentBounds.width === nextBounds.width
-    && currentBounds.height === nextBounds.height
-  ) {
-    return;
+function getCanonicalDesktopLyricsBounds() {
+  if (desktopLyricsLogicalBounds
+    && Number.isFinite(desktopLyricsLogicalBounds.x)
+    && Number.isFinite(desktopLyricsLogicalBounds.y)
+    && desktopLyricsLogicalBounds.width >= 320
+    && desktopLyricsLogicalBounds.height >= 180) {
+    return { ...desktopLyricsLogicalBounds };
   }
-  desktopLyricsProgrammaticMove = true;
-  desktopLyricsWindow.setBounds(nextBounds, false);
-  setTimeout(() => {
-    desktopLyricsProgrammaticMove = false;
-  }, 120);
+  const source = desktopLyricsUserBounds
+    || (desktopLyricsWindow && !desktopLyricsWindow.isDestroyed() ? desktopLyricsWindow.getBounds() : null)
+    || desktopLyricsDefaultBounds(desktopLyricsState);
+  desktopLyricsLogicalBounds = {
+    x: Math.round(Number(source.x) || 0),
+    y: Math.round(Number(source.y) || 0),
+    width: Math.max(320, Math.round(Number(source.width) || 320)),
+    height: Math.max(180, Math.round(Number(source.height) || 180)),
+  };
+  return { ...desktopLyricsLogicalBounds };
 }
 
-function rememberDesktopLyricsBounds() {
-  if (!desktopLyricsWindow || desktopLyricsWindow.isDestroyed() || desktopLyricsProgrammaticMove) return;
-  desktopLyricsUserBounds = desktopLyricsWindow.getBounds();
+function applyCanonicalDesktopLyricsBounds(bounds, options = {}) {
+  if (!desktopLyricsWindow || desktopLyricsWindow.isDestroyed()) return null;
+  const shouldConstrain = options.constrain !== false;
+  const raw = {
+    x: Math.round(Number(bounds && bounds.x) || 0),
+    y: Math.round(Number(bounds && bounds.y) || 0),
+    width: Math.max(320, Math.round(Number(bounds && bounds.width) || 320)),
+    height: Math.max(180, Math.round(Number(bounds && bounds.height) || 180)),
+  };
+  const nextBounds = shouldConstrain ? constrainDesktopLyricsBounds(raw) : raw;
+  const prev = desktopLyricsLogicalBounds;
+  desktopLyricsLogicalBounds = { ...nextBounds };
+  if (
+    !prev
+    || prev.x !== nextBounds.x
+    || prev.y !== nextBounds.y
+    || prev.width !== nextBounds.width
+    || prev.height !== nextBounds.height
+    || options.force === true
+  ) {
+    desktopLyricsProgrammaticMove = true;
+    if (desktopLyricsProgrammaticMoveTimer) clearTimeout(desktopLyricsProgrammaticMoveTimer);
+    desktopLyricsWindow.setBounds(nextBounds, false);
+    desktopLyricsProgrammaticMoveTimer = setTimeout(() => {
+      desktopLyricsProgrammaticMove = false;
+      desktopLyricsProgrammaticMoveTimer = null;
+    }, 180);
+  }
+  if (options.persist === true) {
+    desktopLyricsUserBounds = { ...nextBounds };
+    scheduleDesktopLyricsBoundsSave();
+  }
+  return { ...nextBounds };
+}
+
+function setDesktopLyricsBounds(bounds) {
+  if (!desktopLyricsWindow || desktopLyricsWindow.isDestroyed()) return;
+  applyCanonicalDesktopLyricsBounds(bounds, { constrain: true, persist: false, force: true });
+}
+
+function rememberDesktopLyricsBounds(kind = 'moved') {
+  if (!desktopLyricsWindow || desktopLyricsWindow.isDestroyed() || desktopLyricsProgrammaticMove || desktopLyricsDragActive) return;
+  const current = desktopLyricsWindow.getBounds();
+  if (kind === 'moved' && desktopLyricsLogicalBounds) {
+    // Preserve canonical DIP width/height on OS moves so Windows fractional DPI
+    // (125%/150%/175%) never rounds width/height up by +1px per move.
+    desktopLyricsLogicalBounds = {
+      x: Math.round(current.x),
+      y: Math.round(current.y),
+      width: desktopLyricsLogicalBounds.width,
+      height: desktopLyricsLogicalBounds.height,
+    };
+  } else {
+    desktopLyricsLogicalBounds = {
+      x: Math.round(current.x),
+      y: Math.round(current.y),
+      width: Math.max(320, Math.round(current.width)),
+      height: Math.max(180, Math.round(current.height)),
+    };
+  }
+  desktopLyricsUserBounds = { ...desktopLyricsLogicalBounds };
   scheduleDesktopLyricsBoundsSave();
+}
+
+function isDesktopLyricsLocked() {
+  return desktopLyricsState.clickThrough === true;
+}
+
+function setDesktopLyricsIgnoreMouse(shouldIgnore) {
+  if (!desktopLyricsWindow || desktopLyricsWindow.isDestroyed()) return;
+  const ignore = !!shouldIgnore;
+  if (desktopLyricsMouseIgnored === ignore) return;
+  desktopLyricsMouseIgnored = ignore;
+  try {
+    if (ignore) {
+      desktopLyricsWindow.setIgnoreMouseEvents(true, { forward: true });
+    } else {
+      desktopLyricsWindow.setIgnoreMouseEvents(false);
+    }
+  } catch (e) {
+    console.warn('[DesktopLyrics] setIgnoreMouseEvents failed:', e && e.message || e);
+  }
 }
 
 function applyDesktopLyricsMouseBehavior() {
   if (!desktopLyricsWindow || desktopLyricsWindow.isDestroyed()) return;
-  // The renderer captures the unlock button only while locked; the rest of the
-  // lyric surface remains mouse-through and cannot be dragged.
+  if (desktopLyricsDragActive && !isDesktopLyricsLocked()) {
+    setDesktopLyricsIgnoreMouse(false);
+    return;
+  }
   const shouldIgnore = !desktopLyricsPointerCapture;
-  if (desktopLyricsMouseIgnored === shouldIgnore) return;
-  desktopLyricsMouseIgnored = shouldIgnore;
-  desktopLyricsWindow.setIgnoreMouseEvents(shouldIgnore, { forward: true });
+  setDesktopLyricsIgnoreMouse(shouldIgnore);
 }
 
 function desktopLyricsHotBoundsOnScreen() {
@@ -3719,6 +3871,126 @@ function desktopLyricsHotBoundsOnScreen() {
   };
 }
 
+function desktopLyricsPillBoundsOnScreen() {
+  if (!desktopLyricsWindow || desktopLyricsWindow.isDestroyed()) return null;
+  const winBounds = desktopLyricsWindow.getBounds();
+  const rel = desktopLyricsPillBounds;
+  if (!rel) {
+    // Fallback top-center pill hit zone if renderer hasn't reported geometry yet.
+    const w = Math.min(360, Math.max(150, Math.round(winBounds.width * 0.45)));
+    return {
+      x: winBounds.x + Math.round((winBounds.width - w) / 2),
+      y: winBounds.y,
+      width: w,
+      height: 54,
+    };
+  }
+  return {
+    x: winBounds.x + rel.left,
+    y: winBounds.y + rel.top,
+    width: Math.max(1, rel.right - rel.left),
+    height: Math.max(1, rel.bottom - rel.top),
+  };
+}
+
+function sendDesktopLyricsHover(inside) {
+  const next = !!inside;
+  if (desktopLyricsHoverActive === next) return;
+  desktopLyricsHoverActive = next;
+  if (!desktopLyricsWindow || desktopLyricsWindow.isDestroyed()) return;
+  try {
+    desktopLyricsWindow.webContents.send('mineradio-desktop-lyrics-hover', {
+      inside: next,
+      locked: isDesktopLyricsLocked(),
+    });
+  } catch (_) {}
+}
+
+let desktopLyricsCursorLastX = Number.NaN;
+let desktopLyricsCursorLastY = Number.NaN;
+let desktopLyricsCursorLastKey = '';
+
+function stopDesktopLyricsCursorWatch() {
+  if (desktopLyricsCursorTimer) {
+    clearTimeout(desktopLyricsCursorTimer);
+    desktopLyricsCursorTimer = null;
+  }
+  desktopLyricsHoverActive = false;
+  desktopLyricsCursorLastX = Number.NaN;
+  desktopLyricsCursorLastY = Number.NaN;
+  desktopLyricsCursorLastKey = '';
+}
+
+function scheduleDesktopLyricsCursorWatch(delayMs) {
+  if (!desktopLyricsWindow || desktopLyricsWindow.isDestroyed() || !desktopLyricsState.enabled) {
+    stopDesktopLyricsCursorWatch();
+    return;
+  }
+  if (desktopLyricsCursorTimer) clearTimeout(desktopLyricsCursorTimer);
+  desktopLyricsCursorTimer = setTimeout(tickDesktopLyricsCursorWatch, delayMs);
+}
+
+function tickDesktopLyricsCursorWatch() {
+  desktopLyricsCursorTimer = null;
+  if (!desktopLyricsWindow || desktopLyricsWindow.isDestroyed() || !desktopLyricsState.enabled) {
+    stopDesktopLyricsCursorWatch();
+    return;
+  }
+  let cursor = null;
+  let winBounds = null;
+  try {
+    cursor = screen.getCursorScreenPoint();
+    winBounds = desktopLyricsWindow.getBounds();
+  } catch (_) {
+    scheduleDesktopLyricsCursorWatch(140);
+    return;
+  }
+  const locked = isDesktopLyricsLocked();
+  if (desktopLyricsDragActive && (locked || (Date.now() - desktopLyricsDragLastAt > 2600 && !pointInBounds(cursor, winBounds)))) {
+    desktopLyricsDragActive = false;
+  }
+  const stateKey = `${winBounds.x},${winBounds.y},${winBounds.width},${winBounds.height},${locked ? 1 : 0}`;
+  const moved = cursor.x !== desktopLyricsCursorLastX || cursor.y !== desktopLyricsCursorLastY || stateKey !== desktopLyricsCursorLastKey;
+  desktopLyricsCursorLastX = cursor.x;
+  desktopLyricsCursorLastY = cursor.y;
+  desktopLyricsCursorLastKey = stateKey;
+  if (!moved && !desktopLyricsDragActive) {
+    scheduleDesktopLyricsCursorWatch(140);
+    return;
+  }
+  const nearWin = cursor.x >= winBounds.x - 120
+    && cursor.x <= winBounds.x + winBounds.width + 120
+    && cursor.y >= winBounds.y - 120
+    && cursor.y <= winBounds.y + winBounds.height + 120;
+  if (!locked) {
+    // Unlocked: rely on OS cursor coordinates rather than Windows Chromium mouse-forwarding,
+    // so dragging, resizing, playback controls, lock, and close NEVER stall or freeze.
+    const inWin = pointInBounds(cursor, winBounds);
+    const active = desktopLyricsDragActive || inWin;
+    desktopLyricsPointerCapture = active;
+    setDesktopLyricsIgnoreMouse(!active);
+    sendDesktopLyricsHover(active);
+    scheduleDesktopLyricsCursorWatch(active || nearWin ? 55 : 120);
+    return;
+  }
+  // Locked: stay 100% click-through over lyric body, reveal top unlock/close pill on hover,
+  // and natively capture clicks ONLY while the cursor is directly over the pill.
+  const hotRect = desktopLyricsHotBoundsOnScreen();
+  const pillRect = desktopLyricsPillBoundsOnScreen();
+  const inPill = pointInBounds(cursor, pillRect);
+  const inHot = pointInBounds(cursor, hotRect) || inPill;
+  sendDesktopLyricsHover(inHot);
+  const capturePill = inPill && desktopLyricsHoverActive;
+  desktopLyricsPointerCapture = capturePill;
+  setDesktopLyricsIgnoreMouse(!capturePill);
+  scheduleDesktopLyricsCursorWatch(inHot || nearWin ? 55 : 120);
+}
+
+function startDesktopLyricsCursorWatch() {
+  if (desktopLyricsCursorTimer) return;
+  tickDesktopLyricsCursorWatch();
+}
+
 function pointInBounds(point, bounds) {
   if (!point || !bounds) return false;
   return point.x >= bounds.x
@@ -3728,11 +4000,12 @@ function pointInBounds(point, bounds) {
 }
 
 function broadcastDesktopLyricsLockState() {
-  const locked = desktopLyricsState.clickThrough !== false;
+  const locked = isDesktopLyricsLocked();
   if (mainWindow && !mainWindow.isDestroyed()) {
     mainWindow.webContents.send('mineradio-desktop-lyrics-lock-state', { locked });
   }
   sendDesktopLyricsState();
+  tickDesktopLyricsCursorWatch();
 }
 
 function broadcastDesktopLyricsEnabledState(enabled) {
@@ -3748,11 +4021,12 @@ function positionDesktopLyricsWindow(payload = desktopLyricsState, options = {})
   if (!desktopLyricsWindow || desktopLyricsWindow.isDestroyed()) return;
   loadDesktopLyricsBounds();
   const shouldUseManualBounds = desktopLyricsUserBounds && !options.force;
-  setDesktopLyricsBounds(shouldUseManualBounds ? desktopLyricsUserBounds : desktopLyricsDefaultBounds(payload));
-  if (shouldUseManualBounds) {
-    // Re-clamp after a display/DPI change and persist the corrected bounds.
-    desktopLyricsUserBounds = desktopLyricsWindow.getBounds();
-    scheduleDesktopLyricsBoundsSave();
+  const applied = applyCanonicalDesktopLyricsBounds(
+    shouldUseManualBounds ? desktopLyricsUserBounds : desktopLyricsDefaultBounds(payload),
+    { constrain: true, persist: shouldUseManualBounds, force: true }
+  );
+  if (shouldUseManualBounds && applied) {
+    desktopLyricsUserBounds = { ...applied };
   }
   if (typeof desktopLyricsWindow.setOpacity === 'function') {
     desktopLyricsWindow.setOpacity(clampNumber(payload.opacity, 0.28, 1, 0.92));
@@ -3768,7 +4042,10 @@ function createDesktopLyricsWindow(payload = {}) {
   loadDesktopLyricsBounds();
   const previousY = desktopLyricsState.y;
   const previousOpacity = desktopLyricsState.opacity;
-  desktopLyricsState = { ...desktopLyricsState, ...payload, enabled: true };
+  const nextClickThrough = Object.prototype.hasOwnProperty.call(payload || {}, 'clickThrough')
+    ? payload.clickThrough === true
+    : desktopLyricsState.clickThrough === true;
+  desktopLyricsState = { ...desktopLyricsState, ...payload, clickThrough: nextClickThrough, enabled: true };
   const hasY = Object.prototype.hasOwnProperty.call(payload || {}, 'y');
   const nextY = clampNumber(desktopLyricsState.y, 0.08, 0.92, 0.76);
   const yChanged = hasY && Number.isFinite(Number(previousY)) && Math.abs(nextY - clampNumber(previousY, 0.08, 0.92, 0.76)) > 0.001;
@@ -3781,10 +4058,20 @@ function createDesktopLyricsWindow(payload = {}) {
     } else if (opacityChanged && typeof desktopLyricsWindow.setOpacity === 'function') {
       desktopLyricsWindow.setOpacity(clampNumber(desktopLyricsState.opacity, 0.28, 1, 0.92));
     }
-    applyDesktopLyricsMouseBehavior();
+    try { desktopLyricsWindow.setAlwaysOnTop(true, 'screen-saver'); } catch (_) {}
+    if (!desktopLyricsWindow.isVisible()) {
+      try { desktopLyricsWindow.showInactive(); } catch (_) {}
+    }
+    desktopLyricsMouseIgnored = null;
+    startDesktopLyricsCursorWatch();
     sendDesktopLyricsState();
     return desktopLyricsWindow;
   }
+
+  desktopLyricsPointerCapture = false;
+  desktopLyricsMouseIgnored = null;
+  desktopLyricsDragActive = false;
+  desktopLyricsHoverActive = false;
 
   desktopLyricsWindow = new BrowserWindow({
     width: 920,
@@ -3815,39 +4102,88 @@ function createDesktopLyricsWindow(payload = {}) {
   }
   applyDesktopLyricsMouseBehavior();
   positionDesktopLyricsWindow(desktopLyricsState, { force: yChanged || !desktopLyricsUserBounds });
-  const createdLyricsWindow=desktopLyricsWindow;
+  const createdLyricsWindow = desktopLyricsWindow;
   desktopLyricsWindow.once('ready-to-show', () => {
-    if(desktopLyricsWindow!==createdLyricsWindow||!desktopLyricsState.enabled||createdLyricsWindow.isDestroyed())return;
+    if (desktopLyricsWindow !== createdLyricsWindow || !desktopLyricsState.enabled || createdLyricsWindow.isDestroyed()) return;
+    try { createdLyricsWindow.setAlwaysOnTop(true, 'screen-saver'); } catch (_) {}
     createdLyricsWindow.showInactive();
+    desktopLyricsMouseIgnored = null;
+    startDesktopLyricsCursorWatch();
     sendDesktopLyricsState();
   });
-  desktopLyricsWindow.webContents.once('did-finish-load', sendDesktopLyricsState);
-  desktopLyricsWindow.on('closed', () => {
-    if(desktopLyricsWindow!==createdLyricsWindow)return;
-    desktopLyricsWindow=null;desktopLyricsMouseIgnored=null;desktopLyricsState.enabled=false;
-    broadcastDesktopLyricsEnabledState(false);createOrUpdateTray();
+  desktopLyricsWindow.webContents.once('did-finish-load', () => {
+    if (desktopLyricsWindow !== createdLyricsWindow || createdLyricsWindow.isDestroyed()) return;
+    sendDesktopLyricsState();
+    startDesktopLyricsCursorWatch();
   });
-  desktopLyricsWindow.on('moved', rememberDesktopLyricsBounds);
-  desktopLyricsWindow.on('resized', rememberDesktopLyricsBounds);
+  desktopLyricsWindow.webContents.on('render-process-gone', (_event, details) => {
+    console.warn('[DesktopLyrics] renderer gone:', details && details.reason);
+    if (desktopLyricsWindow === createdLyricsWindow) closeDesktopLyricsWindow();
+  });
+  desktopLyricsWindow.on('unresponsive', () => {
+    console.warn('[DesktopLyrics] overlay became unresponsive; forcing cleanup');
+    if (desktopLyricsWindow === createdLyricsWindow) closeDesktopLyricsWindow();
+  });
+  desktopLyricsWindow.on('closed', () => {
+    if (desktopLyricsWindow !== createdLyricsWindow) return;
+    stopDesktopLyricsCursorWatch();
+    if (desktopLyricsProgrammaticMoveTimer) {
+      clearTimeout(desktopLyricsProgrammaticMoveTimer);
+      desktopLyricsProgrammaticMoveTimer = null;
+    }
+    desktopLyricsProgrammaticMove = false;
+    desktopLyricsLogicalBounds = null;
+    desktopLyricsWindow = null;
+    desktopLyricsPointerCapture = false;
+    desktopLyricsMouseIgnored = null;
+    desktopLyricsDragActive = false;
+    desktopLyricsHotBounds = null;
+    desktopLyricsPillBounds = null;
+    desktopLyricsState.enabled = false;
+    broadcastDesktopLyricsEnabledState(false);
+    createOrUpdateTray();
+  });
+  desktopLyricsWindow.on('moved', () => rememberDesktopLyricsBounds('moved'));
+  desktopLyricsWindow.on('resized', () => rememberDesktopLyricsBounds('resized'));
   desktopLyricsWindow.loadURL(overlayUrl('desktop-lyrics.html')).catch((e) => console.warn('Desktop lyrics load failed:', e.message));
   return desktopLyricsWindow;
 }
 
 function closeDesktopLyricsWindow() {
-  if (desktopLyricsWindow && !desktopLyricsWindow.isDestroyed()) {
-    desktopLyricsUserBounds = desktopLyricsWindow.getBounds();
-    saveDesktopLyricsBoundsNow();
+  stopDesktopLyricsCursorWatch();
+  if (desktopLyricsProgrammaticMoveTimer) {
+    clearTimeout(desktopLyricsProgrammaticMoveTimer);
+    desktopLyricsProgrammaticMoveTimer = null;
   }
+  desktopLyricsProgrammaticMove = false;
+  if (desktopLyricsWindow && !desktopLyricsWindow.isDestroyed()) {
+    try {
+      desktopLyricsUserBounds = desktopLyricsLogicalBounds
+        ? { ...desktopLyricsLogicalBounds }
+        : (desktopLyricsUserBounds ? { ...desktopLyricsUserBounds } : desktopLyricsWindow.getBounds());
+      saveDesktopLyricsBoundsNow();
+    } catch (_) {}
+  }
+  desktopLyricsLogicalBounds = null;
   desktopLyricsState = { ...desktopLyricsState, enabled: false };
   desktopLyricsPointerCapture = false;
   desktopLyricsMouseIgnored = null;
+  desktopLyricsDragActive = false;
   desktopLyricsHotBounds = null;
+  desktopLyricsPillBounds = null;
   if (desktopLyricsWindow && !desktopLyricsWindow.isDestroyed()) {
-    sendDesktopLyricsState();
-    const closingWindow=desktopLyricsWindow;desktopLyricsWindow=null;closingWindow.close();
+    const closingWindow = desktopLyricsWindow;
+    desktopLyricsWindow = null;
+    try { closingWindow.hide(); } catch (_) {}
+    try { closingWindow.removeAllListeners('close'); } catch (_) {}
+    // Destroy immediately so a stalled/unfocused transparent overlay can NEVER refuse to close.
+    try { closingWindow.destroy(); } catch (_) {
+      try { closingWindow.close(); } catch (__) {}
+    }
   }
   desktopLyricsWindow = null;
   broadcastDesktopLyricsEnabledState(false);
+  createOrUpdateTray();
 }
 
 function nativeWindowHandleDecimal(win) {
@@ -3883,9 +4219,15 @@ public static class MineradioShellMessage {
     try {
       win.hookWindowMessage(messageId, () => {
         setTimeout(() => {
-          reconcileFullDesktopMode('explorer-restarted').catch((reconcileError) => {
-            console.warn('[FullDesktopMode] Explorer restart reconcile failed:', reconcileError && reconcileError.message || reconcileError);
-          });
+          if (wallpaperWindow && !wallpaperWindow.isDestroyed()) {
+            positionWallpaperWindow('explorer-restarted');
+            return;
+          }
+          if (fullDesktopModeRuntime.getStatus('explorer-restarted').enabled === true) {
+            reconcileFullDesktopMode('explorer-restarted').catch((reconcileError) => {
+              console.warn('[FullDesktopMode] Explorer restart reconcile failed:', reconcileError && reconcileError.message || reconcileError);
+            });
+          }
         }, 650);
       });
       win.__mineradioTaskbarCreatedMessageId = messageId;
@@ -3940,9 +4282,48 @@ function hookMainWindowMinimizeIntent(win) {
   }
 }
 
+function primaryWallpaperDisplaySnapshot() {
+  const display = screen.getPrimaryDisplay();
+  const full = (display && display.bounds) || { x: 0, y: 0, width: 1920, height: 1080 };
+  // Use full monitor bounds (rcMonitor) so the wallpaper child inside Progman covers behind the translucent
+  // Windows 11 taskbar as well; as a WS_CHILD inside Progman it is invisible to Wallpaper Engine's top-level
+  // fullscreen detector so it never triggers pause/resume flashes.
+  const bounds = {
+    x: Math.round(Number(full.x) || 0),
+    y: Math.round(Number(full.y) || 0),
+    width: Math.max(1, Math.round(Number(full.width) || 1920)),
+    height: Math.max(1, Math.round(Number(full.height) || 1080)),
+  };
+  let physicalBounds = { ...bounds };
+  if (process.platform === 'win32' && typeof screen.dipToScreenRect === 'function') {
+    try {
+      const converted = screen.dipToScreenRect(null, bounds);
+      if (converted && Number(converted.width) > 0 && Number(converted.height) > 0) {
+        physicalBounds = {
+          x: Math.round(Number(converted.x) || 0),
+          y: Math.round(Number(converted.y) || 0),
+          width: Math.max(1, Math.round(Number(converted.width) || bounds.width)),
+          height: Math.max(1, Math.round(Number(converted.height) || bounds.height)),
+        };
+      }
+    } catch (_) {}
+  }
+  return { bounds, physicalBounds };
+}
+
 function positionWallpaperWindow(reason = 'display-change') {
-  if (wallpaperWindow) {
-    wallpaperDesktopRuntime.reconcile(reason).catch(error => console.warn('[Wallpaper] reconcile failed:', error.message));
+  if (wallpaperWindow && !wallpaperWindow.isDestroyed()) {
+    const snap = primaryWallpaperDisplaySnapshot();
+    if (wallpaperPinStatus) {
+      wallpaperPinStatus = { ...wallpaperPinStatus, bounds: snap.bounds, physicalBounds: snap.physicalBounds };
+    }
+    if (wallpaperPinController) {
+      // Never call Electron setBounds() directly on a Progman child — delegate to native ScreenToClient reposition
+      // so Win32 Z-order stays strictly below SHELLDLL_DefView & DeskBox.
+      wallpaperPinController.reposition(snap.physicalBounds);
+    } else {
+      try { wallpaperWindow.setBounds(snap.bounds, false); } catch (_) {}
+    }
     return;
   }
   reconcileFullDesktopMode(reason).catch((error) => {
@@ -3950,73 +4331,272 @@ function positionWallpaperWindow(reason = 'display-change') {
   });
 }
 
+let wallpaperWindowKind = '';
+let wallpaperRecoveryTimestamps = [];
+let wallpaperRecoveryTimer = null;
+function desiredWallpaperKind(payload) {
+  const mode = String(payload?.stage?.mode || wallpaperScene?.stage?.mode || '').trim();
+  if (mode === 'off') return 'plain';
+  if (mode.startsWith('folia-')) return 'folia';
+  return 'dynamic';
+}
+function wallpaperHostUrl() {
+  return overlayUrl('mine-stage/wallpaper-host.html?wallpaper=1');
+}
+async function pushSceneIntoWallpaperWindow(win, sceneData) {
+  if (!win || win.isDestroyed() || !win.webContents || win.webContents.isDestroyed()) return;
+  const data = { stage: sceneData.stage || null, clock: sceneData.clock || null };
+  try {
+    win.webContents.send('lxmine-wallpaper-scene', data);
+  } catch (err) {
+    console.warn('[Wallpaper] pushScene failed:', err && err.message || err);
+  }
+}
+function pushClockOnlyToWallpaperWindow(clock) {
+  if (!clock || !wallpaperWindow || wallpaperWindow.isDestroyed()) return;
+  wallpaperScene = { ...wallpaperScene, clock };
+  const wc = wallpaperWindow.webContents;
+  if (!wc || wc.isDestroyed()) return;
+  try {
+    wc.send('lxmine-wallpaper-clock', clock);
+  } catch (_) {}
+}
+function scheduleWallpaperWindowRecovery(host, reason) {
+  if (appQuitting || wallpaperWindow !== host) return;
+  console.warn('[Wallpaper] isolating host fault and scheduling self-heal:', reason);
+  const savedScene = { ...wallpaperScene };
+  const pin = wallpaperPinController;
+  wallpaperPinController = null;
+  wallpaperPinStatus = null;
+  wallpaperWindow = null;
+  wallpaperWindowKind = '';
+  if (pin) {
+    pin.stop(600).catch(() => {});
+  }
+  if (host && !host.isDestroyed()) {
+    try { host.destroy(); } catch (_) {}
+  }
+  const now = Date.now();
+  wallpaperRecoveryTimestamps = wallpaperRecoveryTimestamps.filter((ts) => now - ts < 120000);
+  if (wallpaperRecoveryTimestamps.length >= 3) {
+    console.warn('[Wallpaper] recovery rate limit reached (3/120s); disabling wallpaper window safely.');
+    broadcastDesktopWallpaperStatus({ ...getWallpaperStatus('wallpaper-recovery-exhausted'), enabled: false, active: false });
+    return;
+  }
+  wallpaperRecoveryTimestamps.push(now);
+  if (wallpaperRecoveryTimer) clearTimeout(wallpaperRecoveryTimer);
+  wallpaperRecoveryTimer = setTimeout(() => {
+    wallpaperRecoveryTimer = null;
+    if (appQuitting || wallpaperWindow) return;
+    createWallpaperWindow(savedScene).catch((err) => {
+      console.warn('[Wallpaper] self-heal failed:', err && err.message || err);
+    });
+  }, 900);
+}
 function createWallpaperWindow(payload = {}) {
+  if (wallpaperRecoveryTimer) {
+    clearTimeout(wallpaperRecoveryTimer);
+    wallpaperRecoveryTimer = null;
+  }
   return enqueueWallpaperWindow(() => createWallpaperWindowInternal(payload));
 }
 async function createWallpaperWindowInternal(payload = {}) {
   wallpaperScene = { ...wallpaperScene, ...payload };
-  if (wallpaperWindow && !wallpaperWindow.isDestroyed()) {
-    await updateWallpaperScene(payload);
-    const status = wallpaperDesktopRuntime.getStatus('wallpaper-reuse');
-    return { ok: true, enabled: status.enabled, status };
+  const targetKind = desiredWallpaperKind(wallpaperScene);
+  if (wallpaperWindow && !wallpaperWindow.isDestroyed() && wallpaperPinController) {
+    await updateWallpaperSceneInternal(payload);
+    const status = { ...getWallpaperStatus('wallpaper-reuse'), enabled: true, active: true };
+    broadcastDesktopWallpaperStatus(status);
+    return { ok: true, enabled: true, status };
   }
+  if (wallpaperPinController) {
+    const oldPin = wallpaperPinController;
+    wallpaperPinController = null;
+    wallpaperPinStatus = null;
+    await oldPin.stop(600).catch(() => {});
+  }
+  if (wallpaperWindow && !wallpaperWindow.isDestroyed()) {
+    try { wallpaperWindow.destroy(); } catch (_) {}
+    wallpaperWindow = null;
+  }
+  const snap = primaryWallpaperDisplaySnapshot();
+  // Per-pixel transparent DirectComposition window (WS_EX_NOREDIRECTIONBITMAP) sized to full rcMonitor.
+  // We load a permanent wrapper (wallpaper-host.html) and call showInactive() BEFORE parenting as a WS_CHILD
+  // into Win11 24H2/25H2 Progman. Subsequent engine switches happen strictly inside #wp-stage-frame so the
+  // top-level cross-process WS_CHILD BrowserWindow NEVER calls loadURL again (avoiding 0xC000027B DComp crash).
   const host = wallpaperWindow = new BrowserWindow({
-    ...screen.getPrimaryDisplay().bounds, show: false, frame: false,
-    transparent: true, backgroundColor: '#00000000', skipTaskbar: true,
-    focusable: false, resizable: false, title: 'LxMine Wallpaper',
-    webPreferences: { contextIsolation: true, nodeIntegration: false, sandbox: true, backgroundThrottling: false },
+    ...snap.bounds, show: false, frame: false,
+    transparent: true, backgroundColor: '#00000000', hasShadow: false,
+    enableLargerThanScreen: true, thickFrame: false, skipTaskbar: true,
+    focusable: false, resizable: false, movable: false, minimizable: false, maximizable: false,
+    alwaysOnTop: false, title: 'LxMine Wallpaper',
+    webPreferences: {
+      preload: path.join(__dirname, 'wallpaper-stage-preload.js'),
+      contextIsolation: true,
+      nodeIntegration: false,
+      sandbox: true,
+      backgroundThrottling: false,
+    },
+  });
+  host.setIgnoreMouseEvents(true);
+  host.webContents.on('render-process-gone', (_event, details) => {
+    scheduleWallpaperWindowRecovery(host, `render-process-gone:${details && details.reason || 'unknown'}`);
+  });
+  host.on('unresponsive', () => {
+    scheduleWallpaperWindowRecovery(host, 'window-unresponsive');
   });
   host.on('closed', () => {
     console.info('[Wallpaper] host closed');
-    if (wallpaperWindow === host) wallpaperWindow = null;
-    if (wallpaperDesktopRuntime.enabled) wallpaperDesktopRuntime.disable('wallpaper-host-closed').catch(error => console.warn('[Wallpaper] cleanup:', error.message));
+    if (wallpaperWindow === host) {
+      wallpaperWindow = null;
+      wallpaperWindowKind = '';
+      wallpaperPinStatus = null;
+      const pin = wallpaperPinController;
+      wallpaperPinController = null;
+      if (pin) pin.stop(600).catch(() => {});
+      broadcastDesktopWallpaperStatus(getWallpaperStatus('wallpaper-host-closed'));
+    }
   });
   try {
-    host.setOpacity(clampNumber(payload.opacity, 0.1, 1, 0.8));
-    await host.loadURL(overlayUrl('mine-stage/harmony-stage.html?wallpaper=1'));
-    await updateWallpaperScene(wallpaperScene);
-    const result = await wallpaperDesktopRuntime.enable(host, {
-    interactive: true,
-    reason: String(payload && payload.reason || 'renderer-enabled'),
-    });
-  if (result && result.ok === true && result.enabled === true) {
-    await wallpaperDesktopRuntime.setSoftwareInteractionLocked(true, 'wallpaper-click-through');
+    wallpaperWindowKind = targetKind;
+    await host.loadURL(wallpaperHostUrl());
     if (host.isDestroyed()) throw new Error('WALLPAPER_HOST_LOST');
-    const backdrop = {
+    // MUST call Electron showInactive() before SetParent so Chromium flips document.hidden=false and creates
+    // the DirectComposition WebGL swapchain cleanly at 60fps.
+    host.showInactive();
+    await pushSceneIntoWallpaperWindow(host, wallpaperScene);
+    if (host.isDestroyed()) throw new Error('WALLPAPER_HOST_LOST');
+    await new Promise((resolve) => setTimeout(resolve, 90));
+    if (host.isDestroyed()) throw new Error('WALLPAPER_HOST_LOST');
+    const pin = await startWallpaperBackdropPin({
+      hwnd: wallpaperWindowHandleDecimal(host),
+      parentPid: process.pid,
+      x: snap.physicalBounds.x,
+      y: snap.physicalBounds.y,
+      width: snap.physicalBounds.width,
+      height: snap.physicalBounds.height,
+      nativeTempPath: NATIVE_HELPER_TEMP_PATH,
+      onExit: (info) => {
+        console.warn('[Wallpaper] pin host exited unexpectedly:', info);
+        if (wallpaperPinController === pin && wallpaperWindow === host && !host.isDestroyed()) {
+          // Self-heal once if the lightweight pin helper ever dies while wallpaper is still active.
+          const latestSnap = primaryWallpaperDisplaySnapshot();
+          startWallpaperBackdropPin({
+            hwnd: wallpaperWindowHandleDecimal(host),
+            parentPid: process.pid,
+            ...latestSnap.physicalBounds,
+            nativeTempPath: NATIVE_HELPER_TEMP_PATH,
+          }).then((recovered) => {
+            if (wallpaperWindow === host && !host.isDestroyed()) {
+              wallpaperPinController = recovered;
+            } else {
+              recovered.stop(400).catch(() => {});
+            }
+          }).catch(() => {});
+        }
+      },
+    });
+    if (host.isDestroyed()) {
+      await pin.stop(400).catch(() => {});
+      throw new Error('WALLPAPER_HOST_LOST');
+    }
+    wallpaperPinController = pin;
+    wallpaperPinStatus = {
+      targetWindowId: String(pin.ack && pin.ack.targetWindowId || ''),
+      parentWindowId: String(pin.ack && pin.ack.parentWindowId || ''),
+      parentClassName: String(pin.ack && pin.ack.parentClassName || 'Progman'),
+      bounds: snap.bounds,
+      physicalBounds: snap.physicalBounds,
+    };
+    await pushSceneIntoWallpaperWindow(host, wallpaperScene);
+    const status = { ...getWallpaperStatus('wallpaper-started'), enabled: true, active: true };
+    broadcastDesktopWallpaperStatus(status);
+    return {
       ok: true,
       enabled: true,
-      active: true,
-      kind: 'transparent-desktop-overlay',
+      status,
+      backdropReady: true,
+      backdrop: { ok: true, enabled: true, active: true, kind: String(pin.ack && pin.ack.mode || 'progman-raised-dcomp-child') },
     };
-    return { ...result, backdropReady: true, backdrop };
+  } catch (error) {
+    if (wallpaperPinController) {
+      const pin = wallpaperPinController;
+      wallpaperPinController = null;
+      await pin.stop(400).catch(() => {});
+    }
+    wallpaperPinStatus = null;
+    if (!host.isDestroyed()) host.destroy();
+    if (wallpaperWindow === host) { wallpaperWindow = null; wallpaperWindowKind = ''; }
+    broadcastDesktopWallpaperStatus(getWallpaperStatus('wallpaper-start-error'));
+    throw error;
   }
-  host.destroy();
-  return result;
-  } catch (error) { host.destroy(); throw error; }
 }
 
-async function updateWallpaperScene(payload = {}) {
+async function updateWallpaperSceneInternal(payload = {}) {
   wallpaperScene = { ...wallpaperScene, ...payload };
   if (!wallpaperWindow || wallpaperWindow.isDestroyed()) return;
-  const data = { stage: payload.stage, clock: payload.clock };
-  await wallpaperWindow.webContents.executeJavaScript(`(() => {
-    const data = ${JSON.stringify(data)};
-    if (!window.lxmineStage) return;
-    if (data.stage) window.lxmineStage.metadata(data.stage);
-    if (data.clock) window.lxmineStage.clock(data.clock);
-  })()`);
+  wallpaperWindowKind = desiredWallpaperKind(wallpaperScene);
+  await pushSceneIntoWallpaperWindow(wallpaperWindow, wallpaperScene);
+}
+function updateWallpaperScene(payload = {}) {
+  // Fast coalesced path for high-frequency playback clock syncs: never block or
+  // pile up behind wallpaperDesktopRuntime lifecycle operations.
+  if (payload && payload.clock && !payload.stage) {
+    pushClockOnlyToWallpaperWindow(payload.clock);
+    return Promise.resolve();
+  }
+  return enqueueWallpaperWindow(() => updateWallpaperSceneInternal(payload));
 }
 
 function closeWallpaperWindow(reason = 'disabled') {
+  if (wallpaperRecoveryTimer) {
+    clearTimeout(wallpaperRecoveryTimer);
+    wallpaperRecoveryTimer = null;
+  }
+  wallpaperRecoveryTimestamps = [];
   return enqueueWallpaperWindow(() => closeWallpaperWindowInternal(reason));
 }
 async function closeWallpaperWindowInternal(reason) {
-  if (wallpaperWindow) console.info('[Wallpaper] close requested:', reason);
+  if (wallpaperRecoveryTimer) {
+    clearTimeout(wallpaperRecoveryTimer);
+    wallpaperRecoveryTimer = null;
+  }
   const host = wallpaperWindow;
-  const result = host ? await wallpaperDesktopRuntime.disable(reason) : await disableFullDesktopMode(reason);
-  if (result.ok && host && !host.isDestroyed()) host.destroy();
-  if (result.ok) { wallpaperWindow = null; wallpaperScene = {}; }
-  return result;
+  const pin = wallpaperPinController;
+  const fullEnabled = fullDesktopModeRuntime.getStatus(`${reason}-check`).enabled === true;
+  if (!host && !pin && !fullEnabled) {
+    wallpaperWindowKind = '';
+    wallpaperScene = {};
+    wallpaperPinStatus = null;
+    return { ok: true, enabled: false, status: { ...getWallpaperStatus(reason), enabled: false, active: false } };
+  }
+  if (host) console.info('[Wallpaper] close requested:', reason);
+  wallpaperPinController = null;
+  wallpaperPinStatus = null;
+  if (pin) {
+    try { await pin.stop(800); } catch (_) {}
+  }
+  if (host && !host.isDestroyed()) {
+    try { host.hide(); } catch (_) {}
+    try { host.destroy(); } catch (_) {}
+  }
+  let result = { ok: true, enabled: false };
+  if (fullEnabled) {
+    try {
+      result = await Promise.race([
+        disableFullDesktopMode(reason),
+        new Promise((resolve) => setTimeout(() => resolve({ ok: true, enabled: false, timedOut: true }), 6500)),
+      ]);
+    } catch (err) {
+      console.warn('[Wallpaper] disable error:', err && err.message || err);
+    }
+  }
+  wallpaperWindow = null;
+  wallpaperWindowKind = '';
+  wallpaperScene = {};
+  const status = { ...getWallpaperStatus(reason), enabled: false, active: false };
+  broadcastDesktopWallpaperStatus(status);
+  return { ...(result || {}), ok: true, enabled: false, status };
 }
 
 function closeOverlayWindows(reason = 'overlay-close') {
@@ -4025,6 +4605,14 @@ function closeOverlayWindows(reason = 'overlay-close') {
     console.warn('[FullDesktopMode] close failed:', error && error.message || error);
   });
 }
+
+ipcMain.handle('desktop-window-set-background-color', async (event, color) => {
+  const win = getSenderWindow(event);
+  if (!win || win.isDestroyed()) return false;
+  const clean = /^#[0-9a-f]{6}$/i.test(String(color || '').trim()) ? String(color).trim() : '#151619';
+  try { win.setBackgroundColor(clean); } catch (_) {}
+  return true;
+});
 
 ipcMain.handle('desktop-window-minimize', async (event) => {
   const win = getSenderWindow(event);
@@ -4745,6 +5333,11 @@ ipcMain.handle('mineradio-built-in-playlist-rename', async (event, id, name) => 
   try { return await builtInPlaylistLibrary.rename(id, name); } catch (error) { return builtInPlaylistMutationError(error); }
 });
 
+ipcMain.handle('mineradio-built-in-playlist-set-cover', async (event, id, cover) => {
+  if (!isTrustedMainWindowIpc(event)) return { ok: false, error: 'UNTRUSTED_SENDER' };
+  try { return await builtInPlaylistLibrary.setCover(id, cover); } catch (error) { return builtInPlaylistMutationError(error); }
+});
+
 ipcMain.handle('mineradio-built-in-playlist-delete', async (event, id) => {
   if (!isTrustedMainWindowIpc(event)) return { ok: false, error: 'UNTRUSTED_SENDER' };
   try { return await builtInPlaylistLibrary.delete(id); } catch (error) { return builtInPlaylistMutationError(error); }
@@ -4775,9 +5368,48 @@ ipcMain.handle('mineradio-built-in-playlist-replace-tracks', async (event, id, t
   try { return await builtInPlaylistLibrary.replaceTracks(id, tracks); } catch (error) { return builtInPlaylistMutationError(error); }
 });
 
-ipcMain.handle('mineradio-built-in-playlist-sync-favorites', async (event, tracks) => {
+ipcMain.handle('mineradio-built-in-playlist-sync-favorites', async (event, tracks, options) => {
   if (!isTrustedMainWindowIpc(event)) return { ok: false, error: 'UNTRUSTED_SENDER' };
-  try { return await builtInPlaylistLibrary.setFavoriteTracks(tracks); } catch (error) { return builtInPlaylistMutationError(error); }
+  try { return await builtInPlaylistLibrary.setFavoriteTracks(tracks, options || {}); } catch (error) { return builtInPlaylistMutationError(error); }
+});
+
+ipcMain.handle('ear-monitor-request-mic-permission', async (event) => {
+  if (!isTrustedMainWindowIpc(event)) return { ok: false, granted: false, error: 'UNTRUSTED_SENDER' };
+  const sourceUrl = event.senderFrame && event.senderFrame.url || event.sender.getURL();
+  if (earMonitorMicPermissionGrant && earMonitorMicPermissionGrant.webContentsId === event.sender.id && Date.now() < earMonitorMicPermissionGrant.expiresAt) {
+    return { ok: true, granted: true, cached: true };
+  }
+  const win = mainWindow && !mainWindow.isDestroyed() ? mainWindow : null;
+  const answer = await dialog.showMessageBox(win, {
+    type: 'question',
+    title: '麦克风权限请求',
+    message: '「耳返监听」需要使用您的麦克风',
+    detail: '仅用于本地实时低延迟人声监听，音频不会上传或录制。建议佩戴有线或低延迟耳机以避免啸叫。',
+    buttons: ['允许使用麦克风', '暂不允许'],
+    defaultId: 0,
+    cancelId: 1,
+    noLink: true,
+  });
+  if (answer.response !== 0) {
+    earMonitorMicPermissionGrant = null;
+    return { ok: true, granted: false, reason: 'USER_DENIED' };
+  }
+  earMonitorMicPermissionGrant = {
+    webContentsId: event.sender.id,
+    origin: sourceUrl,
+    expiresAt: Date.now() + 12 * 60 * 60 * 1000,
+  };
+  return { ok: true, granted: true };
+});
+
+ipcMain.handle('ear-monitor-open-mic-settings', async (event) => {
+  if (!isTrustedMainWindowIpc(event)) return { ok: false };
+  try {
+    await shell.openExternal('ms-settings:privacy-microphone');
+    return { ok: true };
+  } catch (error) {
+    return { ok: false, error: error && error.message || 'OPEN_SETTINGS_FAILED' };
+  }
 });
 
 ipcMain.handle('mineradio-local-library-lyric', async (event, localFileId) => {
@@ -5067,13 +5699,29 @@ ipcMain.handle('mineradio-desktop-lyrics-action',(_event,action)=>{
   return {ok:true};
 });
 
-ipcMain.handle('mineradio-desktop-lyrics-set-dragging', async () => {
+ipcMain.handle('mineradio-desktop-lyrics-set-dragging', async (event, dragging) => {
+  if (!desktopLyricsWindow || desktopLyricsWindow.isDestroyed() || event.sender !== desktopLyricsWindow.webContents) {
+    return { ok: false, error: 'UNTRUSTED_SENDER' };
+  }
+  desktopLyricsDragActive = !!dragging && !isDesktopLyricsLocked();
+  if (desktopLyricsDragActive) {
+    desktopLyricsDragLastAt = Date.now();
+    desktopLyricsPointerCapture = true;
+    setDesktopLyricsIgnoreMouse(false);
+  } else {
+    tickDesktopLyricsCursorWatch();
+  }
   return { ok: true };
 });
 
 ipcMain.handle('mineradio-desktop-lyrics-set-pointer-capture', async (event, active) => {
   try {
-    if(!desktopLyricsWindow||event.sender!==desktopLyricsWindow.webContents)return {ok:false,error:'UNTRUSTED_SENDER'};
+    if (!desktopLyricsWindow || event.sender !== desktopLyricsWindow.webContents) return { ok: false, error: 'UNTRUSTED_SENDER' };
+    if (desktopLyricsDragActive && !isDesktopLyricsLocked()) {
+      desktopLyricsPointerCapture = true;
+      setDesktopLyricsIgnoreMouse(false);
+      return { ok: true };
+    }
     desktopLyricsPointerCapture = !!active;
     applyDesktopLyricsMouseBehavior();
     return { ok: true };
@@ -5089,6 +5737,13 @@ ipcMain.handle('mineradio-desktop-lyrics-set-hot-bounds', async (_event, bounds)
     const right = clampNumber(bounds && bounds.right, left + 1, 6000, left + 1);
     const bottom = clampNumber(bounds && bounds.bottom, top + 1, 6000, top + 1);
     desktopLyricsHotBounds = { left, top, right, bottom };
+    if (bounds && bounds.pill) {
+      const pLeft = clampNumber(bounds.pill.left, -2000, 4000, 0);
+      const pTop = clampNumber(bounds.pill.top, -2000, 4000, 0);
+      const pRight = clampNumber(bounds.pill.right, pLeft + 1, 6000, pLeft + 1);
+      const pBottom = clampNumber(bounds.pill.bottom, pTop + 1, 6000, pTop + 1);
+      desktopLyricsPillBounds = { left: pLeft, top: pTop, right: pRight, bottom: pBottom };
+    }
     return { ok: true };
   } catch (e) {
     return { ok: false, error: e.message || 'DESKTOP_LYRICS_HOT_BOUNDS_FAILED' };
@@ -5098,11 +5753,15 @@ ipcMain.handle('mineradio-desktop-lyrics-set-hot-bounds', async (_event, bounds)
 ipcMain.handle('mineradio-desktop-lyrics-set-lock-state', async (_event, locked) => {
   try {
     desktopLyricsState = { ...desktopLyricsState, clickThrough: !!locked };
-    if (desktopLyricsState.clickThrough !== false) desktopLyricsPointerCapture = false;
+    if (isDesktopLyricsLocked()) {
+      desktopLyricsDragActive = false;
+      desktopLyricsPointerCapture = false;
+    }
+    desktopLyricsMouseIgnored = null;
     applyDesktopLyricsMouseBehavior();
     broadcastDesktopLyricsLockState();
     createOrUpdateTray();
-    return { ok: true, locked: desktopLyricsState.clickThrough !== false };
+    return { ok: true, locked: isDesktopLyricsLocked() };
   } catch (e) {
     return { ok: false, error: e.message || 'DESKTOP_LYRICS_LOCK_FAILED' };
   }
@@ -5111,16 +5770,23 @@ ipcMain.handle('mineradio-desktop-lyrics-set-lock-state', async (_event, locked)
 ipcMain.handle('mineradio-desktop-lyrics-move-by', async (_event, dx, dy) => {
   try {
     if (!desktopLyricsWindow || desktopLyricsWindow.isDestroyed()) return { ok: false, error: 'NO_DESKTOP_LYRICS_WINDOW' };
-    if (desktopLyricsState.clickThrough !== false) return { ok: false, error: 'DESKTOP_LYRICS_LOCKED' };
-    const bounds = desktopLyricsWindow.getBounds();
+    if (isDesktopLyricsLocked()) return { ok: false, error: 'DESKTOP_LYRICS_LOCKED' };
+    desktopLyricsDragActive = true;
+    desktopLyricsDragLastAt = Date.now();
+    desktopLyricsPointerCapture = true;
+    setDesktopLyricsIgnoreMouse(false);
+    // CRITICAL: Never read width/height back from desktopLyricsWindow.getBounds() during drag!
+    // On Windows fractional DPI scaling (125%/150%/175%), Electron's getBounds()->setBounds()
+    // (and even setPosition()) rounds width/height up by +1px on odd coordinates, causing a
+    // small desktop lyrics window to visibly balloon larger during fast dragging.
+    const base = getCanonicalDesktopLyricsBounds();
     const next = {
-      ...bounds,
-      x: Math.round(bounds.x + clampNumber(dx, -160, 160, 0)),
-      y: Math.round(bounds.y + clampNumber(dy, -160, 160, 0)),
+      x: Math.round(base.x + clampNumber(dx, -600, 600, 0)),
+      y: Math.round(base.y + clampNumber(dy, -600, 600, 0)),
+      width: Math.round(base.width),
+      height: Math.round(base.height),
     };
-    desktopLyricsWindow.setBounds(next, false);
-    desktopLyricsUserBounds = desktopLyricsWindow.getBounds();
-    scheduleDesktopLyricsBoundsSave();
+    applyCanonicalDesktopLyricsBounds(next, { constrain: false, persist: true });
     return { ok: true };
   } catch (e) {
     return { ok: false, error: e.message || 'DESKTOP_LYRICS_MOVE_FAILED' };
@@ -5132,12 +5798,16 @@ ipcMain.handle('mineradio-desktop-lyrics-resize-by', async (event, edge, dx, dy)
     if (!desktopLyricsWindow || desktopLyricsWindow.isDestroyed() || event.sender !== desktopLyricsWindow.webContents) {
       return { ok: false, error: 'UNTRUSTED_SENDER' };
     }
-    if (desktopLyricsState.clickThrough !== false) return { ok: false, error: 'DESKTOP_LYRICS_LOCKED' };
+    if (isDesktopLyricsLocked()) return { ok: false, error: 'DESKTOP_LYRICS_LOCKED' };
+    desktopLyricsDragActive = true;
+    desktopLyricsDragLastAt = Date.now();
+    desktopLyricsPointerCapture = true;
+    setDesktopLyricsIgnoreMouse(false);
     const direction = String(edge || '').toLowerCase();
-    const bounds = desktopLyricsWindow.getBounds();
+    const bounds = getCanonicalDesktopLyricsBounds();
     const next = { ...bounds };
-    const deltaX = clampNumber(dx, -160, 160, 0);
-    const deltaY = clampNumber(dy, -160, 160, 0);
+    const deltaX = clampNumber(dx, -600, 600, 0);
+    const deltaY = clampNumber(dy, -600, 600, 0);
     if (direction.includes('e')) next.width += deltaX;
     if (direction.includes('s')) next.height += deltaY;
     if (direction.includes('w')) { next.x += deltaX; next.width -= deltaX; }
@@ -5151,11 +5821,8 @@ ipcMain.handle('mineradio-desktop-lyrics-resize-by', async (event, edge, dx, dy)
       if (direction.includes('n')) next.y -= minHeight - next.height;
       next.height = minHeight;
     }
-    const constrained = constrainDesktopLyricsBounds(next);
-    desktopLyricsWindow.setBounds(constrained, false);
-    desktopLyricsUserBounds = desktopLyricsWindow.getBounds();
-    scheduleDesktopLyricsBoundsSave();
-    return { ok: true, bounds: desktopLyricsUserBounds };
+    const applied = applyCanonicalDesktopLyricsBounds(next, { constrain: true, persist: true });
+    return { ok: true, bounds: applied || desktopLyricsUserBounds };
   } catch (error) {
     return { ok: false, error: error.message || 'DESKTOP_LYRICS_RESIZE_FAILED' };
   }
@@ -5501,12 +6168,11 @@ function shouldRestoreUnexpectedMainWindowVisibility(win) {
   return true;
 }
 
-function shouldRestoreUnexpectedMainWindowMinimize(win) {
-  if (!win || win.isDestroyed() || appQuitting || !startupCompleted) return false;
-  if (win.__mineradioIntentionalHide === true || win.__mineradioExpectedVisible === false) return false;
-  if (win.__mineradioIntentionalMinimize === true) return false;
-  if (fullDesktopModeHostVisibilityTransitionDepth > 0 || fullDesktopModeRuntime.getStatus('main-window-minimize-guard').enabled === true) return false;
-  return win.isMinimized();
+function shouldRestoreUnexpectedMainWindowMinimize(_win) {
+  // Never auto-restore minimized windows: Win+D (Show Desktop), Win+M, Aero Shake,
+  // and taskbar minimize do not send WM_SYSCOMMAND/SC_MINIMIZE, so auto-restoring
+  // causes LxMine to pop back onto the desktop right after Win+D.
+  return false;
 }
 
 function shouldRestoreUnexpectedFullscreenVisibility(win) {
@@ -5790,9 +6456,10 @@ async function createWindowOnce() {
     frame: false,
     fullscreen: false,
     resizable: true,
-    transparent: true,
+    transparent: false,
     opacity: process.env.MINERADIO_STARTUP_QA_HIDDEN === '1' ? 0 : 1,
-    backgroundColor: '#00000000',
+    backgroundColor: '#151619',
+    roundedCorners: true,
     hasShadow: true,
     autoHideMenuBar: true,
     title: APP_NAME,
@@ -5826,8 +6493,12 @@ async function createWindowOnce() {
   win.webContents.on('did-start-navigation', (_event, url, isInPlace, isMainFrame) => {
     if (!isMainFrame || isInPlace || !isTrustedMainDocumentUrl(url)) return;
     win.__mineradioTrustedMainDocumentReady = null;
-    stopWallpaperEngineRuntimeForRenderer('main-frame-navigation');
-    closeWallpaperWindow('main-frame-navigation').catch(() => {});
+    if (wallpaperEngineRuntime.active || wallpaperEngineRuntime.pending) {
+      stopWallpaperEngineRuntimeForRenderer('main-frame-navigation');
+    }
+    if (wallpaperWindow || fullDesktopModeRuntime.enabled || wallpaperDesktopRuntime.enabled) {
+      closeWallpaperWindow('main-frame-navigation').catch(() => {});
+    }
   });
   win.webContents.once('destroyed', () => {
     stopWallpaperEngineRuntimeForRenderer('webcontents-destroyed');
@@ -5845,9 +6516,12 @@ async function createWindowOnce() {
     console.warn('[StartupWindow] did-fail-load:', errorCode, errorDescription, validatedURL || '');
   });
   win.webContents.on('render-process-gone', (_event, details) => {
-    const cleanupPromise = Promise.allSettled([
-      stopWallpaperEngineRuntimeForRenderer(`render-process-gone:${details && details.reason || 'unknown'}`),
-      closeWallpaperWindow(`main-renderer-gone:${details && details.reason || 'unknown'}`),
+    const cleanupPromise = Promise.race([
+      Promise.allSettled([
+        stopWallpaperEngineRuntimeForRenderer(`render-process-gone:${details && details.reason || 'unknown'}`),
+        closeWallpaperWindow(`main-renderer-gone:${details && details.reason || 'unknown'}`),
+      ]),
+      new Promise((resolve) => setTimeout(resolve, 2500)),
     ]);
     const error = new Error(`renderer process gone: ${details && details.reason || 'unknown'} exitCode=${details && details.exitCode}`);
     console.error('[StartupWindow]', error.message);
@@ -5860,8 +6534,22 @@ async function createWindowOnce() {
       setTimeout(() => recoverMainWindowAfterRendererGone(win, details, cleanupPromise), 0);
     }
   });
+  let unresponsiveRecoveryTimer = null;
   win.on('unresponsive', () => {
     console.warn('[StartupWindow] main window became unresponsive', { startupCompleted });
+    if (unresponsiveRecoveryTimer) clearTimeout(unresponsiveRecoveryTimer);
+    unresponsiveRecoveryTimer = setTimeout(() => {
+      unresponsiveRecoveryTimer = null;
+      if (appQuitting || !win || win.isDestroyed() || win !== mainWindow) return;
+      console.warn('[StartupWindow] main window stayed unresponsive > 12s; reloading renderer cleanly');
+      try { win.webContents.reloadIgnoringCache(); } catch (_) {}
+    }, 12000);
+  });
+  win.on('responsive', () => {
+    if (unresponsiveRecoveryTimer) {
+      clearTimeout(unresponsiveRecoveryTimer);
+      unresponsiveRecoveryTimer = null;
+    }
   });
 
   win.webContents.on('before-input-event', (event, input) => {
@@ -5889,20 +6577,15 @@ async function createWindowOnce() {
     const minimizeIntent = consumeMainWindowMinimizeIntent(win);
     writeStartupState('window-minimized', {
       windowMinimizedAt: Date.now(),
-      windowMinimizeIntentional: minimizeIntent.intentional,
-      windowMinimizeReason: minimizeIntent.reason || 'unexpected',
+      windowMinimizeIntentional: true,
+      windowMinimizeReason: minimizeIntent.reason || 'os-or-user-minimize',
     });
+    if (mainWindowMinimizeRecoveryTimer) {
+      clearTimeout(mainWindowMinimizeRecoveryTimer);
+      mainWindowMinimizeRecoveryTimer = null;
+    }
     sendWindowState(win);
     if (fullDesktopModeHostVisibilityTransitionDepth <= 0) suspendWallpaperEngineForHiddenHost(win, 'minimize');
-    if (minimizeIntent.intentional) {
-      scheduleAppMemoryTrim('minimize', 1600);
-      return;
-    }
-    if (mainWindowMinimizeRecoveryTimer) clearTimeout(mainWindowMinimizeRecoveryTimer);
-    mainWindowMinimizeRecoveryTimer = setTimeout(() => {
-      mainWindowMinimizeRecoveryTimer = null;
-      restoreUnexpectedMainWindowMinimize(win, 'minimize-event');
-    }, MAIN_WINDOW_MINIMIZE_RECOVERY_DELAY_MS);
   });
   win.on('restore', () => {
     if (mainWindowMinimizeRecoveryTimer) clearTimeout(mainWindowMinimizeRecoveryTimer);
@@ -5924,10 +6607,9 @@ async function createWindowOnce() {
     if (fullDesktopModeHostVisibilityTransitionDepth > 0) return;
     sendWindowState(win);
     suspendWallpaperEngineForHiddenHost(win, 'hide');
-    if (win.__mineradioIntentionalHide !== true && win.__mineradioExpectedVisible !== false && !win.isMinimized()) {
+    if (win.__mineradioIntentionalHide !== true && win.__mineradioExpectedVisible !== false && !win.isMinimized() && closeBehavior !== 'tray') {
       setTimeout(() => restoreUnexpectedMainWindowVisibility(win, 'hide-event'), MAIN_WINDOW_HIDE_RECOVERY_DELAY_MS);
     }
-    scheduleAppMemoryTrim('hide', 2200);
   });
   win.on('focus', () => sendWindowState(win));
   win.on('blur', () => sendWindowState(win));
@@ -5995,6 +6677,10 @@ async function createWindowOnce() {
     }
   });
   win.on('closed', () => {
+    if (unresponsiveRecoveryTimer) {
+      clearTimeout(unresponsiveRecoveryTimer);
+      unresponsiveRecoveryTimer = null;
+    }
     mainWindowCloseFlushArmed = false;
     clearMainWindowVisibilityGuard();
     clearMainWindowFullscreenVisibilityGuard();
@@ -6059,15 +6745,7 @@ async function createWindowOnce() {
     }, 50);
   });
 
-  const startupShell = path.join(__dirname, 'startup.html');
-  if (fs.existsSync(startupShell)) {
-    win.loadFile(startupShell).catch((error) => {
-      if (!/ERR_ABORTED|ERR_FAILED/i.test(String(error && error.message || error))) {
-        console.warn('[StartupWindow] startup shell skipped:', error.message || error);
-      }
-    });
-  }
-
+  // Launch directly into the main Home UI without displaying any pre-home logo screen.
   await ensureLocalServerStarted();
   await loadMainWindowWithRetry(win);
   if (win.isDestroyed()) throw new Error('Main BrowserWindow was destroyed after navigation');
@@ -6156,6 +6834,16 @@ if (!gotSingleInstanceLock) {
       .catch((e) => reportWindowCreationFailure('Activate', e));
   });
 
+  app.on('child-process-gone', (_event, details) => {
+    if (!details || appQuitting) return;
+    if (details.type === 'GPU') {
+      console.warn('[GPUProcess] child-process-gone:', details.reason || 'unknown', details.exitCode);
+      if (wallpaperWindow && !wallpaperWindow.isDestroyed()) {
+        scheduleWallpaperWindowRecovery(wallpaperWindow, `gpu-process-gone:${details.reason || 'unknown'}`);
+      }
+    }
+  });
+
   app.on('window-all-closed', () => {
     if (process.platform !== 'darwin') app.quit();
   });
@@ -6202,7 +6890,11 @@ if (!gotSingleInstanceLock) {
       let result = null;
       try {
         result = await Promise.race([
-          Promise.all([fullDesktopModeRuntime.dispose('app-before-quit'), wallpaperDesktopRuntime.dispose('app-before-quit')])
+          Promise.all([
+            fullDesktopModeRuntime.dispose('app-before-quit'),
+            wallpaperDesktopRuntime.dispose('app-before-quit'),
+            closeWallpaperWindow('app-before-quit'),
+          ])
             .then(results => results.every(item => item.ok) ? { ok: true } : { ok: false, error: 'DESKTOP_CLEANUP_FAILED' }),
           timeoutResult,
         ]);

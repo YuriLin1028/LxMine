@@ -162,13 +162,39 @@ fun AppViewModel.onBackPress(): Boolean {
         pendingRemoveSource = null
         return consume()
     }
+    if (pendingClearRecent) {
+        pendingClearRecent = false
+        return consume()
+    }
     if (incoming != null) return consume()
+    if (earMonitorOpen) {
+        earMonitorOpen = false
+        return consume()
+    }
+    if (colorPickerTarget.isNotEmpty()) {
+        colorPickerTarget = ""
+        return consume()
+    }
+    if (batchDownloadPickerSongs != null) {
+        batchDownloadPickerSongs = null
+        return consume()
+    }
+    if (coverPickerPlaylist != null) {
+        coverPickerPlaylist = null
+        return consume()
+    }
     if (switchPlatformTarget != null) {
         switchPlatformTarget = null
+        maybeReturnToParentSheet()
         return consume()
     }
     if (editPlaylistTarget != null) {
         editPlaylistTarget = null
+        return consume()
+    }
+    if (queueOrderOpen) {
+        queueOrderOpen = false
+        maybeReturnToParentSheet()
         return consume()
     }
     if (orderOpen) {
@@ -179,8 +205,12 @@ fun AppViewModel.onBackPress(): Boolean {
         closeScanDialog()
         return consume()
     }
+    if (moreSubSheet.isNotEmpty()) {
+        moreSubSheet = ""
+        return consume()
+    }
     if (showSheet) {
-        showSheet = false
+        closeSheet()
         return consume()
     }
     if (commentsOpen) {
@@ -188,6 +218,10 @@ fun AppViewModel.onBackPress(): Boolean {
         return consume()
     }
     if (showPlayer) {
+        if (!stageControlsVisible) {
+            stageControlsVisible = true
+            return consume()
+        }
         showPlayer = false
         return consume()
     }
@@ -227,6 +261,8 @@ fun AppViewModel.onBackPress(): Boolean {
 fun AppViewModel.openSheet(name: String) {
     draft = ""
     sheet = name
+    moreSubSheet = ""
+    returnSheetAfterSub = ""
     error = ""
     addToPlaylistSong = null
     showSheet = true
@@ -237,14 +273,31 @@ fun AppViewModel.openSheet(name: String) {
 
 fun AppViewModel.closeSheet() {
     showSheet = false
+    moreSubSheet = ""
+    returnSheetAfterSub = ""
     draft = ""
     renamingPlaylistId = ""
     busy = false
 }
 
+/** 从固定独立页（如「播放队列」「更多」）跳到二级独立页时先收起父页，子页关闭后自动返回父页（对齐鸿蒙 Index.ets）。 */
+fun AppViewModel.openSubSheetFromSheet(parentSheet: String, openChild: () -> Unit) {
+    returnSheetAfterSub = parentSheet
+    showSheet = false
+    moreSubSheet = ""
+    openChild()
+}
+
+fun AppViewModel.maybeReturnToParentSheet() {
+    val parent = returnSheetAfterSub
+    if (parent.isEmpty()) return
+    returnSheetAfterSub = ""
+    openSheet(parent)
+}
+
 fun AppViewModel.submitSheet() {
     if (busy) return
-    if (sheet == "播放队列" || sheet == "添加到歌单") {
+    if (sheet == "播放队列" || sheet == "添加到歌单" || sheet == "更多" || sheet == "耳返监听") {
         showSheet = false
         return
     }
@@ -546,6 +599,9 @@ fun AppViewModel.respondSync(accepted: Boolean) {
                         for (index in 0 until array.length()) {
                             array.optJSONObject(index)?.let { incomingPlaylists.add(MusicPlaylist.fromJson(it)) }
                         }
+                    }
+                    if (incomingPlaylists.none { it.isFavorite || it.name == "我喜欢的" || it.name == "我的收藏" }) {
+                        incomingPlaylists.add(0, createPlaylist("我的收藏", favorite = true))
                     }
                     val incomingSources = mutableListOf<SyncSourcePayload>()
                     bundle.optJSONArray("sources")?.let { array ->

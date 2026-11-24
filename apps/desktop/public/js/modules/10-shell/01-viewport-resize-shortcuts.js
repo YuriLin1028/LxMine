@@ -1,24 +1,48 @@
 // ============================================================
-function refreshMainRendererViewport(reason) {
+var _viewportResizeRaf = 0;
+var _viewportSettleTimer = 0;
+function refreshMainRendererViewport(reason, deferBufferResize) {
   if (typeof camera !== 'undefined' && camera) {
     camera.aspect = Math.max(1, innerWidth) / Math.max(1, innerHeight);
     camera.updateProjectionMatrix();
   }
-  applyRendererPowerMode();
-  if (typeof requestStageLyricCameraSnap === 'function' && (desktopRuntimeState.fullscreen || document.fullscreenElement)) {
+  var wakingFromSleep = typeof renderPowerState !== 'undefined' && renderPowerState && renderPowerState.mode === 'sleep' && !isDeepBackgroundMode();
+  if (!deferBufferResize || wakingFromSleep) {
+    applyRendererPowerMode();
+  }
+  if (typeof requestStageLyricCameraSnap === 'function') {
     requestStageLyricCameraSnap(reason === 'resize' ? 4 : 10);
   }
 }
 function scheduleMainRendererViewportRefresh(reason) {
-  refreshMainRendererViewport(reason || 'sync');
-  [48, 140, 320].forEach(function (delay) {
-    setTimeout(function () { refreshMainRendererViewport(reason || 'sync'); }, delay);
-  });
+  if (reason === 'resize') {
+    if (!_viewportResizeRaf) {
+      _viewportResizeRaf = requestAnimationFrame(function () {
+        _viewportResizeRaf = 0;
+        refreshMainRendererViewport('resize', true);
+      });
+    }
+    if (_viewportSettleTimer) clearTimeout(_viewportSettleTimer);
+    _viewportSettleTimer = setTimeout(function () {
+      _viewportSettleTimer = 0;
+      refreshMainRendererViewport('resize-settled', false);
+    }, 85);
+    return;
+  }
+  if (_viewportSettleTimer) {
+    clearTimeout(_viewportSettleTimer);
+    _viewportSettleTimer = 0;
+  }
+  refreshMainRendererViewport(reason || 'sync', false);
+  _viewportSettleTimer = setTimeout(function () {
+    _viewportSettleTimer = 0;
+    refreshMainRendererViewport(reason || 'sync', false);
+  }, 120);
 }
 window.addEventListener('resize', function () {
   scheduleMainRendererViewportRefresh('resize');
   if (desktopRuntimeState.fullscreen || desktopFullscreenActive || document.fullscreenElement || document.body.classList.contains('desktop-fullscreen')) layoutFullscreenDiyZone();
-});
+}, { passive: true });
 document.addEventListener('keydown', function (e) {
   if (isTypingTarget(e.target)) return;
   if (handleConfiguredLocalHotkey(e)) return;

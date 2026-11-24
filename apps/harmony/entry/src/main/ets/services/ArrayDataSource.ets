@@ -40,6 +40,12 @@ export class ArrayDataSource<T> implements IDataSource {
       }
     }
   }
+  notifyChange(index: number): void {
+    if (index < 0 || index >= this.items.length) return;
+    for (const listener of this.listeners) {
+      listener.onDataChange(index);
+    }
+  }
   reload(): void {
     for (const listener of this.listeners) {
       listener.onDataReloaded();

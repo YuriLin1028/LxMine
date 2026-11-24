@@ -157,34 +157,58 @@
     return !!(fx && fx.sonicGroundColorMode === 'custom');
   }
 
+  var _sc = null;
+  function scratchColors() {
+    if (_sc) return _sc;
+    _sc = {
+      primary: new THREE.Color(),
+      secondary: new THREE.Color(),
+      highlight: new THREE.Color(),
+      base1: new THREE.Color(),
+      base2: new THREE.Color(),
+      coolCore: new THREE.Color(),
+      coolEdge: new THREE.Color(),
+      warmCore: new THREE.Color(),
+      warmEdge: new THREE.Color(),
+      ripple: new THREE.Color(),
+      tint: new THREE.Color(),
+      refDark: new THREE.Color(DEFAULT_GROUND_BASE_COLOR),
+      refWhite: new THREE.Color('#ffffff'),
+      refWarm: new THREE.Color('#ffb15a')
+    };
+    return _sc;
+  }
+
   function sonicCoverGroundTheme(fx) {
+    var c = scratchColors();
     var stage = global.stageLyrics || {};
     var palette = stage.coverPalette || stage.palette || {};
     var tint = sonicHex(fx, 'visualTintColor', '#62d6ff');
     var primaryHex = sonicPaletteHex(palette.primary, tint);
     var secondaryHex = sonicPaletteHex(palette.secondary, DEFAULT_GROUND_COOL_COLOR);
     var highlightHex = sonicPaletteHex(palette.highlight, DEFAULT_GROUND_ACCENT_COLOR);
-    var primary = new THREE.Color(primaryHex);
-    var secondary = new THREE.Color(secondaryHex);
-    var highlight = new THREE.Color(highlightHex);
-    var base1 = primary.clone().lerp(new THREE.Color(DEFAULT_GROUND_BASE_COLOR), 0.84);
-    var base2 = base1.clone().lerp(highlight, 0.14);
-    var coolCore = primary.clone().lerp(new THREE.Color('#ffffff'), 0.08);
-    var warmCore = secondary.clone().lerp(new THREE.Color('#ffb15a'), 0.18);
-    var ripple = highlight.clone().lerp(new THREE.Color('#ffffff'), 0.10);
-    return { base1: base1, base2: base2, coolCore: coolCore, warmCore: warmCore, ripple: ripple };
+    c.primary.set(primaryHex);
+    c.secondary.set(secondaryHex);
+    c.highlight.set(highlightHex);
+    c.base1.copy(c.primary).lerp(c.refDark, 0.84);
+    c.base2.copy(c.base1).lerp(c.highlight, 0.14);
+    c.coolCore.copy(c.primary).lerp(c.refWhite, 0.08);
+    c.warmCore.copy(c.secondary).lerp(c.refWarm, 0.18);
+    c.ripple.copy(c.highlight).lerp(c.refWhite, 0.10);
+    return { base1: c.base1, base2: c.base2, coolCore: c.coolCore, warmCore: c.warmCore, ripple: c.ripple };
   }
 
   function sonicCustomGroundTheme(fx) {
-    var tint = new THREE.Color((fx && fx.visualTintColor) || '#62d6ff');
-    var base1 = new THREE.Color(sonicHex(fx, 'sonicGroundBaseColor', DEFAULT_GROUND_BASE_COLOR));
-    return {
-      base1: base1,
-      base2: base1.clone().lerp(new THREE.Color('#ffffff'), 0.12),
-      coolCore: new THREE.Color(sonicHex(fx, 'sonicGroundCoolColor', DEFAULT_GROUND_COOL_COLOR)).lerp(tint, fx && fx.visualTintMode === 'custom' ? 0.08 : 0.0),
-      warmCore: new THREE.Color(sonicHex(fx, 'sonicGroundWarmColor', DEFAULT_GROUND_WARM_COLOR)).lerp(tint, fx && fx.visualTintMode === 'custom' ? 0.05 : 0.0),
-      ripple: new THREE.Color(sonicHex(fx, 'sonicGroundAccentColor', DEFAULT_GROUND_ACCENT_COLOR))
-    };
+    var c = scratchColors();
+    c.tint.set((fx && fx.visualTintColor) || '#62d6ff');
+    c.base1.set(sonicHex(fx, 'sonicGroundBaseColor', DEFAULT_GROUND_BASE_COLOR));
+    c.base2.copy(c.base1).lerp(c.refWhite, 0.12);
+    c.coolCore.set(sonicHex(fx, 'sonicGroundCoolColor', DEFAULT_GROUND_COOL_COLOR));
+    if (fx && fx.visualTintMode === 'custom') c.coolCore.lerp(c.tint, 0.08);
+    c.warmCore.set(sonicHex(fx, 'sonicGroundWarmColor', DEFAULT_GROUND_WARM_COLOR));
+    if (fx && fx.visualTintMode === 'custom') c.warmCore.lerp(c.tint, 0.05);
+    c.ripple.set(sonicHex(fx, 'sonicGroundAccentColor', DEFAULT_GROUND_ACCENT_COLOR));
+    return { base1: c.base1, base2: c.base2, coolCore: c.coolCore, warmCore: c.warmCore, ripple: c.ripple };
   }
 
   function floatingBlockCountForFx(fx) {
@@ -741,14 +765,15 @@
   function syncTheme(mat, fx, audio, dt) {
     if (!mat) return;
     var u = mat.uniforms;
+    var c = scratchColors();
     var lerpSpeed = blend01(3.0 * Math.max(0.001, dt || 1 / 60));
     var theme = sonicUsesCustomGroundColors(fx) ? sonicCustomGroundTheme(fx) : sonicCoverGroundTheme(fx);
     var base1 = theme.base1;
     var base2 = theme.base2;
     var coolCore = theme.coolCore;
-    var coolEdge = coolCore.clone().lerp(base1, 0.34);
+    var coolEdge = c.coolEdge.copy(coolCore).lerp(base1, 0.34);
     var warmCore = theme.warmCore;
-    var warmEdge = warmCore.clone().lerp(base1, 0.26);
+    var warmEdge = c.warmEdge.copy(warmCore).lerp(base1, 0.26);
     var ripple = theme.ripple;
     colorUniformLerp(u.uBaseColor1, base1, lerpSpeed);
     colorUniformLerp(u.uBaseColor2, base2, lerpSpeed);

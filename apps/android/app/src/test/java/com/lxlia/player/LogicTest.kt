@@ -200,8 +200,8 @@ class LogicTest {
         val restored = LyricPreferences.fromJson(prefs.toJson().toString())
         assertEquals(1.25f, restored.lyricScale, 0.001f)
         assertTrue(restored.showRomaji)
-        assertEquals(0.75f, LyricPreferences.fromJson("""{"lyricScale":0.2}""").lyricScale, 0.001f)
-        assertEquals(1.40f, LyricPreferences.fromJson("""{"lyricScale":2.5}""").lyricScale, 0.001f)
+        assertEquals(0.55f, LyricPreferences.fromJson("""{"lyricScale":0.2}""").lyricScale, 0.001f)
+        assertEquals(1.50f, LyricPreferences.fromJson("""{"lyricScale":2.5}""").lyricScale, 0.001f)
 
         val legacyHex = "#" + "F4D2" + "8A"
         val legacySage = "#" + "8FB2" + "A6"
@@ -253,6 +253,6 @@ class LogicTest {
         assertTrue("ic_heart_fill.svg" in MULTICOLOR_ASSET_ICONS)
         assertTrue("ic_style_wand.svg" in MULTICOLOR_ASSET_ICONS)
         assertTrue("ic_sparkle.svg" in MULTICOLOR_ASSET_ICONS)
-        assertTrue("chip_music_on.svg" in MULTICOLOR_ASSET_ICONS)
+        assertTrue("chip_music_on.svg" !in MULTICOLOR_ASSET_ICONS)
     }
 }

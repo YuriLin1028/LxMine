@@ -142,18 +142,8 @@ fun AppHeader(vm: AppViewModel) {
                 })
             }
         }
+        // 非本地歌单顶栏右上角仅保留「搜索本列表」（管理功能统一归入 SongListTools「编辑」，与鸿蒙 Index.ets 严格一致）。
         if (vm.secondaryHeader() && opened != null && opened.kind != "local") {
-            val canManage = vm.canManageOpenedPlaylist()
-            val manageMenu = rememberGlassMenuTrigger {
-                buildList {
-                    add(GlassMenuItem("编辑歌单") { vm.openEditPlaylist(opened) })
-                    add(GlassMenuItem("重命名") { vm.openRenamePlaylist(opened) })
-                    if (opened.songs.isNotEmpty()) {
-                        add(GlassMenuItem("批量下载") { vm.downloadBatch(opened.songs) })
-                    }
-                    add(GlassMenuItem("删除歌单") { vm.deleteOpenedPlaylist() })
-                }
-            }
             Row(
                 modifier = Modifier
                     .align(Alignment.TopEnd)
@@ -164,15 +154,6 @@ fun AppHeader(vm: AppViewModel) {
                     vm.listSearchOpen = !vm.listSearchOpen
                     if (!vm.listSearchOpen) vm.listQuery = ""
                 })
-                if (canManage) {
-                    MaterialIconButton(
-                        "ic_more.svg",
-                        "歌单管理",
-                        modifier = manageMenu.modifier,
-                        diameter = 38.dp,
-                        onClick = { manageMenu.show() },
-                    )
-                }
             }
         }
     }
@@ -231,12 +212,12 @@ private fun CapsuleSelect(label: String, items: List<String>, modifier: Modifier
         }
     }
     GlassSurface(
-        modifier = modifier.height(30.dp).then(menu.modifier).tapNoRipple { menu.show() },
-        shape = RoundedCornerShape(15.dp),
+        modifier = modifier.height(36.dp).then(menu.modifier).tapNoRipple { menu.show() },
+        shape = RoundedCornerShape(18.dp),
         tone = GlassTone.UltraThin,
         interactive = true,
     ) {
-        Box(Modifier.fillMaxWidth().height(30.dp), contentAlignment = Alignment.CenterStart) {
+        Box(Modifier.fillMaxWidth().height(36.dp), contentAlignment = Alignment.CenterStart) {
             Text(label, fontSize = 13.sp, color = LocalGlassInk.current, maxLines = 1, overflow = TextOverflow.Ellipsis, modifier = Modifier.padding(horizontal = 12.dp))
         }
     }
@@ -302,10 +283,12 @@ fun HomeSearchEntry(vm: AppViewModel) {
             liquid = true,
             interactive = true,
         ) {
+            val innerPadH = (16f - 4f * animatedMorph).dp
+            val innerGap = (10f * (1f - animatedMorph)).dp
             Row(
-                modifier = Modifier.fillMaxWidth().height(height.dp).padding(horizontal = 16.dp),
+                modifier = Modifier.fillMaxWidth().height(height.dp).padding(horizontal = innerPadH),
                 verticalAlignment = Alignment.CenterVertically,
-                horizontalArrangement = Arrangement.spacedBy(10.dp),
+                horizontalArrangement = Arrangement.spacedBy(innerGap),
             ) {
                 AssetIcon("ic_search.svg", size = 20.dp, alpha = 0.72f, tint = LocalGlassInk.current)
                 val ink = LocalGlassInk.current

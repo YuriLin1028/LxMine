@@ -40,14 +40,14 @@ function buildLyricMesh(input, preparedRowLayerBundle, preparedMasks) {
   var maskLayout = { fontSize: mask.fontSize, lineHeight: mask.lineHeight };
   var rowBaseLayout = stableStageLyricRowMaskLayout();
   var activePayload = activeStageLyricPayload(payload || text);
-  var activeMask = preparedMasks.activeMask || lyricRowLayerBundleActiveMask(preparedRowLayerBundle) || makeLyricMask(activePayload || payload || text, maskLayout);
+  var activeMask = preparedMasks.activeMask || lyricRowLayerBundleActiveMask(preparedRowLayerBundle) || makeLyricMask(activePayload || payload || text, rowBaseLayout);
   var rowBasePayload = rowBaseStageLyricPayload(payload || text);
   var rowBaseMask = preparedMasks.rowBaseMask || makeLyricMask(rowBasePayload || activePayload || payload || text, rowBaseLayout);
   var contextMask = null;
   var pal = stageLyrics.palette;
   var worldW = 6.10;
   var worldH = worldW * (mask.height / mask.width);
-  var rowWorldH = worldW * ((rowBaseMask && rowBaseMask.height || mask.height) / Math.max(1, rowBaseMask && rowBaseMask.width || mask.width));
+  var rowWorldH = worldW * ((rowBaseMask && (rowBaseMask.logicalHeight || rowBaseMask.height) || mask.height || 384) / 2048);
   var textWorldW = worldW * ((activeMask.activeTextWidth || activeMask.textWidth) / activeMask.width);
   var textWorldH = worldH * ((activeMask.textHeight || activeMask.fontSize) / activeMask.height);
   var group = new THREE.Group();
@@ -189,10 +189,10 @@ function buildLyricMesh(input, preparedRowLayerBundle, preparedMasks) {
   sparks.visible = !!fx.lyricGlowParticles;
   group.add(sparks);
 
-  var lineWorldStep = rowLayerBundle && rowLayerBundle.lineStepWorld ? rowLayerBundle.lineStepWorld : worldH * ((mask.lineHeight || mask.fontSize || 1) / Math.max(1, mask.height || 1));
-  lineWorldStep = clampRange(lineWorldStep, 0.20, 0.94);
+  var lineWorldStep = rowLayerBundle && rowLayerBundle.lineStepWorld ? rowLayerBundle.lineStepWorld : worldW * ((mask.logicalLineHeight || mask.lineHeight || mask.fontSize || 154) / 2048);
+  lineWorldStep = clampRange(lineWorldStep, 0.36, 1.85);
   var translationLineStepWorld = rowLayerBundle && rowLayerBundle.translationLineStepWorld ? rowLayerBundle.translationLineStepWorld : lineWorldStep;
-  translationLineStepWorld = clampRange(translationLineStepWorld, 0.20, 0.78);
+  translationLineStepWorld = clampRange(translationLineStepWorld, 0.32, 1.45);
   if (!singleLineSwap) group.position.y += enterDir * lineWorldStep;
   group.userData.lyric = {
     mask: mask, activeMask: activeMask, contextMask: contextMask, textMesh: null, context: context, readability: readability, glow: glow, sparks: sparks, sun: sun,
@@ -286,7 +286,7 @@ function stepCooperativeLyricMeshBuild(state, maxPhases, budgetMs) {
     state.rowBaseMask = makeLyricMask(state.rowBasePayload || state.activePayload || state.payload || state.text, rowBaseLayout);
     var worldW = 6.10;
     var worldH = worldW * (state.layoutMask.height / state.layoutMask.width);
-    var rowWorldH = worldW * ((state.rowBaseMask && state.rowBaseMask.height || state.layoutMask.height) / Math.max(1, state.rowBaseMask && state.rowBaseMask.width || state.layoutMask.width));
+    var rowWorldH = worldW * ((state.rowBaseMask && (state.rowBaseMask.logicalHeight || state.rowBaseMask.height) || state.layoutMask.height || 384) / 2048);
     state.rowState = beginLyricRowLayerGroupBuild(state.payload || state.text, state.rowBaseMask || state.layoutMask, worldW, rowWorldH || worldH, stageLyrics.palette, lyricMotionProfile());
     state.totalPhases = state.layoutPhaseCount + 1 + (Number(state.rowState && state.rowState.totalPhases) || state.totalRows * 3) + 1;
     state.initPhase = 2;

@@ -121,6 +121,24 @@ export class LocalMusic {
     }
   }
 
+  removeAdoptedPaths(paths: string[], songKeys: string[] = []): void {
+    const targetPathSet = new Set<string>(paths.filter((p: string) => p.length > 0));
+    const targetKeySet = new Set<string>(songKeys.filter((k: string) => k.length > 0));
+    if (!targetPathSet.size && !targetKeySet.size) return;
+    const before = this.items.length;
+    this.items = this.items.filter((item: LocalTrack) => {
+      if (targetPathSet.has(item.path)) return false;
+      if (targetKeySet.size > 0 && item.sourceUri.startsWith('download:') && targetKeySet.has(songKey(item.song))) {
+        return false;
+      }
+      return true;
+    });
+    if (this.items.length !== before) {
+      this.persist();
+      this.onChange(this.songs());
+    }
+  }
+
   /** 复制选中的音频到沙箱；返回本次新增数量。重复选择同一 URI 会跳过。 */
   async addUris(uris: string[]): Promise<number> {
     if (!this.context || !this.dir) throw new Error('本地音乐尚未初始化');

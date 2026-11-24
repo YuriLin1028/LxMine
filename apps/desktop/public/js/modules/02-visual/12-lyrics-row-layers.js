@@ -29,23 +29,54 @@ function lyricLayerVirtualIndex(entry, fallbackIndex, activeLine, usesTrack) {
   return lyricRowVirtualIndex(entry, fallbackIndex);
 }
 
-function lyricTrackLineStepWorld(mask, worldH) {
+function lyricTrackLineStepWorld(mask, worldH, baseWorldW) {
   mask = mask || {};
-  var h = Math.max(1, Number(mask.height) || 384);
-  var lineHeight = Number(mask.lineHeight) || Number(mask.fontSize) || 128;
-  var step = worldH * (lineHeight / h);
-  step *= clampRange(1 + (lyricContextSpreadValue() - 1) * 0.32, 0.86, 1.45);
-  if (lyricTranslationLayoutActive()) step *= 1.06;
-  return clampRange(step, 0.22, 0.94);
+  // Every row plane is scaled by lyricRowLogicalWorldWidth(lineMask, worldW) = worldW * (logicalWidth / 2048),
+  // so 1 logical canvas px ALWAYS maps to (worldW / 2048) world units regardless of how wide an individual
+  // long line expanded rowBaseMask.width. Derive vertical step from the same 2048 baseline so long titles/rap
+  // lines never shrink row spacing below glyph height and cause adjacent lines to collide.
+  var w = Math.max(0.1, Number(baseWorldW) || 6.10);
+  var logicalFontSize = Math.max(1, Number(mask.logicalFontSize) || Number(mask.fontSize) || 128);
+  var fallbackLineHeight = logicalFontSize * (typeof lyricLineHeightFactor === 'function' ? lyricLineHeightFactor() : 1.2);
+  var logicalLineHeight = Math.max(logicalFontSize, Number(mask.logicalLineHeight) || Number(mask.lineHeight) || fallbackLineHeight);
+  var glyphWorldH = w * (logicalFontSize / 2048);
+  var step = w * (logicalLineHeight / 2048) * 1.14;
+  step *= clampRange(1 + (lyricContextSpreadValue() - 1) * 0.28, 0.88, 1.46);
+  var userScaleBoost = 1 + Math.max(0, (Number(fx && fx.userLyricScale) || 1) - 1) * 0.20;
+  step *= userScaleBoost;
+  // Balanced non-overlap floor: crisp breathing gap for bold stroked glyphs without sprawling gaps.
+  var minClearStep = glyphWorldH * 1.38;
+  return clampRange(Math.max(step, minClearStep), 0.44, 1.48);
 }
 
-function lyricTranslationLineStepWorld(mask, worldH) {
+function lyricTranslationLineStepWorld(mask, worldH, baseWorldW) {
   mask = mask || {};
-  var h = Math.max(1, Number(mask.height) || 384);
-  var lineHeight = Number(mask.lineHeight) || Number(mask.fontSize) || 128;
-  var step = worldH * (lineHeight / h);
-  if (lyricTranslationLayoutActive()) step *= 1.04;
-  return clampRange(step, 0.20, 0.78);
+  var w = Math.max(0.1, Number(baseWorldW) || 6.10);
+  var logicalFontSize = Math.max(1, Number(mask.logicalFontSize) || Number(mask.fontSize) || 128);
+  var fallbackLineHeight = logicalFontSize * (typeof lyricLineHeightFactor === 'function' ? lyricLineHeightFactor() : 1.2);
+  var logicalLineHeight = Math.max(logicalFontSize, Number(mask.logicalLineHeight) || Number(mask.lineHeight) || fallbackLineHeight);
+  var glyphWorldH = w * (logicalFontSize / 2048);
+  var step = w * (logicalLineHeight / 2048) * 1.00;
+  var minClearStep = glyphWorldH * 1.12;
+  return clampRange(Math.max(step, minClearStep), 0.36, 1.15);
+}
+
+function lyricTranslationPairOffsetWorld(lineMask, baseWorldW, parentScale, transScale, subLines) {
+  var w = Math.max(0.1, Number(baseWorldW) || 6.10);
+  var logicalFontSize = Math.max(1, Number(lineMask && (lineMask.logicalFontSize || lineMask.fontSize)) || 128);
+  var mainEmWorld = w * (logicalFontSize / 2048);
+  var transFontRatio = lyricTranslationScaleValue();
+  var pScale = clampRange(Number(parentScale) || 1, 0.22, 1.45);
+  var tScale = clampRange(Number(transScale) || pScale, 0.22, 1.45);
+  var linesCount = Math.max(1, Math.min(2, Number(subLines) || Number(lineMask && lineMask.translationSubLines) || 1));
+  var userSpacing = typeof lyricLineHeightFactor === 'function' ? lyricLineHeightFactor() : 1.2;
+  // In Canvas2D alphabetic baseline (H/2 + 0.36 * em), Latin descenders (g, j, p, q, y) reach
+  // +0.61 * em below center. Place translation cleanly below descenders (matching plain-stage.html)
+  // so descenders NEVER collide with translation/romaji glyphs.
+  var parentDescenderHalfH = 0.66 * mainEmWorld * pScale;
+  var transAscenderHalfH = (linesCount > 1 ? 1.16 : 0.52) * (mainEmWorld * transFontRatio) * tScale;
+  var cleanAir = clampRange(0.18 + (userSpacing - 1.0) * 0.06, 0.14, 0.28) * mainEmWorld * pScale;
+  return parentDescenderHalfH + cleanAir + transAscenderHalfH;
 }
 
 function lyricTranslationAnchoredY(entry, fallbackIndex, activeLine, lineStepWorld, translationLineStepWorld, scrollOffset, rowDrift, currentTranslation, usesTrack) {
@@ -133,7 +164,7 @@ function lyricRowDepthScale(entry, index, activeLine) {
 function makeLyricBackfaceReadableMaterial(opts) {
   opts = opts || {};
   var color = opts.color && opts.color.isColor ? opts.color.clone() : new THREE.Color(opts.color == null ? 0xffffff : opts.color);
-  return new THREE.ShaderMaterial({
+  return applyLyricViewportFade(new THREE.ShaderMaterial({
     uniforms: {
       uMap: { value: opts.map || null },
       uColor: { value: color },
@@ -163,7 +194,7 @@ function makeLyricBackfaceReadableMaterial(opts) {
     depthTest: false,
     side: THREE.DoubleSide,
     blending: opts.blending || THREE.NormalBlending
-  });
+  }));
 }
 function setLyricTextureMaterialOpacity(mat, value) {
   value = clampRange(Number(value) || 0, 0, 1);
@@ -218,12 +249,10 @@ function makeLyricLineMask(entry, baseMask, asActive) {
 }
 
 function lyricTranslationMeshScale(entry) {
-  if (!entry || !entry.translationLine) return 1;
-  var scale = isFinite(Number(entry.scale)) ? Number(entry.scale) : lyricTranslationScaleValue();
-  var defaultScale = fxDefaults && isFinite(Number(fxDefaults.lyricTranslationScale)) ? Number(fxDefaults.lyricTranslationScale) : 0.78;
-  var roleBoost = entry.parentRole === 'current' ? 1.08 : 0.92;
-  var defaultEntryScale = clampRange(defaultScale * roleBoost, entry.parentRole === 'current' ? 0.70 : 0.50, entry.parentRole === 'current' ? 1.12 : 0.96);
-  return clampRange(scale / Math.max(0.01, defaultEntryScale), 0.72, 1.34);
+  // makeLyricLineMask already draws translation text at fontSize * entry.scale (0.54),
+  // and updateLyricRowLayers couples translation mesh scale directly to its parent row's scale.
+  // Never multiply a second scale factor on top of the baked texture size.
+  return 1;
 }
 
 function lyricRowLogicalWorldWidth(mask, baseWorldW) {
@@ -237,10 +266,10 @@ function lyricRowLogicalWorldWidth(mask, baseWorldW) {
 }
 
 function lyricViewportSafeMarginPx(viewportWidth) {
-  return clampRange(Math.max(1, Number(viewportWidth) || 1) * 0.045, 42, 92);
+  return clampRange(Math.max(1, Number(viewportWidth) || 1) * 0.055, 20, 76);
 }
 
-function lyricViewportFitRatio(viewportWidth, centerX, projectedUnitTextWidth, intendedScale, marginPx) {
+function lyricViewportFitRatio(viewportWidth, centerX, projectedUnitTextWidth, intendedScale, marginPx, allowShortBoost) {
   viewportWidth = Math.max(1, Number(viewportWidth) || 1);
   centerX = Number(centerX);
   projectedUnitTextWidth = Math.max(0, Number(projectedUnitTextWidth) || 0);
@@ -249,14 +278,23 @@ function lyricViewportFitRatio(viewportWidth, centerX, projectedUnitTextWidth, i
   if (!isFinite(centerX) || projectedUnitTextWidth <= 0.001) return 1;
   var leftSpace = Math.max(0, centerX - marginPx);
   var rightSpace = Math.max(0, viewportWidth - marginPx - centerX);
-  // The lyric stays centred on its authored world position, so the shorter
-  // side is the real limit. This deliberately does not force every long line
-  // to one fixed width: a centred row may use nearly the entire viewport,
-  // while an intentionally offset row respects the smaller free side.
   var availableWidth = Math.max(1, Math.min(leftSpace, rightSpace) * 2);
   var intendedWidth = projectedUnitTextWidth * intendedScale;
-  if (intendedWidth <= availableWidth) return 1;
-  return clampRange(availableWidth / intendedWidth, 0.22, 1);
+  if (intendedWidth > availableWidth) {
+    return clampRange(availableWidth / intendedWidth, 0.22, 1);
+  }
+  if (!allowShortBoost) return 1;
+  // Adaptive sizing for short lyrics (especially on portrait mobile where short lines otherwise look tiny):
+  // smoothly boost rows whose projected width uses < 58% of available width, capped cleanly so they
+  // feel balanced and legible without exceeding 78% of viewport width.
+  var fillRatio = intendedWidth / availableWidth;
+  if (fillRatio >= 0.56) return 1;
+  var t = clampRange((0.56 - fillRatio) / 0.36, 0, 1);
+  var smooth = t * t * (3 - 2 * t);
+  var maxBoost = viewportWidth < 680 ? 1.14 : 1.10;
+  var desired = 1 + (maxBoost - 1) * smooth;
+  var maxByWidth = Math.max(1, (availableWidth * 0.76) / Math.max(1, intendedWidth));
+  return clampRange(Math.min(desired, maxByWidth), 1, maxBoost);
 }
 
 var lyricViewportFitLeft = typeof THREE !== 'undefined' ? new THREE.Vector3() : null;
@@ -294,12 +332,14 @@ function lyricRowLiveViewportScale(row, intendedScale) {
   var currentProjectedWidth = Math.abs(rightPx - leftPx);
   var projectedUnitTextWidth = currentProjectedWidth / currentScale;
   var safeMargin = lyricViewportSafeMarginPx(viewportWidth);
+  var allowShortBoost = !!row.isPrimary && !row.isTranslation;
   var ratio = lyricViewportFitRatio(
     viewportWidth,
     centerX,
     projectedUnitTextWidth,
     intendedScale,
-    safeMargin
+    safeMargin,
+    allowShortBoost
   );
   row.viewportFitScale = ratio;
   row.viewportFitAvailableLeft = Math.max(0, centerX - safeMargin);
@@ -359,8 +399,8 @@ function beginLyricRowLayerGroupBuild(payload, mask, worldW, worldH, pal, motion
   var activeLineIndex = usesTrack ? Number(payload.trackIndex) : (payload ? payload.activeLine : 0);
   var activeLine = usesTrack ? lyricPrimaryVirtualIndex(activeLineIndex) : activeLineIndex;
   var entries = usesTrack ? payload.trackEntries : (payload && payload.entries || []);
-  var lineStepWorld = lyricTrackLineStepWorld(mask, worldH);
-  var translationLineStepWorld = lyricTranslationLineStepWorld(mask, worldH);
+  var lineStepWorld = lyricTrackLineStepWorld(mask, worldH, worldW);
+  var translationLineStepWorld = lyricTranslationLineStepWorld(mask, worldH, worldW);
   var displayLineCount = lyricDisplayLineCountForMode(payload && payload.mode);
   var visibleRadius = Math.max(0.85, displayLineCount * 0.50 * lyricPrimarySlotStepValue());
   var textOnly = !!(payload && payload.trackTextOnly);
@@ -373,7 +413,8 @@ function beginLyricRowLayerGroupBuild(payload, mask, worldW, worldH, pal, motion
   var totalPhases = 0;
   for (var pi = 0; pi < entries.length; pi++) {
     var phaseEntry = entries[pi] || {};
-    var phaseHasGlow = !phaseEntry.translationLine || phaseEntry.parentRole === 'current' || usesTrack;
+    void phaseEntry;
+    var phaseHasGlow = true;
     totalPhases += textOnly ? 1 : (1 + readabilityPhaseCount + (phaseHasGlow ? glowPhaseCount : 1));
   }
   root.add(contextGroup);
@@ -431,7 +472,17 @@ function beginLyricRowLayerBuildEntry(state) {
     var translationLayoutEntry = !state.usesTrack
       ? cloneStageLyricEntryForLayer(entry, { virtualIndex: virtualIndex })
       : entry;
-    lineY = lyricTranslationAnchoredY(translationLayoutEntry, i, state.activeLine, state.lineStepWorld, state.translationLineStepWorld, state.activeLine, 0, Math.abs(delta) < 0.001, state.usesTrack);
+    var parentIdxBuild = entry.parentIndex != null && isFinite(Number(entry.parentIndex)) ? Number(entry.parentIndex) : null;
+    if (state.usesTrack && parentIdxBuild != null) {
+      var parentVirtBuild = lyricPrimaryVirtualIndex(parentIdxBuild);
+      var parentDeltaBuild = parentVirtBuild - state.activeLine;
+      var parentScaleBuild = clampRange(1 - Math.min(5.5, Math.abs(parentDeltaBuild)) * 0.026, 0.84, 1.02);
+      lineY = -parentDeltaBuild * state.lineStepWorld - lyricTranslationPairOffsetWorld(lineMask, state.worldW, parentScaleBuild, parentScaleBuild, lineMask && lineMask.translationSubLines);
+    } else if (!state.usesTrack && entry.parentRole === 'current') {
+      lineY = -lyricTranslationPairOffsetWorld(lineMask, state.worldW, 1, 1, lineMask && lineMask.translationSubLines);
+    } else {
+      lineY = lyricTranslationAnchoredY(translationLayoutEntry, i, state.activeLine, state.lineStepWorld, state.translationLineStepWorld, state.activeLine, 0, Math.abs(delta) < 0.001, state.usesTrack);
+    }
   }
   var lineAbs = Math.min(5.5, Math.abs(delta));
   var lineZ = 0.055 - Math.pow(lineAbs, 1.06) * 0.145;
@@ -439,20 +490,12 @@ function beginLyricRowLayerBuildEntry(state) {
   var fontScale = lyricTranslationMeshScale(entry);
   if (entry.translationLine) lineScale *= fontScale;
   var lineGeo = new THREE.PlaneGeometry(lineWorldW, lineWorldH, 1, 1);
-  var material;
-  if (!entry.translationLine) {
-    material = makeLyricShaderMaterial(lineMask, state.pal, state.motionProfile);
-    material.uniforms.uOpacity.value = 0;
-    if (material.uniforms.uActiveMix) material.uniforms.uActiveMix.value = isActive ? 1 : 0;
-  } else {
-    material = makeLyricBackfaceReadableMaterial({
-      map: lineMask.texture,
-      opacity: 0,
-      color: entry.translationLine
-        ? lyricThreeColor(state.pal.highlight || state.pal.primary, '#eaf6ff', 0.42)
-        : lyricThreeColor(state.pal.primary || state.pal.secondary, '#d6f8ff', 0.34)
-    });
-  }
+  var isActivePair = isActive || (!!entry.translationLine && (state.usesTrack
+    ? (entry.parentIndex != null && Number(entry.parentIndex) === state.activeLineIndex)
+    : entry.parentRole === 'current'));
+  var material = makeLyricShaderMaterial(lineMask, state.pal, state.motionProfile);
+  material.uniforms.uOpacity.value = 0;
+  if (material.uniforms.uActiveMix) material.uniforms.uActiveMix.value = isActivePair ? 1 : 0;
   var mesh = new THREE.Mesh(lineGeo, material);
   mesh.renderOrder = isActive ? 43.4 : (42.6 - lineAbs * 0.015);
   mesh.position.set(0, lineY, lineZ);
@@ -565,7 +608,7 @@ function finishLyricRowLayerBuildEntry(state) {
   if (!row || state.pendingPhase !== 'glow') return false;
   var glow = null;
   var glowMat = null;
-  var shouldCreateRowGlow = !row.isTranslation || row.parentRole === 'current' || state.usesTrack;
+  var shouldCreateRowGlow = true;
   if (shouldCreateRowGlow) {
     if (!row.glowBuild) {
       var glowRaster = lyricGlowRasterMetrics(row.lineMask);
@@ -1326,6 +1369,7 @@ function updateLyricRowLayers(data, opts) {
   if (!data || !data.rowLayers || !data.rowLayers.length) return;
   opts = opts || {};
   var opacity = clampRange(Number(opts.opacity) || 0, 0, 1);
+  var nativeLightInk = window.__LXMINE_NATIVE_STAGE && typeof LxMineAppearance !== 'undefined' && LxMineAppearance.isLight();
   var readability = clampRange(Number(opts.readability) || 0.58, 0, 1);
   var contextIntro = opts.contextIntro == null ? 1 : clampRange(Number(opts.contextIntro) || 0, 0, 1);
   var shownProgress = clampRange(Number(opts.shownProgress) || 0, 0, 1);
@@ -1352,7 +1396,7 @@ function updateLyricRowLayers(data, opts) {
   var frameScale = isFinite(frameDelta) && frameDelta > 0 ? clampRange(frameDelta * 60, 0.25, 3) : 1;
   // Preserve the 60 Hz feel while keeping the same motion duration when a
   // low-spec machine briefly renders at 30/45 Hz.
-  var ease = 1 - Math.pow(1 - baseEase, frameScale);
+  var ease = LxMineLyrics.frameEase(baseEase, frameScale / 60);
   var pendingPayload = data.trackPersistent && data.trackPendingPayload ? data.trackPendingPayload : null;
   var pendingTargetLineIndex = pendingPayload && pendingPayload.trackIndex != null && isFinite(Number(pendingPayload.trackIndex))
     ? Number(pendingPayload.trackIndex)
@@ -1371,7 +1415,7 @@ function updateLyricRowLayers(data, opts) {
       ? Number(opts.targetVirtualIndex)
       : (isFinite(Number(data.trackTargetVirtualIndex)) ? Number(data.trackTargetVirtualIndex) : lyricPrimaryVirtualIndex(targetLineIndex)));
   var baseTrackEase = opts.trackEase == null ? clampRange(baseEase * 1.16, 0.08, 0.34) : clampRange(Number(opts.trackEase) || 0.18, 0.04, 0.60);
-  var trackEase = 1 - Math.pow(1 - baseTrackEase, frameScale);
+  var trackEase = LxMineLyrics.frameEase(baseTrackEase, frameScale / 60);
   var nowMs = (typeof performance !== 'undefined' && performance.now) ? performance.now() : Date.now();
   var trackTargetJustCommitted = !!(data.trackPersistent && isFinite(Number(data.trackTargetCommittedAt)) && nowMs - Number(data.trackTargetCommittedAt) <= 34);
   var initialTextRevealPending = !!(data.usesTrack && data.renderInitialTextReady !== true);
@@ -1401,20 +1445,12 @@ function updateLyricRowLayers(data, opts) {
     data.trackScrollOffset = targetIndex;
     data.trackScrollPrimed = true;
   } else {
-    var trackStep = (targetIndex - data.trackScrollOffset) * trackEase;
-    if (data.usesTrack && persistentPrimedTrack) {
-      // Bound the shared phase, not individual meshes: no rendered frame may
-      // skip across a complete primary lyric row, while normal adjacent-line
-      // easing keeps exactly the same timing as before.
-      var continuousTrackMaxRowsPerFrame = 0.68;
-      var continuousTrackMaxStep = continuousTrackSlotStep * continuousTrackMaxRowsPerFrame;
-      trackStep = clampRange(trackStep, -continuousTrackMaxStep, continuousTrackMaxStep);
-    }
-    data.trackScrollOffset += trackStep;
+    var continuousTrackMaxStep = data.usesTrack && persistentPrimedTrack ? continuousTrackSlotStep * 0.68 : Infinity;
+    data.trackScrollOffset = LxMineLyrics.followStep(data.trackScrollOffset, targetIndex, trackEase, continuousTrackMaxStep);
   }
   var scrollOffset = data.trackScrollOffset;
-  var lineStepWorld = clampRange(Number(data.lineWorldStep) || 0.38, 0.20, 0.94);
-  var translationLineStepWorld = clampRange(Number(data.translationLineStepWorld) || lineStepWorld, 0.20, 0.78);
+  var lineStepWorld = clampRange(Number(data.lineWorldStep) || 0.56, 0.36, 1.85);
+  var translationLineStepWorld = clampRange(Number(data.translationLineStepWorld) || lineStepWorld, 0.32, 1.45);
   var displayedTrackOffset = typeof stageLyricResidentDisplayedScrollOffset === 'function'
     ? stageLyricResidentDisplayedScrollOffset(data, scrollOffset)
     : scrollOffset;
@@ -1448,6 +1484,7 @@ function updateLyricRowLayers(data, opts) {
     revealPrewarmMinOffset = Math.min(revealPrewarmMinOffset, revealOffset);
     revealPrewarmMaxOffset = Math.max(revealPrewarmMaxOffset, revealOffset);
   }
+  var primaryStatesByLineIndex = {};
   for (var i = 0; i < data.rowLayers.length; i++) {
     var row = data.rowLayers[i];
     var liveDelta = (row.virtualIndex != null && isFinite(Number(row.virtualIndex)) ? Number(row.virtualIndex) : i) - scrollOffset;
@@ -1462,7 +1499,7 @@ function updateLyricRowLayers(data, opts) {
     if (isActive) activeRow = row;
     var translationFocus = 0;
     var contextAlpha = row.isTranslation
-      ? clampRange(row.targetAlpha * (1 - Math.max(0, targetAbs - 0.65) * 0.12), 0.08, 0.62)
+      ? clampRange(row.targetAlpha * (1 - Math.max(0, targetAbs - 0.65) * 0.14), 0.08, 0.38)
       : clampRange(row.targetAlpha * (1 - Math.max(0, targetAbs - 0.25) * 0.070), 0.16, 0.92);
     var parentIndex = null;
     var parentDistance = Infinity;
@@ -1488,11 +1525,11 @@ function updateLyricRowLayers(data, opts) {
         contextAlpha = clampRange(currentTranslationOpacity * parentFade, 0, currentTranslationOpacity);
       } else {
         translationFocus = parentFade;
-        var contextTranslationAlpha = clampRange(row.targetAlpha * (1 - Math.max(0, parentDistance - 0.35) * 0.16), 0.08, 0.58);
+        var contextTranslationAlpha = clampRange(currentTranslationOpacity * 0.78 * (1 - Math.max(0, parentDistance - 0.35) * 0.12), 0.22, 0.46);
         contextAlpha = clampRange(
           contextTranslationAlpha * (1 - parentFade) + currentTranslationOpacity * parentFade,
-          0.08,
-          Math.max(0.58, currentTranslationOpacity)
+          0.12,
+          Math.max(0.36, currentTranslationOpacity)
         );
       }
       if (data.usesTrack && parentIndex != null && isFinite(Number(parentIndex))) {
@@ -1520,7 +1557,7 @@ function updateLyricRowLayers(data, opts) {
     var motionAnchor = isActive || currentTranslation;
     var rowIntro = motionAnchor ? 1 : contextIntro;
     var visibleRadius = Math.max(0.85, Number(data.trackVisibleRadius) || 3);
-    var visibleFade = lineWindowAllowed ? (motionAnchor ? 1 : clampRange((visibleRadius + 1.10 - visibilityAbs) / 1.10, 0, 1)) : 0;
+    var visibleFade = lineWindowAllowed ? (window.__LXMINE_NATIVE_STAGE || motionAnchor ? 1 : clampRange((visibleRadius + 1.10 - visibilityAbs) / 1.10, 0, 1)) : 0;
     visibleFade = visibleFade * visibleFade * (3 - 2 * visibleFade);
     var renderWindowActive = !!(lineWindowAllowed && (motionAnchor || visibleFade > 0.002));
     if (renderWindowActive && !row.renderWindowActive) {
@@ -1544,10 +1581,10 @@ function updateLyricRowLayers(data, opts) {
     }
     var rowRevealAt = Number(row.renderRevealAt) || nowMs;
     var lineLayerVisible = renderWindowActive && (initialTextRevealPending || nowMs >= rowRevealAt);
-    var readabilityLayerVisible = textureEffectsAllowed && lineLayerVisible && readability > 0.001 && nowMs >= rowRevealAt + 18;
+    var readabilityLayerVisible = !nativeLightInk && textureEffectsAllowed && lineLayerVisible && readability > 0.001 && nowMs >= rowRevealAt + 18;
     var existingGlowOpacity = row.glowMat ? getLyricTextureMaterialOpacity(row.glowMat) : 0;
     var glowLayerWanted = rowGlow > 0.001 || rowGlowBeat > 0.001 || existingGlowOpacity > 0.004;
-    var glowLayerVisible = textureEffectsAllowed && lineLayerVisible && glowLayerWanted && nowMs >= rowRevealAt + 40;
+    var glowLayerVisible = !nativeLightInk && textureEffectsAllowed && lineLayerVisible && glowLayerWanted && nowMs >= rowRevealAt + 40;
     var anchorRevealPriority = isActive ? 0 : (currentTranslation ? 1 : null);
     var contextRevealPriority = 20 + Math.min(8, visibilityAbs) * 6 + (row.isTranslation ? 1 : 0);
     if (row.mesh) {
@@ -1579,9 +1616,9 @@ function updateLyricRowLayers(data, opts) {
       var pendingPriority = pendingDistance * 4 + (row.isTranslation ? 1 : 0);
       if (row.mesh && !row.renderLineUploaded) {
         renderRevealCandidates.push({ row: row, mesh: row.mesh, flag: 'renderLineUploaded', priority: 4 + pendingPriority, transparentPrewarm: true });
-      } else if (row.readability && !row.renderReadabilityUploaded) {
+      } else if (!nativeLightInk && row.readability && !row.renderReadabilityUploaded) {
         renderRevealCandidates.push({ row: row, mesh: row.readability, flag: 'renderReadabilityUploaded', priority: 104 + pendingPriority, transparentPrewarm: true });
-      } else if (row.glow && !row.renderGlowUploaded) {
+      } else if (!nativeLightInk && row.glow && !row.renderGlowUploaded) {
         renderRevealCandidates.push({ row: row, mesh: row.glow, flag: 'renderGlowUploaded', priority: 204 + pendingPriority, transparentPrewarm: true });
       }
     }
@@ -1589,35 +1626,62 @@ function updateLyricRowLayers(data, opts) {
       var trackPrewarmOrder = Math.max(0, rowLineIndex == null ? i : Math.round(rowLineIndex)) * 2 + (row.isTranslation ? 1 : 0);
       if (row.mesh && !row.renderLineUploaded) {
         renderRevealCandidates.push({ row: row, mesh: row.mesh, flag: 'renderLineUploaded', priority: 300 + trackPrewarmOrder * 0.01, transparentPrewarm: true });
-      } else if (row.readability && !row.renderReadabilityUploaded) {
+      } else if (!nativeLightInk && row.readability && !row.renderReadabilityUploaded) {
         renderRevealCandidates.push({ row: row, mesh: row.readability, flag: 'renderReadabilityUploaded', priority: 400 + trackPrewarmOrder * 0.01, transparentPrewarm: true });
-      } else if (row.glow && !row.renderGlowUploaded) {
+      } else if (!nativeLightInk && row.glow && !row.renderGlowUploaded) {
         renderRevealCandidates.push({ row: row, mesh: row.glow, flag: 'renderGlowUploaded', priority: 500 + trackPrewarmOrder * 0.01, transparentPrewarm: true });
       }
     }
-    var target = opacity * (isActive ? 1 : contextAlpha) * rowIntro * visibleFade;
+    var activeLike = isActive || currentTranslation;
+    var readableContext = window.__LXMINE_NATIVE_STAGE && typeof LxMineAppearance !== 'undefined' && LxMineAppearance.isLight()
+      ? Math.max(contextAlpha, 0.88) : contextAlpha;
+    var target = opacity * (activeLike ? 1 : readableContext) * rowIntro * visibleFade;
     var depthFade = motionAnchor ? 1 : clampRange(1 - visibilityAbs * 0.055, 0.54, 1) * visibleFade;
     var yTarget = -liveDelta * lineStepWorld + (motionAnchor ? 0 : rowDrift * clampRange(0.70 + abs * 0.10, 0.65, 1.20));
-    if (row.isTranslation) {
-      yTarget = singleLineTranslationSwap && isFinite(Number(row.baseY))
-        ? Number(row.baseY)
-        : lyricTranslationAnchoredY(row, i, presentationIndex, lineStepWorld, translationLineStepWorld, scrollOffset, rowDrift, currentTranslation, !!data.usesTrack);
-    }
     var zBase = 0.055 - Math.pow(Math.min(5.5, visibilityAbs), 1.06) * 0.145;
-    var zTarget = zBase - (motionAnchor ? 0 : Math.abs(rowDrift) * 0.18) + (row.isTranslation ? translationFocus * 0.065 : 0);
+    var zTarget = zBase - (motionAnchor ? 0 : Math.abs(rowDrift) * 0.18);
     // Keep the focused lyric at its authored size even while the scroll
     // offset is still easing toward the newly committed line.
     var scaleDistance = motionAnchor ? 0 : visibilityAbs;
     var baseScale = clampRange(1 - Math.min(5.5, scaleDistance) * 0.026, 0.84, 1.02);
-    if (row.isTranslation) baseScale *= clampRange(Number(row.fontScale) || 1, 0.72, 1.34);
-    if (singleLineTranslationSwap) {
-      if (isFinite(Number(row.baseZ))) zTarget = Number(row.baseZ);
-      if (isFinite(Number(row.baseScale))) baseScale = Number(row.baseScale);
-    } else {
-      if (row.isTranslation) baseScale *= 1.00 + translationFocus * 0.16;
-    }
-    if ((row.isPrimary || row.isTranslation) && renderWindowActive) {
-      baseScale *= lyricRowLiveViewportScale(row, baseScale);
+    if (row.isPrimary) {
+      if (renderWindowActive) {
+        baseScale *= lyricRowLiveViewportScale(row, baseScale);
+      } else if (row.viewportFitScale !== 1) {
+        row.viewportFitScale = 1;
+      }
+      var primaryState = {
+        yTarget: yTarget,
+        zTarget: zTarget,
+        baseScale: baseScale,
+        viewportFitScale: row.viewportFitScale || 1,
+        isActive: isActive
+      };
+      if (rowLineIndex != null) primaryStatesByLineIndex[rowLineIndex] = primaryState;
+      if (isActive) primaryStatesByLineIndex.__current__ = primaryState;
+    } else if (row.isTranslation) {
+      var parentState = (parentIndex != null && primaryStatesByLineIndex[parentIndex])
+        || ((currentTranslation || row.parentRole === 'current') ? primaryStatesByLineIndex.__current__ : null);
+      var parentBaseScale = parentState ? parentState.baseScale : baseScale;
+      baseScale = parentBaseScale;
+      if (singleLineTranslationSwap && !parentState && isFinite(Number(row.baseScale))) {
+        baseScale = Number(row.baseScale);
+      }
+      if (renderWindowActive) {
+        baseScale *= lyricRowLiveViewportScale(row, baseScale);
+      } else if (row.viewportFitScale !== 1) {
+        row.viewportFitScale = 1;
+      }
+      var pairOffsetY = lyricTranslationPairOffsetWorld(row.lineMask, data.worldW || 6.10, parentBaseScale, baseScale, row.lineMask && row.lineMask.translationSubLines);
+      if (parentState) {
+        yTarget = parentState.yTarget - pairOffsetY;
+        zTarget = parentState.zTarget - 0.002;
+      } else if (singleLineTranslationSwap && isFinite(Number(row.baseY))) {
+        yTarget = Number(row.baseY);
+        if (isFinite(Number(row.baseZ))) zTarget = Number(row.baseZ);
+      } else {
+        yTarget = lyricTranslationAnchoredY(row, i, presentationIndex, lineStepWorld, translationLineStepWorld, scrollOffset, rowDrift, currentTranslation, !!data.usesTrack);
+      }
     } else if (row.viewportFitScale !== 1) {
       row.viewportFitScale = 1;
     }
@@ -1627,15 +1691,10 @@ function updateLyricRowLayers(data, opts) {
     var scaleTarget = baseScale * (motionAnchor || !verticalFloatOn ? 1 : (1 + Math.sin(t * 0.68 + seed + stableMotionIndex * 0.71) * (style === 'float' ? 0.012 : 0.004) * motionBlend));
     var translationGlowFocus = row.isTranslation ? translationFocus : 0;
     if (row.mesh) {
-      row.mesh.position.x += ((isActive ? jitterX : (currentTranslation ? jitterX * 0.82 : jitterX * 0.28)) - row.mesh.position.x) * (opts.glitchPulse ? 0.48 : 0.13);
-      var rowYTarget = yTarget + (verticalFloatOn ? (isActive ? jitterY : (currentTranslation ? jitterY * 0.78 : jitterY * 0.24)) : 0);
-      var rowYStep = (rowYTarget - row.mesh.position.y) * ease;
-      if (data.usesTrack && persistentPrimedTrack) {
-        var continuousRowMaxRowsPerFrame = 0.66;
-        var continuousRowMaxStepWorld = continuousTrackSlotStep * lineStepWorld * continuousRowMaxRowsPerFrame;
-        rowYStep = clampRange(rowYStep, -continuousRowMaxStepWorld, continuousRowMaxStepWorld);
-      }
-      row.mesh.position.y += rowYStep;
+      row.mesh.position.x += ((activeLike ? jitterX : jitterX * 0.28) - row.mesh.position.x) * (opts.glitchPulse ? 0.48 : 0.13);
+      var rowYTarget = yTarget + (verticalFloatOn ? (activeLike ? jitterY : jitterY * 0.24) : 0);
+      var continuousRowMaxStepWorld = data.usesTrack && persistentPrimedTrack ? continuousTrackSlotStep * lineStepWorld * 0.66 : Infinity;
+      row.mesh.position.y = LxMineLyrics.followStep(row.mesh.position.y, rowYTarget, ease, continuousRowMaxStepWorld);
       row.mesh.position.z += (zTarget - row.mesh.position.z) * ease;
       row.mesh.scale.setScalar(row.mesh.scale.x + (scaleTarget - row.mesh.scale.x) * ease);
       row.mesh.renderOrder = isActive ? (renderBase + 0.40) : (row.isTranslation ? (renderBase + 0.05 + (currentTranslation ? 0.34 : translationFocus * 0.30)) : (renderBase - 0.40 - Math.min(5.5, abs) * 0.015));
@@ -1652,17 +1711,22 @@ function updateLyricRowLayers(data, opts) {
           }
         }
       }
-      if (row.mat.uniforms.uProgress) row.mat.uniforms.uProgress.value = isActive ? shownProgress : 0;
+      if (row.mat.uniforms.uTime) row.mat.uniforms.uTime.value = t;
+      if (row.mat.uniforms.uProgress) row.mat.uniforms.uProgress.value = activeLike ? shownProgress : 0;
       if (row.mat.uniforms.uActiveMix) {
-        var activeMixTarget = isActive ? 1 : 0;
-        row.mat.uniforms.uActiveMix.value += (activeMixTarget - row.mat.uniforms.uActiveMix.value) * (isActive ? 0.34 : 0.62);
-        if (!isActive && row.mat.uniforms.uActiveMix.value < 0.015) row.mat.uniforms.uActiveMix.value = 0;
+        var activeMixTarget = activeLike ? 1 : 0;
+        row.mat.uniforms.uActiveMix.value += (activeMixTarget - row.mat.uniforms.uActiveMix.value) * (activeLike ? 0.34 : 0.62);
+        if (!activeLike && row.mat.uniforms.uActiveMix.value < 0.015) row.mat.uniforms.uActiveMix.value = 0;
       }
-      if (row.mat.uniforms.uSolar && !isActive) {
-        row.mat.uniforms.uSolar.value += (0 - row.mat.uniforms.uSolar.value) * 0.48;
-        if (row.mat.uniforms.uSolar.value < 0.003) row.mat.uniforms.uSolar.value = 0;
+      if (row.mat.uniforms.uSolar) {
+        if (currentTranslation && activeRow && activeRow.mat && activeRow.mat.uniforms && activeRow.mat.uniforms.uSolar) {
+          row.mat.uniforms.uSolar.value = activeRow.mat.uniforms.uSolar.value;
+        } else if (!activeLike) {
+          row.mat.uniforms.uSolar.value += (0 - row.mat.uniforms.uSolar.value) * 0.48;
+          if (row.mat.uniforms.uSolar.value < 0.003) row.mat.uniforms.uSolar.value = 0;
+        }
       }
-      if (row.mat.uniforms.uGlitchBurst && opts.glitchPulse) row.mat.uniforms.uGlitchBurst.value = isActive ? opts.glitchPulse : opts.glitchPulse * 0.35;
+      if (row.mat.uniforms.uGlitchBurst && opts.glitchPulse) row.mat.uniforms.uGlitchBurst.value = activeLike ? opts.glitchPulse : opts.glitchPulse * 0.35;
     } else if (row.mat) {
       var fallbackLineOpacityTarget = data.usesTrack && (initialTextRevealPending || !lineLayerVisible || !row.renderLineUploaded) ? 0 : target * depthFade;
       if (initialTextRevealPending) row.mat.opacity = 0;
@@ -1674,23 +1738,21 @@ function updateLyricRowLayers(data, opts) {
       }
     }
     if (row.readability) {
-      row.readability.position.x += ((isActive ? jitterX * 0.46 : (currentTranslation ? jitterX * 0.40 : jitterX * 0.16)) - row.readability.position.x) * (opts.glitchPulse ? 0.42 : 0.12);
+      row.readability.position.x += ((activeLike ? jitterX * 0.46 : jitterX * 0.16) - row.readability.position.x) * (opts.glitchPulse ? 0.42 : 0.12);
       if (data.usesTrack && persistentPrimedTrack && row.mesh) row.readability.position.y = row.mesh.position.y;
-      else row.readability.position.y += (yTarget + (verticalFloatOn ? (isActive ? jitterY * 0.40 : (currentTranslation ? jitterY * 0.34 : jitterY * 0.12)) : 0) - row.readability.position.y) * ease;
+      else row.readability.position.y += (yTarget + (verticalFloatOn ? (activeLike ? jitterY * 0.40 : jitterY * 0.12) : 0) - row.readability.position.y) * ease;
       row.readability.position.z += (zTarget - 0.012 - row.readability.position.z) * ease;
       row.readability.scale.setScalar(row.readability.scale.x + (scaleTarget - row.readability.scale.x) * ease);
       row.readability.renderOrder = row.mesh ? row.mesh.renderOrder - 0.04 : (row.isTranslation ? renderBase : renderBase - 0.45);
     }
     if (row.readabilityMat) {
-      var readabilityMix = row.isTranslation ? (0.46 + translationFocus * 0.18) : (isActive ? 0.74 : 0.52);
+      var readabilityMix = activeLike ? 0.74 : 0.52;
       if (backdropAdapt > 0.001) {
-        readabilityMix = Math.max(readabilityMix, row.isTranslation
-          ? (0.54 + backdropAdapt * 0.10)
-          : (0.60 + backdropAdapt * 0.12));
+        readabilityMix = Math.max(readabilityMix, 0.60 + backdropAdapt * 0.12);
       }
       if (readabilityBackdropColor) setLyricTextureMaterialColor(row.readabilityMat, readabilityBackdropColor);
       else if (lyricReadabilityLightColor) setLyricTextureMaterialColor(row.readabilityMat, lyricReadabilityLightColor);
-      var readabilityBoost = 1 + backdropAdapt * (row.isTranslation ? 0.66 : 0.78);
+      var readabilityBoost = 1 + backdropAdapt * 0.78;
       var readabilityOpacity = getLyricTextureMaterialOpacity(row.readabilityMat);
       var readabilityOpacityTarget = !data.usesTrack || (readabilityLayerVisible && row.renderReadabilityUploaded)
         ? target * readability * readabilityMix * readabilityBoost * depthFade
@@ -1718,14 +1780,14 @@ function updateLyricRowLayers(data, opts) {
       row.glow.renderOrder = row.isTranslation ? (renderBase - 0.02) : (renderBase - 0.52);
     }
     if (row.glowMat) {
-      var glowOpacityTarget = isActive
+      var glowOpacityTarget = activeLike
         ? target * rowGlow * (1 + rowGlowBeat * 0.46) * depthFade
-        : (row.isTranslation ? target * rowGlow * (currentTranslation ? (0.46 + rowGlowBeat * 0.08) : (0.30 + rowGlowBeat * 0.06) * translationGlowFocus) * depthFade : 0);
+        : 0;
       if (backdropAdapt > 0.001) glowOpacityTarget *= (1 - backdropAdapt * 0.30);
       if (data.usesTrack && (!glowLayerVisible || !row.renderGlowUploaded)) glowOpacityTarget = 0;
       var glowOpacity = getLyricTextureMaterialOpacity(row.glowMat);
       var nextGlowOpacity = glowOpacity + (glowOpacityTarget - glowOpacity) * (glowOpacityTarget > glowOpacity ? 0.20 : 0.34);
-      if (!isActive && nextGlowOpacity < 0.004) nextGlowOpacity = 0;
+      if (!activeLike && nextGlowOpacity < 0.004) nextGlowOpacity = 0;
       setLyricTextureMaterialOpacity(row.glowMat, initialTextRevealPending ? 0 : nextGlowOpacity);
     }
   }

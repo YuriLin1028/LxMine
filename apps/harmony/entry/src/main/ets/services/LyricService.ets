@@ -27,7 +27,7 @@ export async function publicLyrics(song: Song): Promise<LyricLine[]> { return (a
 export async function publicLyricBundle(song: Song): Promise<PublicLyricBundle> {
   const id = encodeURIComponent(song.id);
   if (song.source === 'wy') {
-    const data = JSON.parse(await json(`https://music.163.com/api/song/lyric?id=${id}&lv=-1&kv=-1&tv=-1&yv=-1`)) as WyLyric;
+    const data = JSON.parse(await json(`https://music.163.com/api/song/lyric?id=${id}&lv=-1&kv=-1&tv=-1&rv=-1&yv=-1&ytv=-1&yrv=-1`)) as WyLyric;
     return { lines: parseLrc(data.yrc?.lyric || data.lrc?.lyric || ''), translation: parseLrc(data.ytlrc?.lyric || data.tlyric?.lyric || ''), romaji: parseLrc(data.yromalrc?.lyric || data.romalrc?.lyric || '') };
   }
   if (song.source === 'tx') {

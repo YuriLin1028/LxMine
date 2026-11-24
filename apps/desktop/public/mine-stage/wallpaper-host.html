@@ -1,0 +1,203 @@
+<!doctype html>
+<html lang="zh-CN" class="wallpaper-host">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width,initial-scale=1">
+  <title>LxMine Wallpaper Host</title>
+  <style>
+    html, body {
+      margin: 0;
+      width: 100%;
+      height: 100%;
+      overflow: hidden;
+      background: transparent !important;
+      pointer-events: none;
+      user-select: none;
+    }
+    .wp-slot-frame {
+      position: fixed;
+      inset: 0;
+      width: 100%;
+      height: 100%;
+      border: 0;
+      display: block;
+      background: transparent !important;
+      pointer-events: none;
+      opacity: 0;
+      visibility: hidden;
+      transition: opacity 0.16s ease;
+    }
+    .wp-slot-frame.active {
+      opacity: 1;
+      visibility: visible;
+    }
+  </style>
+</head>
+<body>
+  <iframe id="wp-dynamic-frame" class="wp-slot-frame" allow="autoplay"></iframe>
+  <iframe id="wp-folia-frame" class="wp-slot-frame" allow="autoplay"></iframe>
+  <iframe id="wp-plain-frame" class="wp-slot-frame" allow="autoplay"></iframe>
+  <script>
+    (() => {
+      'use strict';
+      const frames = {
+        dynamic: document.getElementById('wp-dynamic-frame'),
+        folia: document.getElementById('wp-folia-frame'),
+        plain: document.getElementById('wp-plain-frame'),
+      };
+      const urls = {
+        dynamic: 'harmony-stage.html?wallpaper=1',
+        folia: 'folia-stage/index.html?wallpaper=1',
+        plain: 'plain-stage.html?wallpaper=1',
+      };
+      const booted = { dynamic: false, folia: false, plain: false };
+      let currentKind = '';
+      let latestStage = null;
+      let latestClock = null;
+      let loadToken = 0;
+      let loadCount = 0;
+
+      function resolveKind(stage) {
+        const mode = String((stage && stage.mode) || '').trim();
+        if (mode === 'off') return 'plain';
+        if (mode.startsWith('folia-')) return 'folia';
+        return 'dynamic';
+      }
+
+      function getStageApi(kind) {
+        const f = frames[kind || currentKind];
+        try {
+          return f && f.contentWindow && f.contentWindow.lxmineStage
+            ? f.contentWindow.lxmineStage
+            : null;
+        } catch (_) {
+          return null;
+        }
+      }
+
+      function syncSlotVisibility(activeKind) {
+        for (const kind of ['dynamic', 'folia', 'plain']) {
+          const f = frames[kind];
+          const isActive = kind === activeKind;
+          if (f) f.classList.toggle('active', isActive);
+          if (!isActive && booted[kind]) {
+            const api = getStageApi(kind);
+            if (api && typeof api.presentation === 'function') {
+              try { api.presentation({ visible: false, detail: false }); } catch (_) {}
+            }
+          }
+        }
+      }
+
+      function applyLatestToStage(kind) {
+        const api = getStageApi(kind);
+        if (!api) return false;
+        try {
+          if (typeof api.presentation === 'function') {
+            api.presentation({ visible: kind === currentKind, detail: kind === currentKind });
+          }
+          if (kind === currentKind) {
+            if (latestStage && typeof api.metadata === 'function') {
+              api.metadata(latestStage);
+            }
+            if (latestClock && typeof api.clock === 'function') {
+              api.clock(latestClock);
+            }
+          }
+          return true;
+        } catch (_) {
+          return false;
+        }
+      }
+
+      async function activateKind(targetKind) {
+        currentKind = targetKind;
+        const f = frames[targetKind];
+        if (!f) return;
+        const myToken = ++loadToken;
+        if (!booted[targetKind]) {
+          booted[targetKind] = true;
+          loadCount += 1;
+          f.src = urls[targetKind];
+        }
+        const deadline = Date.now() + 2600;
+        while (myToken === loadToken && Date.now() < deadline) {
+          if (applyLatestToStage(targetKind)) {
+            syncSlotVisibility(targetKind);
+            return;
+          }
+          await new Promise((r) => setTimeout(r, 30));
+        }
+        if (myToken === loadToken) syncSlotVisibility(targetKind);
+      }
+
+      for (const kind of ['dynamic', 'folia', 'plain']) {
+        const f = frames[kind];
+        if (!f) continue;
+        f.addEventListener('load', () => {
+          applyLatestToStage(kind);
+          if (kind === currentKind) syncSlotVisibility(currentKind);
+        });
+      }
+
+      window.addEventListener('message', (event) => {
+        if (!event || !event.data || typeof event.data !== 'object') return;
+        if (event.data.type === 'lxmine-stage-ready' || event.data.type === 'lxmine-stage-visual-ready') {
+          for (const kind of ['dynamic', 'folia', 'plain']) {
+            if (frames[kind] && event.source === frames[kind].contentWindow) {
+              applyLatestToStage(kind);
+              if (kind === currentKind) syncSlotVisibility(currentKind);
+            }
+          }
+        }
+      });
+
+      function handleScenePayload(payload) {
+        if (!payload || typeof payload !== 'object') return;
+        if (payload.stage && typeof payload.stage === 'object') {
+          latestStage = payload.stage;
+        }
+        if (payload.clock && typeof payload.clock === 'object') {
+          latestClock = payload.clock;
+        }
+        const nextKind = resolveKind(latestStage);
+        void activateKind(nextKind);
+      }
+
+      function handleClockPayload(clock) {
+        if (!clock || typeof clock !== 'object') return;
+        latestClock = clock;
+        const api = getStageApi(currentKind);
+        if (api && typeof api.clock === 'function') {
+          try { api.clock(clock); } catch (_) {}
+        }
+      }
+
+      if (window.lxmineWallpaperHost) {
+        window.lxmineWallpaperHost.onScene(handleScenePayload);
+        window.lxmineWallpaperHost.onClock(handleClockPayload);
+      }
+
+      window.lxmineStage = {
+        presentation() {},
+        metadata(stage) {
+          handleScenePayload({ stage });
+        },
+        clock(clock) {
+          handleClockPayload(clock);
+        },
+        diagnostics() {
+          const api = getStageApi(currentKind);
+          return {
+            host: true,
+            kind: currentKind,
+            loadCount,
+            stageReady: !!api,
+            inner: api && typeof api.diagnostics === 'function' ? api.diagnostics() : null,
+          };
+        },
+      };
+    })();
+  </script>
+</body>
+</html>

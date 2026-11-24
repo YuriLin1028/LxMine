@@ -41,6 +41,16 @@ function configureLyricTextureSampling(texture) {
   return texture;
 }
 
+var _sharedLyricMaskMeasureCtx = null;
+function sharedLyricMaskMeasureCtx() {
+  if (_sharedLyricMaskMeasureCtx) return _sharedLyricMaskMeasureCtx;
+  var c = document.createElement('canvas');
+  c.width = 4;
+  c.height = 4;
+  _sharedLyricMaskMeasureCtx = c.getContext('2d');
+  return _sharedLyricMaskMeasureCtx;
+}
+
 function beginLyricMaskLayoutBuild(input, layoutOverride) {
   layoutOverride = layoutOverride || {};
   var payload = normalizeStageLyricPayload(input);
@@ -51,8 +61,7 @@ function beginLyricMaskLayoutBuild(input, layoutOverride) {
   var entries = payload && payload.entries && payload.entries.length ? payload.entries : [{ text: '', role: 'current', alpha: 1, scale: 1 }];
   var desiredLines = Math.max(1, entries.length);
   var H = desiredLines > 9 ? 1344 : (desiredLines > 8 ? 1216 : (desiredLines > 7 ? 1088 : (desiredLines > 6 ? 960 : (desiredLines > 5 ? 832 : (desiredLines > 4 ? 704 : (desiredLines > 3 ? 608 : (desiredLines > 2 ? 512 : 384)))))));
-  var measureCanvas = document.createElement('canvas');
-  var ctx = measureCanvas.getContext('2d');
+  var ctx = sharedLyricMaskMeasureCtx();
   var maxLines = Math.max(STAGE_LYRIC_MAX_LINES, entries.length);
   var lockedFontSize = Number(layoutOverride.fontSize);
   var lines = entries.map(function (entry) { return entry.text; });
@@ -91,18 +100,53 @@ function beginLyricMaskLayoutBuild(input, layoutOverride) {
   };
 }
 
-function lyricMaskLayoutCacheKey(text, weight) {
-  return lyricEntryWeight({ weight: weight }) + '|' + String(text || '');
+function lyricEntrySubLines(text, entry, ctx, drawFontSize, weight) {
+  var raw = String(text || '');
+  if (entry && Array.isArray(entry._wrappedSubLines) && entry._wrappedSubLines.length) {
+    return entry._wrappedSubLines;
+  }
+  var maxLines = 3;
+  var measureCtx = ctx || (typeof lyricWrapMeasureContext === 'function' ? lyricWrapMeasureContext() : null);
+  var effSize = Math.max(24, Number(drawFontSize) || (128 * ((entry && entry.scale) || 1)));
+  var effWeight = weight != null ? weight : lyricEntryWeight(entry || {});
+  if (measureCtx && typeof wrapLyricTextLines === 'function' && typeof lyricWrapMaxLogicalWidth === 'function') {
+    var maxW = lyricWrapMaxLogicalWidth();
+    var wrapped = wrapLyricTextLines(measureCtx, raw, effSize, effWeight, maxW, maxLines);
+    if (wrapped && wrapped.length) return wrapped;
+  }
+  if (entry && entry.translationLine && (raw.indexOf('\n') >= 0 || raw.indexOf('\r') >= 0)) {
+    var parts = raw.split(/\r?\n/).map(function (s) { return s.trim(); }).filter(Boolean).slice(0, 3);
+    if (parts.length) return parts;
+  }
+  return [raw];
+}
+
+function lyricMeasureEntryWidthAtSize(ctx, text, entry, size, weight) {
+  var subLines = lyricEntrySubLines(text, entry, ctx, size, weight);
+  var widest = 0;
+  for (var si = 0; si < subLines.length; si++) {
+    var w = lyricMeasureTextAtSize(ctx, subLines[si], size, weight);
+    if (w > widest) widest = w;
+  }
+  return widest;
+}
+
+function lyricMaskLayoutCacheKey(text, weight, entry) {
+  var scaleTag = Math.round((((entry && entry.scale) || 1)) * 1000);
+  var bucket = typeof lyricWrapWidthBucket === 'function' ? lyricWrapWidthBucket() : 0;
+  return (entry && entry.translationLine ? 't' : 'p') + '|' + scaleTag + '|' + bucket + '|' + lyricEntryWeight({ weight: weight }) + '|' + String(text || '');
 }
 
 function measureLyricMaskLayoutBaseEntry(state, index) {
   var entry = state.entries[index] || {};
   var text = state.lines[index] || '';
   var weight = lyricEntryWeight(entry);
-  var cacheKey = lyricMaskLayoutCacheKey(text, weight);
+  var cacheKey = lyricMaskLayoutCacheKey(text, weight, entry);
   var baseWidth = state.layoutBaseWidthCache[cacheKey];
   if (!isFinite(baseWidth)) {
-    baseWidth = lyricMeasureTextAtSize(state.ctx, text, state.layoutMeasureBaseSize, weight);
+    var entryScale = Math.max(0.1, Number(entry.scale) || 1);
+    var measured = lyricMeasureEntryWidthAtSize(state.ctx, text, entry, state.layoutMeasureBaseSize * entryScale, weight);
+    baseWidth = measured / entryScale;
     state.layoutBaseWidthCache[cacheKey] = baseWidth;
   }
   return baseWidth;
@@ -110,7 +154,7 @@ function measureLyricMaskLayoutBaseEntry(state, index) {
 
 function scaledLyricMaskLayoutWidth(state, index, size) {
   var entry = state.entries[index] || {};
-  var cacheKey = lyricMaskLayoutCacheKey(state.lines[index] || '', lyricEntryWeight(entry));
+  var cacheKey = lyricMaskLayoutCacheKey(state.lines[index] || '', lyricEntryWeight(entry), entry);
   var baseWidth = state.layoutBaseWidthCache[cacheKey];
   if (!isFinite(baseWidth)) baseWidth = measureLyricMaskLayoutBaseEntry(state, index);
   return baseWidth * (Math.max(0.01, Number(size) || state.layoutMeasureBaseSize) * (entry.scale || 1) / state.layoutMeasureBaseSize);
@@ -183,7 +227,7 @@ function finalizeLyricMaskLayoutBuild(state) {
     }
   }
   var widestEntry = entries[widestMeasureIndex] || {};
-  widest = Math.max(1, lyricMeasureTextAtSize(ctx, lines[widestMeasureIndex] || '', fontSize * (widestEntry.scale || 1), lyricEntryWeight(widestEntry)));
+  widest = Math.max(1, lyricMeasureEntryWidthAtSize(ctx, lines[widestMeasureIndex] || '', widestEntry, fontSize * (widestEntry.scale || 1), lyricEntryWeight(widestEntry)));
   var canvasWidthPad = Math.max(220, fontSize * 2.2);
   var neededCanvasW = Math.ceil(Math.min(maxCanvasW, Math.max(baseCanvasW, widest + canvasWidthPad)));
   var W = neededCanvasW;
@@ -199,16 +243,42 @@ function finalizeLyricMaskLayoutBuild(state) {
   var activeEntry = entries[activeLine] || {};
   var activeTextWidth = activeLine === widestMeasureIndex
     ? widest
-    : Math.max(1, lyricMeasureTextAtSize(ctx, lines[activeLine] || '', fontSize * (activeEntry.scale || 1), lyricEntryWeight(activeEntry)));
+    : Math.max(1, lyricMeasureEntryWidthAtSize(ctx, lines[activeLine] || '', activeEntry, fontSize * (activeEntry.scale || 1), lyricEntryWeight(activeEntry)));
   var activeWidth = Math.min(drawMaxWidth, activeTextWidth * fitScaleX);
-  var blockH = fontSize + (lines.length - 1) * lineHeight;
-  var activeBaseline = H / 2 + fontSize * 0.36;
+  var wrappedSubLinesByEntry = [];
+  for (var wi = 0; wi < lines.length; wi++) {
+    var wEntry = entries[wi] || {};
+    var wSize = fontSize * (wEntry.scale || 1);
+    wrappedSubLinesByEntry.push(lyricEntrySubLines(lines[wi], wEntry, ctx, wSize, lyricEntryWeight(wEntry)));
+  }
+  var activeDrawFontSize = fontSize * (activeEntry.scale || 1);
+  var singleEntrySubLines = lines.length === 1 ? (wrappedSubLinesByEntry[0] || [lines[0]]) : [lines[activeLine] || ''];
+  var wrappedSubLines = lines.length === 1 ? Math.max(1, singleEntrySubLines.length) : 1;
+  var singleSubStep = activeDrawFontSize * 1.24;
+  if (lines.length === 1 && wrappedSubLines > 1) {
+    var neededSingleH = Math.ceil((wrappedSubLines * singleSubStep + activeDrawFontSize * 1.55 + 80) / 16) * 16;
+    H = Math.max(H, Math.min(1280, neededSingleH));
+  }
+  var blockH = lines.length === 1 && wrappedSubLines > 1
+    ? (activeDrawFontSize + (wrappedSubLines - 1) * singleSubStep)
+    : (fontSize + (lines.length - 1) * lineHeight);
+  var activeBaseline = H / 2 + (lines.length === 1 ? activeDrawFontSize : fontSize) * 0.36;
+  var translationSubLines = wrappedSubLines;
   var y0 = activeBaseline - activeLine * lineHeight;
-  var blockTop = y0 - fontSize * 0.84;
-  var blockBottom = y0 + (lines.length - 1) * lineHeight + fontSize * 0.24;
+  var blockTop = lines.length === 1 && wrappedSubLines > 1
+    ? (activeBaseline - (wrappedSubLines - 1) * singleSubStep * 0.5 - activeDrawFontSize * 0.84)
+    : (y0 - (lines.length === 1 ? activeDrawFontSize : fontSize) * 0.84);
+  var blockBottom = lines.length === 1 && wrappedSubLines > 1
+    ? (activeBaseline + (wrappedSubLines - 1) * singleSubStep * 0.5 + activeDrawFontSize * 0.24)
+    : (y0 + (lines.length - 1) * lineHeight + (lines.length === 1 ? activeDrawFontSize : fontSize) * 0.24);
   var padY = 22;
   if (blockTop < padY) y0 += padY - blockTop;
   if (blockBottom > H - padY) y0 -= blockBottom - (H - padY);
+  var firstSubCenterY = (y0 - (wrappedSubLines - 1) * singleSubStep * 0.5) - activeDrawFontSize * 0.36;
+  var wrapBandTopY = firstSubCenterY - singleSubStep * 0.5;
+  var wrapBandBotY = wrapBandTopY + wrappedSubLines * singleSubStep;
+  var wrapTopV = clampRange(1 - wrapBandTopY / Math.max(1, H), 0, 1);
+  var wrapBotV = clampRange(1 - wrapBandBotY / Math.max(1, H), 0, 1);
   state.result = {
     payload: payload,
     entries: entries,
@@ -223,6 +293,11 @@ function finalizeLyricMaskLayoutBuild(state) {
     activeTextWidth: activeWidth,
     textHeight: blockH,
     lineY0: y0,
+    translationSubLines: translationSubLines,
+    wrappedSubLines: wrappedSubLines,
+    wrappedSubLinesByEntry: wrappedSubLinesByEntry,
+    wrapTopV: wrapTopV,
+    wrapBotV: wrapBotV,
     textMin: (W / 2 - activeWidth / 2) / W,
     textMax: (W / 2 + activeWidth / 2) / W
   };
@@ -342,28 +417,48 @@ function makeLyricMask(input, layoutOverride) {
   var activeWidth = layout.activeTextWidth;
   var blockH = layout.textHeight;
   var y0 = layout.lineY0;
+  var isSingleLine = lines.length === 1;
+  var isSingleTranslation = isSingleLine && !!(entries[0] && entries[0].translationLine);
+  var rendererMaxTex = renderer && renderer.capabilities && renderer.capabilities.maxTextureSize ? Number(renderer.capabilities.maxTextureSize) : 4096;
+  var maxSuperW = Math.min(3072, isFinite(rendererMaxTex) && rendererMaxTex > 0 ? rendererMaxTex : 3072);
+  // Supersample both single-line translations (up to 2x) and single-line primary lyrics (up to 1.5x..2x)
+  // so high-DPR mobile screens & short upscaled lyrics remain razor-sharp like native DOM typography.
+  var targetSuper = isSingleTranslation ? 2 : (isSingleLine ? 1.5 : 1);
+  var superScale = isSingleLine ? clampRange(Math.min(targetSuper, maxSuperW / Math.max(1, W)), 1, targetSuper) : 1;
+  var pixelW = Math.max(1, Math.round(W * superScale));
+  var pixelH = Math.max(1, Math.round(H * superScale));
   var canvas = document.createElement('canvas');
-  canvas.width = W; canvas.height = H;
+  canvas.width = pixelW; canvas.height = pixelH;
   var ctx = canvas.getContext('2d');
   var x = W / 2;
-  ctx.clearRect(0, 0, W, H);
+  ctx.clearRect(0, 0, pixelW, pixelH);
+  if (superScale !== 1) ctx.setTransform(superScale, 0, 0, superScale, 0, 0);
   ctx.textAlign = 'center';
   ctx.textBaseline = 'alphabetic';
   ctx.fillStyle = '#fff';
+  var wrappedSubLinesByEntry = layout.wrappedSubLinesByEntry || [];
   for (var di = 0; di < lines.length; di++) {
     var entry = entries[di] || {};
     var lineFontSize = fontSize * (entry.scale || 1);
     ctx.globalAlpha = entry.alpha == null ? 1 : entry.alpha;
     var lineY = y0 + di * lineHeight + lyricEntryLineOffset(entry) * lineHeight;
     ctx.font = lyricFontCss(lineFontSize, lyricEntryWeight(entry));
-    if (fitScaleX < 1) {
-      ctx.save();
-      ctx.translate(x, 0);
-      ctx.scale(fitScaleX, 1);
-      lyricFillText(ctx, lines[di], 0, lineY, lineFontSize);
-      ctx.restore();
-    } else {
-      lyricFillText(ctx, lines[di], x, lineY, lineFontSize);
+    var subLines = (wrappedSubLinesByEntry[di] && wrappedSubLinesByEntry[di].length)
+      ? wrappedSubLinesByEntry[di]
+      : lyricEntrySubLines(lines[di], entry, ctx, lineFontSize, lyricEntryWeight(entry));
+    var subStep = lineFontSize * 1.24;
+    var subStartY = subLines.length > 1 ? (lineY - (subLines.length - 1) * subStep * 0.5) : lineY;
+    for (var si = 0; si < subLines.length; si++) {
+      var drawY = subStartY + si * subStep;
+      if (fitScaleX < 1) {
+        ctx.save();
+        ctx.translate(x, 0);
+        ctx.scale(fitScaleX, 1);
+        lyricFillText(ctx, subLines[si], 0, drawY, lineFontSize);
+        ctx.restore();
+      } else {
+        lyricFillText(ctx, subLines[si], x, drawY, lineFontSize);
+      }
     }
   }
   ctx.globalAlpha = 1;
@@ -371,11 +466,46 @@ function makeLyricMask(input, layoutOverride) {
   var stoneSeed = lyricMaskStoneSeed(lines, entries, fontSize);
   applyStonePrintTexture(ctx, W, H, fontSize, lyricSeededRandom(stoneSeed));
   applyLyricVerticalEdgeFade(ctx, W, H, lyricEdgeFadeValue() * (payload.contextLayer ? 1.15 : 0.74), activeLine, lines.length);
+  if (superScale !== 1) ctx.setTransform(1, 0, 0, 1, 0, 0);
   var tex = new THREE.CanvasTexture(canvas);
   tex.userData = tex.userData || {};
   tex.userData.__mineradioLyricOwned = true;
   configureLyricTextureSampling(tex);
-  return { texture: tex, width: W, height: H, textWidth: width, activeTextWidth: activeWidth, textHeight: blockH, fontSize: fontSize, lineHeight: lineHeight, lineY0: y0, lineCount: lines.length, lines: lines, entries: entries, activeLine: activeLine, contextLayer: payload.contextLayer, activeLayer: payload.activeLayer, fitScaleX: fitScaleX, textMin: layout.textMin, textMax: layout.textMax, stoneSeed: stoneSeed };
+  return {
+    texture: tex,
+    width: pixelW,
+    height: pixelH,
+    logicalWidth: W,
+    logicalHeight: H,
+    logicalFontSize: fontSize,
+    logicalLineHeight: lineHeight,
+    logicalLineY0: y0,
+    logicalTextWidth: width,
+    logicalActiveTextWidth: activeWidth,
+    logicalTextHeight: blockH,
+    rasterScale: superScale,
+    textWidth: width * superScale,
+    activeTextWidth: activeWidth * superScale,
+    textHeight: blockH * superScale,
+    fontSize: fontSize * superScale,
+    lineHeight: lineHeight * superScale,
+    lineY0: y0 * superScale,
+    lineCount: lines.length,
+    lines: lines,
+    entries: entries,
+    activeLine: activeLine,
+    contextLayer: payload.contextLayer,
+    activeLayer: payload.activeLayer,
+    fitScaleX: fitScaleX,
+    textMin: layout.textMin,
+    textMax: layout.textMax,
+    stoneSeed: stoneSeed,
+    translationSubLines: layout.translationSubLines || 1,
+    wrappedSubLines: layout.wrappedSubLines || 1,
+    wrappedSubLinesByEntry: layout.wrappedSubLinesByEntry || [],
+    wrapTopV: layout.wrapTopV != null ? layout.wrapTopV : 1,
+    wrapBotV: layout.wrapBotV != null ? layout.wrapBotV : 0
+  };
 }
 
 function lyricTextureClarityScale() {
@@ -393,13 +523,12 @@ function lyricRowTextureWidthBudget() {
     var dpr = typeof window !== 'undefined' ? Math.max(1, Number(window.devicePixelRatio) || 1) : 1;
     canvasWidth = (typeof window !== 'undefined' ? Math.max(1, Number(window.innerWidth) || 1280) : 1280) * dpr;
   }
-  var budget = Math.ceil(clampRange(canvasWidth, 1024, 3072) / 64) * 64;
-  var profile = typeof runtimeHardwareProfile !== 'undefined' ? runtimeHardwareProfile : null;
-  if (profile && profile.lowSpec) budget = Math.min(budget, 1024);
-  else if (profile && profile.balancedSpec) budget = Math.min(budget, 1536);
+  // Never downscale primary lyric textures below 2048px on portrait mobile viewports;
+  // downscaling 2048px -> 1024px via Canvas2D is a primary source of soft/blurry glyphs.
+  var budget = Math.ceil(clampRange(Math.max(canvasWidth * 1.5, 2048), 2048, 3072) / 64) * 64;
   var rendererMaxTexture = renderer && renderer.capabilities ? Number(renderer.capabilities.maxTextureSize) : 0;
   if (isFinite(rendererMaxTexture) && rendererMaxTexture > 0) budget = Math.min(budget, rendererMaxTexture);
-  return Math.max(768, Math.round(budget));
+  return Math.max(1536, Math.round(budget));
 }
 
 function lyricQualityPoolBudgetBytes(tier) {
@@ -465,20 +594,29 @@ function makeLyricQualityTexture(mask, tier) {
   ctx.textAlign = 'center';
   ctx.textBaseline = 'alphabetic';
   ctx.fillStyle = '#fff';
+  var qWrappedMap = Array.isArray(mask.wrappedSubLinesByEntry) ? mask.wrappedSubLinesByEntry : [];
   for (var i = 0; i < lines.length; i++) {
     var entry = entries[i] || {};
     var lineFontSize = fontSize * (entry.scale || 1);
     var lineY = lineY0 + i * lineHeight + lyricEntryLineOffset(entry) * lineHeight;
     ctx.globalAlpha = entry.alpha == null ? 1 : entry.alpha;
     ctx.font = lyricFontCss(lineFontSize, lyricEntryWeight(entry));
-    if (fitScaleX < 1) {
-      ctx.save();
-      ctx.translate(logicalW / 2, 0);
-      ctx.scale(fitScaleX, 1);
-      lyricFillText(ctx, lines[i], 0, lineY, lineFontSize);
-      ctx.restore();
-    } else {
-      lyricFillText(ctx, lines[i], logicalW / 2, lineY, lineFontSize);
+    var qSubLines = (qWrappedMap[i] && qWrappedMap[i].length)
+      ? qWrappedMap[i]
+      : lyricEntrySubLines(lines[i], entry, ctx, lineFontSize, lyricEntryWeight(entry));
+    var qSubStep = lineFontSize * 1.24;
+    var qSubStartY = qSubLines.length > 1 ? (lineY - (qSubLines.length - 1) * qSubStep * 0.5) : lineY;
+    for (var qi = 0; qi < qSubLines.length; qi++) {
+      var qDrawY = qSubStartY + qi * qSubStep;
+      if (fitScaleX < 1) {
+        ctx.save();
+        ctx.translate(logicalW / 2, 0);
+        ctx.scale(fitScaleX, 1);
+        lyricFillText(ctx, qSubLines[qi], 0, qDrawY, lineFontSize);
+        ctx.restore();
+      } else {
+        lyricFillText(ctx, qSubLines[qi], logicalW / 2, qDrawY, lineFontSize);
+      }
     }
   }
   ctx.globalAlpha = 1;
@@ -557,6 +695,12 @@ function compactLyricLineMaskTexture(mask) {
   if (!isFinite(Number(mask.logicalActiveTextWidth)) || Number(mask.logicalActiveTextWidth) <= 0) mask.logicalActiveTextWidth = Number(mask.activeTextWidth) || Number(mask.logicalTextWidth);
   if (!isFinite(Number(mask.logicalTextHeight)) || Number(mask.logicalTextHeight) <= 0) mask.logicalTextHeight = Number(mask.textHeight) || Number(mask.logicalFontSize);
   var widthBudget = lyricRowTextureWidthBudget();
+  var isSingleRowMask = Array.isArray(mask.entries) && mask.entries.length === 1;
+  if (isSingleRowMask) {
+    var rendererMax = renderer && renderer.capabilities ? Number(renderer.capabilities.maxTextureSize) : 0;
+    var crispCap = isFinite(rendererMax) && rendererMax > 0 ? Math.min(3072, rendererMax) : 3072;
+    widthBudget = Math.max(widthBudget, crispCap);
+  }
   if (sourceWidth <= widthBudget + 8) return mask;
   var scale = widthBudget / sourceWidth;
   var compactCanvas = document.createElement('canvas');
@@ -636,24 +780,34 @@ function beginLyricReadabilityTextureBuild(mask) {
 
 function drawLyricReadabilityStrokeLines(state, dx, dy) {
   var ctx = state.ctx;
+  var rWrappedMap = state.mask && Array.isArray(state.mask.wrappedSubLinesByEntry) ? state.mask.wrappedSubLinesByEntry : [];
   for (var i = 0; i < state.lines.length; i++) {
     var entry = state.entries[i] || {};
-    var lineFontSize = state.fontSize * (entry.scale || 1);
+    var scaleFactor = entry.scale || 1;
+    var lineFontSize = state.fontSize * scaleFactor;
     var y = state.y0 + i * state.lineHeight + lyricEntryLineOffset(entry) * state.lineHeight + (dy || 0);
     var prevAlpha = ctx.globalAlpha;
     var prevLineWidth = ctx.lineWidth;
-    var alpha = entry.alpha == null ? 1 : clampRange(Number(entry.alpha), entry.translationLine ? 0.10 : 0.22, 1);
+    var alpha = entry.alpha == null ? 1 : clampRange(Number(entry.alpha), 0.22, 1);
     ctx.font = lyricFontCss(lineFontSize, lyricEntryWeight(entry));
-    ctx.globalAlpha = prevAlpha * alpha * (entry.translationLine ? 0.62 : 1);
-    if (entry.translationLine) ctx.lineWidth = Math.max(1.8 * state.pixelScale, prevLineWidth * 0.52);
-    if (state.fitScaleX < 1) {
-      ctx.save();
-      ctx.translate(state.W / 2 + (dx || 0), 0);
-      ctx.scale(state.fitScaleX, 1);
-      lyricStrokeText(ctx, state.lines[i], 0, y, lineFontSize);
-      ctx.restore();
-    } else {
-      lyricStrokeText(ctx, state.lines[i], state.W / 2 + (dx || 0), y, lineFontSize);
+    ctx.globalAlpha = prevAlpha * alpha;
+    if (scaleFactor < 0.999) ctx.lineWidth = Math.max(1.2 * state.pixelScale, prevLineWidth * scaleFactor);
+    var rSubLines = (rWrappedMap[i] && rWrappedMap[i].length)
+      ? rWrappedMap[i]
+      : lyricEntrySubLines(state.lines[i], entry, ctx, (Number(state.mask && state.mask.logicalFontSize) || 128) * scaleFactor, lyricEntryWeight(entry));
+    var rSubStep = lineFontSize * 1.24;
+    var rSubStartY = rSubLines.length > 1 ? (y - (rSubLines.length - 1) * rSubStep * 0.5) : y;
+    for (var ri = 0; ri < rSubLines.length; ri++) {
+      var rDrawY = rSubStartY + ri * rSubStep;
+      if (state.fitScaleX < 1) {
+        ctx.save();
+        ctx.translate(state.W / 2 + (dx || 0), 0);
+        ctx.scale(state.fitScaleX, 1);
+        lyricStrokeText(ctx, rSubLines[ri], 0, rDrawY, lineFontSize);
+        ctx.restore();
+      } else {
+        lyricStrokeText(ctx, rSubLines[ri], state.W / 2 + (dx || 0), rDrawY, lineFontSize);
+      }
     }
     ctx.lineWidth = prevLineWidth;
     ctx.globalAlpha = prevAlpha;
@@ -665,14 +819,14 @@ function stepLyricReadabilityTextureBuild(state) {
   var ctx = state.ctx;
   var fontSize = state.fontSize;
   var pixelScale = state.pixelScale;
-  // Black/white readability layer: text-shaped only, no rectangular backing.
+  // Black/white readability layer: text-shaped only, identical proportional treatment for main & translation.
   if (state.phase === 0) {
     ctx.save();
     ctx.filter = 'blur(' + Math.max(1, 14 * pixelScale).toFixed(2) + 'px)';
     ctx.globalAlpha = 0.18;
     ctx.lineWidth = Math.max(18 * pixelScale, fontSize * 0.16);
     ctx.strokeStyle = 'rgba(0,0,0,1)';
-    drawLyricReadabilityStrokeLines(state, 0, fontSize * 0.018);
+    drawLyricReadabilityStrokeLines(state, 0, fontSize * 0.016);
     ctx.restore();
     state.phase = 1;
     state.lastPhase = 'shadow-wide';
@@ -684,7 +838,7 @@ function stepLyricReadabilityTextureBuild(state) {
     ctx.globalAlpha = 0.32;
     ctx.lineWidth = Math.max(9 * pixelScale, fontSize * 0.075);
     ctx.strokeStyle = 'rgba(0,0,0,1)';
-    drawLyricReadabilityStrokeLines(state, 0, fontSize * 0.012);
+    drawLyricReadabilityStrokeLines(state, 0, fontSize * 0.010);
     ctx.restore();
     state.phase = 2;
     state.lastPhase = 'shadow-mid';
@@ -741,16 +895,34 @@ function beginLyricGlowTextureBuild(text, fontSize, textWidth, lines, lineHeight
   var measureCtx = measureCanvas.getContext('2d');
   measureCtx.font = lyricFontCss(fontSize);
   fitScaleX = fitScaleX || 1;
-  var measuredWidth = Math.max(1, textWidth || lyricMeasureTextAtSize(measureCtx, text, fontSize) * fitScaleX);
-  for (var li = 0; li < drawLines.length; li++) {
-    var lineFontSize = fontSize * ((entries[li] && entries[li].scale) || 1);
-    measuredWidth = Math.max(measuredWidth, lyricMeasureTextAtSize(measureCtx, drawLines[li], lineFontSize, lyricEntryWeight(entries[li])) * fitScaleX);
-  }
   var pixelScale = clampRange(Number(sourceMask && sourceMask.rasterScale) || Number(rasterScale) || 1, 0.20, 1);
+  var wrappedMap = (sourceMask && Array.isArray(sourceMask.wrappedSubLinesByEntry)) ? sourceMask.wrappedSubLinesByEntry : [];
+  var logicalBaseFont = Number(sourceMask && sourceMask.logicalFontSize) || (fontSize / Math.max(0.01, pixelScale));
+  var resolvedSubLinesByEntry = [];
+  var measuredWidth = Math.max(1, Number(textWidth) || 0);
+  var maxSingleSubCount = 1;
+  var singleDrawFontSize = fontSize;
+  for (var li = 0; li < drawLines.length; li++) {
+    var gEntry = entries[li] || {};
+    var gScaleFactor = gEntry.scale || 1;
+    var lineFontSize = fontSize * gScaleFactor;
+    if (li === 0) singleDrawFontSize = lineFontSize;
+    var gWeight = lyricEntryWeight(gEntry);
+    var gSub = (wrappedMap[li] && wrappedMap[li].length)
+      ? wrappedMap[li]
+      : lyricEntrySubLines(drawLines[li], gEntry, measureCtx, logicalBaseFont * gScaleFactor, gWeight);
+    resolvedSubLinesByEntry.push(gSub);
+    if (gSub.length > maxSingleSubCount) maxSingleSubCount = gSub.length;
+    for (var si = 0; si < gSub.length; si++) {
+      measuredWidth = Math.max(measuredWidth, lyricMeasureTextAtSize(measureCtx, gSub[si], lineFontSize, gWeight) * fitScaleX);
+    }
+  }
   var padX = Math.max(160 * pixelScale, fontSize * 1.45);
   var padY = Math.max(86 * pixelScale, fontSize * 0.78);
   var lh = lineHeight || fontSize * 1.04;
-  var blockH = fontSize + (drawLines.length - 1) * lh;
+  var blockH = drawLines.length === 1 && maxSingleSubCount > 1
+    ? (singleDrawFontSize + (maxSingleSubCount - 1) * (singleDrawFontSize * 1.24))
+    : (fontSize + (drawLines.length - 1) * lh);
   activeLine = Math.max(0, Math.min(drawLines.length - 1, Number(activeLine) || 0));
   var W = useMaskFrame ? Math.round(sourceMask.width) : Math.ceil(measuredWidth + padX * 2);
   var H = useMaskFrame ? Math.round(sourceMask.height) : Math.ceil(blockH + padY * 2);
@@ -760,12 +932,13 @@ function beginLyricGlowTextureBuild(text, fontSize, textWidth, lines, lineHeight
   ctx.textAlign = 'center';
   ctx.textBaseline = 'alphabetic';
   ctx.font = lyricFontCss(fontSize);
-  var y0 = useMaskFrame && isFinite(Number(sourceMask.lineY0)) ? Number(sourceMask.lineY0) : (H / 2 + fontSize * 0.36 - activeLine * lh);
+  var y0 = useMaskFrame && isFinite(Number(sourceMask.lineY0)) ? Number(sourceMask.lineY0) : (H / 2 + (drawLines.length === 1 ? singleDrawFontSize : fontSize) * 0.36 - activeLine * lh);
   return {
     text: text,
     fontSize: fontSize,
     drawLines: drawLines,
     entries: entries,
+    wrappedSubLinesByEntry: resolvedSubLinesByEntry,
     useMaskFrame: useMaskFrame,
     sourceMask: sourceMask,
     canvas: canvas,
@@ -787,27 +960,36 @@ function beginLyricGlowTextureBuild(text, fontSize, textWidth, lines, lineHeight
 
 function drawLyricGlowText(state, dx, dy) {
   var ctx = state.ctx;
+  var gWrappedMap = Array.isArray(state.wrappedSubLinesByEntry) ? state.wrappedSubLinesByEntry : [];
   for (var i = 0; i < state.drawLines.length; i++) {
     var entry = state.entries[i] || {};
-    var lineFontSize = state.fontSize * (entry.scale || 1);
-    var alpha = entry.alpha == null ? 1 : clampRange(Number(entry.alpha), entry.translationLine ? 0.08 : 0.22, 1);
+    var scaleFactor = entry.scale || 1;
+    var lineFontSize = state.fontSize * scaleFactor;
+    var alpha = entry.alpha == null ? 1 : clampRange(Number(entry.alpha), 0.22, 1);
     var y = state.y0 + i * state.lineHeight + lyricEntryLineOffset(entry) * state.lineHeight + (dy || 0);
     var prevAlpha = ctx.globalAlpha;
     var prevLineWidth = ctx.lineWidth;
-    var glowFactor = entry.translationLine ? 0.34 : 1;
     ctx.font = lyricFontCss(lineFontSize, lyricEntryWeight(entry));
-    ctx.globalAlpha = prevAlpha * alpha * glowFactor;
-    if (entry.translationLine) ctx.lineWidth = Math.max(1.8 * state.pixelScale, prevLineWidth * 0.48);
-    if (state.fitScaleX < 1) {
-      ctx.save();
-      ctx.translate(state.W / 2 + (dx || 0), 0);
-      ctx.scale(state.fitScaleX, 1);
-      if (ctx.lineWidth > 0) lyricStrokeText(ctx, state.drawLines[i], 0, y, lineFontSize);
-      lyricFillText(ctx, state.drawLines[i], 0, y, lineFontSize);
-      ctx.restore();
-    } else {
-      if (ctx.lineWidth > 0) lyricStrokeText(ctx, state.drawLines[i], state.W / 2 + (dx || 0), y, lineFontSize);
-      lyricFillText(ctx, state.drawLines[i], state.W / 2 + (dx || 0), y, lineFontSize);
+    ctx.globalAlpha = prevAlpha * alpha;
+    if (scaleFactor < 0.999) ctx.lineWidth = Math.max(1.8 * state.pixelScale, prevLineWidth * scaleFactor);
+    var gSubLines = (gWrappedMap[i] && gWrappedMap[i].length)
+      ? gWrappedMap[i]
+      : lyricEntrySubLines(state.drawLines[i], entry, ctx, (state.fontSize / Math.max(0.01, state.pixelScale)) * scaleFactor, lyricEntryWeight(entry));
+    var gSubStep = lineFontSize * 1.24;
+    var gSubStartY = gSubLines.length > 1 ? (y - (gSubLines.length - 1) * gSubStep * 0.5) : y;
+    for (var gi = 0; gi < gSubLines.length; gi++) {
+      var gDrawY = gSubStartY + gi * gSubStep;
+      if (state.fitScaleX < 1) {
+        ctx.save();
+        ctx.translate(state.W / 2 + (dx || 0), 0);
+        ctx.scale(state.fitScaleX, 1);
+        if (ctx.lineWidth > 0) lyricStrokeText(ctx, gSubLines[gi], 0, gDrawY, lineFontSize);
+        lyricFillText(ctx, gSubLines[gi], 0, gDrawY, lineFontSize);
+        ctx.restore();
+      } else {
+        if (ctx.lineWidth > 0) lyricStrokeText(ctx, gSubLines[gi], state.W / 2 + (dx || 0), gDrawY, lineFontSize);
+        lyricFillText(ctx, gSubLines[gi], state.W / 2 + (dx || 0), gDrawY, lineFontSize);
+      }
     }
     ctx.lineWidth = prevLineWidth;
     ctx.globalAlpha = prevAlpha;

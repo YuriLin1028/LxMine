@@ -104,15 +104,15 @@ function lyricFontStackForKey(key) {
   if (key === 'humanist') return '"Avenir Next","Segoe UI","Inter","Noto Sans SC","PingFang SC",sans-serif';
   if (key === 'round') return '"HarmonyOS Sans SC","Microsoft YaHei UI","PingFang SC","Noto Sans SC",sans-serif';
   if (key === 'mono') return '"JetBrains Mono",Consolas,"Noto Sans SC","Microsoft YaHei",monospace';
-  if (key === 'display') return '"Alibaba PuHuiTi","Noto Sans SC","PingFang SC","Microsoft YaHei",sans-serif';
-  return 'Inter,"Noto Sans SC","PingFang SC","Microsoft YaHei",Arial,sans-serif';
+  if (key === 'display') return '"Alibaba PuHuiTi","Segoe UI","Noto Sans SC","PingFang SC","Microsoft YaHei UI",sans-serif';
+  return 'Inter,"Segoe UI","HarmonyOS Sans SC","PingFang SC","Noto Sans SC","Microsoft YaHei UI",Arial,sans-serif';
 }
 function lyricFontWeightValue() {
   if (normalizeLyricFontKey(fx && fx.lyricFont) === 'stone-song') return 900;
   return Math.round(clampRange(Number(fx && fx.lyricWeight) || 900, 500, 900) / 50) * 50;
 }
 function lyricFontCss(fontSize, weight) {
-  var w = weight == null ? lyricFontWeightValue() : Math.round(clampRange(Number(weight) || lyricFontWeightValue(), 500, 900) / 50) * 50;
+  var w = weight == null ? lyricFontWeightValue() : Math.round(clampRange(Number(weight) || lyricFontWeightValue(), 400, 900) / 50) * 50;
   return w + ' ' + fontSize + 'px ' + lyricFontStackForKey(fx && fx.lyricFont);
 }
 function lyricLetterSpacingPx(fontSize) {

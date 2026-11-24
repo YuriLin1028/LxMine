@@ -8,7 +8,7 @@ const { searchKugou } = require('./lx/kg.cjs');
 const { searchNetease } = require('./lx/wy.cjs');
 const { searchQQ } = require('./lx/tx.cjs');
 const { importPlaylist, resolveImportedSong, songAssets, songCovers, platformCandidates } = require('./lx/playlist.cjs');
-const { hasLyrics } = require('../shared/lx-song-assets.cjs');
+const { hasLyrics, isLyricConsistentWithSong, lyricsContentMatches } = require('../shared/lx-song-assets.cjs');
 const { sourceOf, toMineTrack, toLxRequest } = require('../shared/lxmine-track.cjs');
 const { searchEntities, entityTracks, discovery } = require('./lx/catalogue.cjs');
 const path = require('node:path');
@@ -18,53 +18,193 @@ const { decodePlaylistFile, MAX_PLAYLIST_BYTES } = require('../shared/lx-playlis
 const { importSourceFiles } = require('./lx/import-files.cjs');
 const updater = require('./updater.cjs');
 
-function registerLxMineIpc({ userDataPath, trusted, library }) {
+function registerLxMineIpc({ userDataPath, trusted, library, localMusicLibrary }) {
   const sourcesPath = defaultLxSourcesPath(userDataPath);
   const manager = createLxManager({ filePath: sourcesPath });
   const searches = { kw: searchKuwo, kg: searchKugou, wy: searchNetease, tx: searchQQ };
   const downloads = new MusicDownloads({ userDataPath, onChange: jobs => {
     for (const window of require('electron').BrowserWindow.getAllWindows()) window.webContents.send('lxmine-downloads-changed', jobs);
   } });
+  async function pruneDeletedLocalTracks(deletedPaths) {
+    if (!localMusicLibrary || !Array.isArray(deletedPaths) || !deletedPaths.length) return;
+    try {
+      const deletedNorms = new Set(deletedPaths.map(p => path.resolve(String(p || '')).toLowerCase()));
+      const snap = localMusicLibrary.listTracksSync();
+      const matchedIds = (snap && Array.isArray(snap.tracks) ? snap.tracks : [])
+        .filter(t => t && t.filePath && deletedNorms.has(path.resolve(String(t.filePath)).toLowerCase()))
+        .map(t => t.id);
+      if (matchedIds.length) await localMusicLibrary.removeTracks(matchedIds);
+    } catch (_) {}
+  }
+  const trashFallback = targetPath => shell.trashItem(targetPath);
   handle('downloads', () => downloads.snapshot());
   handle('cancel-download', id => downloads.cancel(String(id)));
-  handle('remove-download', id => downloads.remove(String(id)));
+  handle('remove-download', async (id, opts) => {
+    const res = await downloads.remove(String(id), { ...(opts || {}), trashFallback });
+    if (res && res.deletedPaths && res.deletedPaths.length) await pruneDeletedLocalTracks(res.deletedPaths);
+    return res;
+  });
+  handle('remove-downloads-batch', async (ids, opts) => {
+    const res = await downloads.removeBatch(Array.isArray(ids) ? ids.map(String) : [], { ...(opts || {}), trashFallback });
+    if (res && res.deletedPaths && res.deletedPaths.length) await pruneDeletedLocalTracks(res.deletedPaths);
+    return res;
+  });
   handle('reveal-download', id => {
     const job = downloads.snapshot().find(item => item.id === id && item.state === 'complete');
     if (!job || !fs.existsSync(job.filePath)) throw new Error('下载文件已被移动或删除');
     shell.showItemInFolder(job.filePath);
   });
+  handle('save-download-as', async id => {
+    const job = downloads.snapshot().find(item => item.id === String(id) && item.state === 'complete');
+    if (!job || !job.filePath || !fs.existsSync(job.filePath)) throw new Error('下载源文件不存在或已被移动');
+    const ext = path.extname(job.filePath).replace(/^\./, '').toLowerCase() || (/flac/i.test(job.quality || '') ? 'flac' : 'mp3');
+    const base = `${job.artist || ''} - ${job.name || ''}`.replace(/[<>:"/\\|?*\x00-\x1f]/g, '_').replace(/^\s*-\s*/, '').slice(0, 170) || 'song';
+    const win = ownerWindow();
+    const saveOpts = {
+      title: '另存为音频文件',
+      defaultPath: path.join(app.getPath('downloads'), `${base}.${ext}`),
+      filters: [{ name: '音频文件', extensions: [ext] }],
+    };
+    const save = win ? await dialog.showSaveDialog(win, saveOpts) : await dialog.showSaveDialog(saveOpts);
+    if (save.canceled || !save.filePath) return { canceled: true };
+    if (path.resolve(save.filePath) !== path.resolve(job.filePath)) {
+      await fs.promises.mkdir(path.dirname(save.filePath), { recursive: true });
+      await fs.promises.copyFile(job.filePath, save.filePath);
+      downloads.recordExportedPath(job.id, save.filePath);
+    }
+    return { canceled: false, filePath: save.filePath };
+  });
+  handle('save-downloads-batch-as', async ids => {
+    const idSet = new Set((Array.isArray(ids) ? ids : []).map(String));
+    const jobs = downloads.snapshot().filter(item => idSet.has(String(item.id)) && item.state === 'complete' && item.filePath && fs.existsSync(item.filePath));
+    if (!jobs.length) throw new Error('所选任务中没有可另存的已完成文件');
+    const win = ownerWindow();
+    if (jobs.length === 1) {
+      const job = jobs[0];
+      const ext = path.extname(job.filePath).replace(/^\./, '').toLowerCase() || (/flac/i.test(job.quality || '') ? 'flac' : 'mp3');
+      const base = `${job.artist || ''} - ${job.name || ''}`.replace(/[<>:"/\\|?*\x00-\x1f]/g, '_').replace(/^\s*-\s*/, '').slice(0, 170) || 'song';
+      const saveOpts = {
+        title: '另存为音频文件',
+        defaultPath: path.join(app.getPath('downloads'), `${base}.${ext}`),
+        filters: [{ name: '音频文件', extensions: [ext] }],
+      };
+      const save = win ? await dialog.showSaveDialog(win, saveOpts) : await dialog.showSaveDialog(saveOpts);
+      if (save.canceled || !save.filePath) return { canceled: true, saved: 0 };
+      if (path.resolve(save.filePath) !== path.resolve(job.filePath)) {
+        await fs.promises.mkdir(path.dirname(save.filePath), { recursive: true });
+        await fs.promises.copyFile(job.filePath, save.filePath);
+        downloads.recordExportedPath(job.id, save.filePath);
+      }
+      return { canceled: false, saved: 1 };
+    }
+    const openOpts = {
+      title: '选择批量另存为目录',
+      defaultPath: app.getPath('downloads'),
+      properties: ['openDirectory', 'createDirectory'],
+    };
+    const picked = win ? await dialog.showOpenDialog(win, openOpts) : await dialog.showOpenDialog(openOpts);
+    if (picked.canceled || !picked.filePaths || !picked.filePaths[0]) return { canceled: true, saved: 0 };
+    const folder = picked.filePaths[0];
+    const usedNames = new Set();
+    let saved = 0;
+    for (const job of jobs) {
+      try {
+        const ext = path.extname(job.filePath).replace(/^\./, '').toLowerCase() || (/flac/i.test(job.quality || '') ? 'flac' : 'mp3');
+        const base = `${job.artist || ''} - ${job.name || ''}`.replace(/[<>:"/\\|?*\x00-\x1f]/g, '_').replace(/^\s*-\s*/, '').slice(0, 160) || 'song';
+        let fileName = `${base}.${ext}`;
+        let seq = 2;
+        while (usedNames.has(fileName.toLowerCase()) || (fs.existsSync(path.join(folder, fileName)) && path.resolve(path.join(folder, fileName)) !== path.resolve(job.filePath))) {
+          fileName = `${base} (${seq++}).${ext}`;
+        }
+        usedNames.add(fileName.toLowerCase());
+        const dest = path.join(folder, fileName);
+        if (path.resolve(dest) !== path.resolve(job.filePath)) {
+          await fs.promises.copyFile(job.filePath, dest);
+          downloads.recordExportedPath(job.id, dest);
+        }
+        saved += 1;
+      } catch (_) {}
+    }
+    return { canceled: false, saved };
+  });
+  async function resolveDownloadTrack(song, quality = '128k', opts = {}) {
+    const portable = song.lxSource === 'qishui' || song.provider === 'qishui'
+      ? { ...song, source: 'qishui', singer: song.singer || song.artist }
+      : { ...song, source: song.lxSource || song.source, singer: song.singer || song.artist };
+    const expectedDurationMs = Number(song.durationMs || song.duration || 0) || 0;
+    const supported = await manager.supportedSources('musicUrl').catch(() => ['wy', 'tx', 'kg', 'kw']);
+    const baseTrack = await resolveImportedSong(portable, supported.length ? supported : ['wy', 'tx', 'kg', 'kw']);
+    const info = toLxRequest(baseTrack, quality);
+    try {
+      const hit = await manager.raceMusicUrl(info, { expectedDurationMs, raceAll: true });
+      if (hit && hit.url) return { url: hit.url, type: hit.type || info.type || quality };
+    } catch (_) {}
+    const origSource = info.source || '';
+    const altPlatforms = ['wy', 'tx', 'kg', 'kw'].filter(p => p !== origSource);
+    try {
+      const cands = await platformCandidates({
+        name: song.name || '',
+        singer: song.singer || song.artist || '',
+        albumName: song.albumName || song.album || '',
+        source: origSource,
+        id: song.id || '',
+        durationMs: expectedDurationMs,
+      }, altPlatforms);
+      const validCands = (cands || []).filter(cand => (
+        expectedDurationMs > 0
+          ? (cand.durationMs > 0 && Math.abs(cand.durationMs - expectedDurationMs) <= 5500)
+          : true
+      )).slice(0, 5);
+      for (const cand of validCands) {
+        try {
+          const candInfo = toLxRequest(cand, quality);
+          const candDur = Number(cand.durationMs || expectedDurationMs) || expectedDurationMs;
+          const hit = await manager.raceMusicUrl(candInfo, {
+            expectedDurationMs: candDur,
+            excludeSourceIds: opts.excludeSourceIds,
+            excludeUrls: opts.excludeUrls,
+            forceResolve: opts.forceResolve === true,
+            raceAll: true,
+          });
+          if (hit && hit.url) return { url: hit.url, type: hit.type || candInfo.type || quality };
+        } catch (_) {}
+      }
+    } catch (_) {}
+    throw new Error('音源未返回可下载地址');
+  }
+  function ownerWindow() {
+    const { BrowserWindow } = require('electron');
+    return BrowserWindow.getFocusedWindow() || BrowserWindow.getAllWindows().find(w => !w.isDestroyed()) || undefined;
+  }
   handle('download', async (song, quality = '128k') => {
-    const info = toLxRequest(await resolveImportedSong({ ...song, source: song.lxSource || song.source,
-      singer: song.singer || song.artist }, await manager.supportedSources('musicUrl')), quality);
-    const url = await manager.getMusicUrl(info);
-    if (!url) throw new Error('音源未返回可下载地址');
-    const extension = /flac/i.test(info.type) ? 'flac' : 'mp3';
-    const name = `${song.artist || song.singer || ''} - ${song.name}`.replace(/[<>:"/\\|?*\x00-\x1f]/g, '_').slice(0, 170);
-    const save = await dialog.showSaveDialog({ title: '下载歌曲', defaultPath: path.join(app.getPath('downloads'), name + '.' + extension),
-      filters: [{ name: '音频文件', extensions: [extension] }] });
+    const resolved = await resolveDownloadTrack(song, quality);
+    const extension = /flac/i.test(resolved.type) ? 'flac' : 'mp3';
+    const name = `${song.artist || song.singer || ''} - ${song.name}`.replace(/[<>:"/\\|?*\x00-\x1f]/g, '_').replace(/^\s*-\s*/, '').slice(0, 170) || 'song';
+    const win = ownerWindow();
+    const saveOpts = { title: '下载歌曲', defaultPath: path.join(app.getPath('downloads'), name + '.' + extension),
+      filters: [{ name: '音频文件', extensions: [extension] }] };
+    const save = win ? await dialog.showSaveDialog(win, saveOpts) : await dialog.showSaveDialog(saveOpts);
     if (save.canceled || !save.filePath) return null;
-    return downloads.start({ url, song, quality, filePath: save.filePath });
+    return downloads.start({ url: resolved.url, song, quality: resolved.type || quality, filePath: save.filePath });
   });
   handle('download-batch', async (songs, quality = '128k') => {
     const list = (Array.isArray(songs) ? songs : []).filter(item => item && item.provider !== 'local' && item.source !== 'local');
     if (!list.length) return { canceled: false, started: 0, skipped: 0, failed: 0 };
-    const picked = await dialog.showOpenDialog({
+    const win = ownerWindow();
+    const openOpts = {
       title: `选择批量下载保存目录（共 ${list.length} 首）`,
       defaultPath: app.getPath('downloads'),
       properties: ['openDirectory', 'createDirectory'],
-    });
+    };
+    const picked = win ? await dialog.showOpenDialog(win, openOpts) : await dialog.showOpenDialog(openOpts);
     if (picked.canceled || !picked.filePaths?.[0]) return { canceled: true, started: 0, skipped: 0, failed: 0 };
     const folder = picked.filePaths[0];
-    const supported = await manager.supportedSources('musicUrl');
     let started = 0, skipped = 0, failed = 0;
     const usedNames = new Set();
     for (const song of list) {
       try {
-        const info = toLxRequest(await resolveImportedSong({ ...song, source: song.lxSource || song.source,
-          singer: song.singer || song.artist }, supported), quality);
-        const url = await manager.getMusicUrl(info);
-        if (!url) { failed += 1; continue; }
-        const extension = /flac/i.test(info.type) ? 'flac' : 'mp3';
+        const resolved = await resolveDownloadTrack(song, quality);
+        const extension = /flac/i.test(resolved.type) ? 'flac' : 'mp3';
         const baseName = `${song.artist || song.singer || ''} - ${song.name}`.replace(/[<>:"/\\|?*\x00-\x1f]/g, '_').replace(/^\s*-\s*/, '').slice(0, 160) || 'song';
         let fileName = `${baseName}.${extension}`;
         let suffix = 1;
@@ -78,7 +218,7 @@ function registerLxMineIpc({ userDataPath, trusted, library }) {
         }
         if (!fileName) continue;
         usedNames.add(fileName.toLowerCase());
-        downloads.start({ url, song, quality, filePath: path.join(folder, fileName) });
+        downloads.start({ url: resolved.url, song, quality: resolved.type || quality, filePath: path.join(folder, fileName) });
         started += 1;
       } catch (_) {
         failed += 1;
@@ -92,7 +232,10 @@ function registerLxMineIpc({ userDataPath, trusted, library }) {
       return fn(...args);
     });
   }
-  handle('sources', () => ({ sources: manager.list(), activeId: manager.getActiveId() }));
+  handle('sources', () => {
+    try { manager.warmUp(); } catch (_) {}
+    return { sources: manager.list(), activeId: manager.getActiveId() };
+  });
   handle('home', async source=>{const feed=await discovery.home(source);for(const s of feed.sections)if(s.kind==='song')s.items=s.items.map(song=>toMineTrack(song,source));feed.newSongs=feed.sections.find(s=>s.id==='newSongs').items;return feed;});
   handle('home-lite', async source=>{
     const feed=await discovery.homeLite(source);
@@ -101,6 +244,27 @@ function registerLxMineIpc({ userDataPath, trusted, library }) {
   });
   handle('home-section', params=>discovery.section(params));
   handle('feed-tracks', async item=>{const r=await discovery.tracks(item);return {...r,items:r.items.map(song=>toMineTrack(song,song.source||item.source))};});
+  handle('similar-songs', async song=>{
+    const safeSong = song && typeof song === 'object' ? song : {};
+    const r = await discovery.similarSongs({
+      ...safeSong,
+      source: sourceOf(safeSong) || String(safeSong.lxSource || safeSong.source || 'wy'),
+      singer: safeSong.singer || safeSong.artist || '',
+    });
+    return { ...r, items: (r.items || []).map(item => toMineTrack(item, item.source || 'wy')) };
+  });
+  handle('personalized-mix', async ({ seeds, excludeKeys } = {}) => {
+    const safeSeeds = (Array.isArray(seeds) ? seeds : []).map(s => ({
+      ...s,
+      source: sourceOf(s) || String(s?.lxSource || s?.source || 'wy'),
+      singer: s?.singer || s?.artist || '',
+    }));
+    const r = await discovery.personalizedMix(safeSeeds, Array.isArray(excludeKeys) ? excludeKeys : []);
+    return {
+      ...r,
+      items: (r.items || []).map(item => Object.assign(toMineTrack(item, item.source || 'wy'), item.recommendationReason ? { recommendationReason: item.recommendationReason } : {})),
+    };
+  });
   handle('import-source', script => manager.importScript(String(script || '')));
   handle('import-source-file', async () => {
     const result = await dialog.showOpenDialog({ title: '批量导入 LX 音源', properties: ['openFile', 'multiSelections'], filters: [{ name: 'LX 音源脚本', extensions: ['js', 'txt'] }] });
@@ -128,14 +292,19 @@ function registerLxMineIpc({ userDataPath, trusted, library }) {
       ? { ...song, source: 'qishui', singer: song.singer || song.artist }
       : song;
     const expectedDurationMs = Number(song.durationMs || song.duration || 0) || 0;
-    const baseTrack = await resolveImportedSong(portable, portable.source === 'qishui' ? await manager.supportedSources('musicUrl') : undefined);
+    const qishuiSupported = portable.source === 'qishui'
+      ? await manager.supportedSources('musicUrl').catch(() => ['wy', 'tx', 'kg', 'kw'])
+      : undefined;
+    const baseTrack = await resolveImportedSong(portable, qishuiSupported && qishuiSupported.length ? qishuiSupported : (portable.source === 'qishui' ? ['wy', 'tx', 'kg', 'kw'] : undefined));
     const info = toLxRequest(baseTrack, quality);
     if (!opts.preferCrossPlatform) {
       try {
         const hit = await manager.raceMusicUrl(info, {
           expectedDurationMs,
           excludeSourceIds: opts.excludeSourceIds,
-          raceAll: opts.raceAll === true,
+          excludeUrls: opts.excludeUrls,
+          forceResolve: opts.forceResolve === true,
+          raceAll: true,
         });
         if (hit && hit.url) {
           return {
@@ -151,39 +320,84 @@ function registerLxMineIpc({ userDataPath, trusted, library }) {
         }
       } catch (_) {}
     }
-    // 跨平台同曲目无感兜底：当原平台全部源失败或仅返回 30s VIP 试听时，自动跨平台并行竞速完整音源。
+    // 跨平台同曲目竞速兜底：严格先跑时长误差 <=3.0s 的同一录音室母带候选，未命中再试 <=5.5s 候选，杜绝同名异曲/不同编曲/翻唱抢跑。
     const origSource = info.source || '';
     const altPlatforms = ['wy', 'tx', 'kg', 'kw'].filter(p => p !== origSource);
     try {
       const cands = await platformCandidates({
         name: song.name || '',
         singer: song.singer || song.artist || '',
+        albumName: song.albumName || song.album || '',
         source: origSource,
         id: song.id || '',
         durationMs: expectedDurationMs,
       }, altPlatforms);
-      for (const cand of (cands || []).slice(0, 3)) {
-        try {
+      const validCands = (cands || []).filter(cand => (
+        expectedDurationMs > 0
+          ? (cand.durationMs > 0 && Math.abs(cand.durationMs - expectedDurationMs) <= 5500)
+          : true
+      ));
+      const tierA = (expectedDurationMs > 0
+        ? validCands.filter(cand => Math.abs(cand.durationMs - expectedDurationMs) <= 3000)
+        : validCands).slice(0, 3);
+      const tierB = (expectedDurationMs > 0
+        ? validCands.filter(cand => Math.abs(cand.durationMs - expectedDurationMs) > 3000)
+        : []).slice(0, 2);
+      const raceTier = async (tierList) => {
+        if (!tierList.length) return null;
+        return Promise.any(tierList.map(async cand => {
           const candInfo = toLxRequest(cand, quality);
           const candDur = Number(cand.durationMs || expectedDurationMs) || expectedDurationMs;
-          const hit = await manager.raceMusicUrl(candInfo, { expectedDurationMs: candDur, raceAll: true });
-          if (hit && hit.url) {
-            return {
-              url: hit.url,
-              provider: song.provider,
-              source: candInfo.source,
-              level: hit.type || quality || 'standard',
-              lxSource: true,
-              sourceId: hit.sourceId,
-              sourceName: hit.sourceName,
-              switched: true,
-              switchedPlatform: candInfo.source,
-            };
-          }
-        } catch (_) {}
+          const hit = await manager.raceMusicUrl(candInfo, {
+            expectedDurationMs: candDur,
+            excludeSourceIds: opts.excludeSourceIds,
+            excludeUrls: opts.excludeUrls,
+            forceResolve: opts.forceResolve === true,
+            raceAll: true,
+          });
+          if (!hit || !hit.url) throw new Error('no_url');
+          return { candInfo, hit };
+        })).catch(() => null);
+      };
+      const winner = (await raceTier(tierA)) || (await raceTier(tierB));
+      if (winner && winner.hit && winner.hit.url) {
+        return {
+          url: winner.hit.url,
+          provider: song.provider,
+          source: winner.candInfo.source,
+          level: winner.hit.type || quality || 'standard',
+          lxSource: true,
+          sourceId: winner.hit.sourceId,
+          sourceName: winner.hit.sourceName,
+          switched: true,
+          switchedPlatform: winner.candInfo.source,
+        };
       }
     } catch (_) {}
-    throw new Error('暂未找到可用完整音源，请检查网络或导入更多音源');
+    if (opts.preferCrossPlatform) {
+      try {
+        const fallbackHit = await manager.raceMusicUrl(info, {
+          expectedDurationMs,
+          excludeSourceIds: opts.excludeSourceIds,
+          excludeUrls: opts.excludeUrls,
+          forceResolve: true,
+          raceAll: true,
+        });
+        if (fallbackHit && fallbackHit.url) {
+          return {
+            url: fallbackHit.url,
+            provider: song.provider,
+            source: info.source,
+            level: fallbackHit.type || quality || 'standard',
+            lxSource: true,
+            sourceId: fallbackHit.sourceId,
+            sourceName: fallbackHit.sourceName,
+            switched: !!fallbackHit.switched,
+          };
+        }
+      } catch (_) {}
+    }
+    throw new Error('暂未找到可用完整音源');
   });
   handle('song-assets', song => {
     const safeSong = song && typeof song === 'object' ? song : {};
@@ -196,6 +410,7 @@ function registerLxMineIpc({ userDataPath, trusted, library }) {
     });
   });
   handle('song-covers', songs => songCovers(Array.isArray(songs) ? songs : []));
+  handle('download-update-cover', (id, coverUrl) => downloads.updateCover(id, coverUrl));
   handle('platform-candidates', async (song, sources) => {
     const list = await platformCandidates(song || {}, sources);
     return list.map(cand => {
@@ -226,15 +441,38 @@ function registerLxMineIpc({ userDataPath, trusted, library }) {
       coverUrl: safeSong.coverUrl || safeSong.cover || '',
     };
     const canCustom = Boolean(sourceOf(portable));
-    const [custom, publicData] = await Promise.allSettled([
-      canCustom
-        ? resolveImportedSong(portable).then(resolved => manager.getLyric(toLxRequest(resolved, quality)))
-        : Promise.resolve({}),
-      songAssets(portable),
-    ]);
-    const provided = custom.status === 'fulfilled' ? custom.value : {};
+    let canCustomLyric = false;
+    if (canCustom) {
+      try {
+        const supported = await manager.supportedSources('lyric');
+        canCustomLyric = Array.isArray(supported) && supported.length > 0;
+      } catch (_) {
+        canCustomLyric = true;
+      }
+    }
+    const publicPromise = songAssets(portable).catch(() => ({}));
+    let customTimer = null;
+    const customPromise = canCustomLyric
+      ? Promise.race([
+          resolveImportedSong(portable)
+            .then(resolved => manager.getLyric(toLxRequest(resolved, quality)))
+            .catch(() => ({}))
+            .finally(() => { if (customTimer) { clearTimeout(customTimer); customTimer = null; } }),
+          new Promise(resolve => { customTimer = setTimeout(() => { customTimer = null; resolve({}); }, 2800); }),
+        ])
+      : Promise.resolve({});
+    const hasWordTiming = value => /[<(]\d+,\d+(?:,\d+)?[>)]|<\d{1,3}:\d{2}/.test(String(value || ''));
+    const fallback = (await publicPromise) || {};
+    let provided = {};
+    if (canCustomLyric) {
+      const publicComplete = Boolean(fallback.exactIdMatch && hasLyrics(fallback.lyric) && hasWordTiming(fallback.lyric) && fallback.tlyric);
+      if (publicComplete) {
+        if (customTimer) { clearTimeout(customTimer); customTimer = null; }
+      } else {
+        provided = (await customPromise) || {};
+      }
+    }
     const data = typeof provided === 'string' ? { lyric: provided } : (provided || {});
-    const fallback = publicData.status === 'fulfilled' ? (publicData.value || {}) : {};
     if (!fallback.coverUrl && canCustom) {
       try {
         const resolved = await resolveImportedSong(portable);
@@ -245,15 +483,35 @@ function registerLxMineIpc({ userDataPath, trusted, library }) {
         }
       } catch (_) {}
     }
-    const customLyric = data.lxlyric || data.lyric || '';
+    const rawCustomLyric = data.lxlyric || data.lyric || '';
+    const customConsistent = hasLyrics(rawCustomLyric) && isLyricConsistentWithSong(rawCustomLyric, portable);
+    const customLyric = customConsistent ? rawCustomLyric : '';
+    let chosenLyric = '';
+    let chosenExact = Boolean(fallback.exactIdMatch && hasLyrics(fallback.lyric));
+    if (chosenExact) {
+      if (customLyric && hasWordTiming(customLyric) && !hasWordTiming(fallback.lyric) && lyricsContentMatches(fallback.lyric, customLyric)) {
+        chosenLyric = customLyric;
+      } else {
+        chosenLyric = fallback.lyric;
+      }
+    } else {
+      chosenLyric = hasLyrics(fallback.lyric) ? fallback.lyric : (customLyric || '');
+    }
+    const chosenTlyric = chosenExact
+      ? (fallback.tlyric || (customConsistent && lyricsContentMatches(fallback.lyric, customLyric || fallback.lyric) ? data.tlyric : '') || '')
+      : (fallback.tlyric || (customConsistent ? data.tlyric : '') || '');
+    const chosenRoma = chosenExact
+      ? (fallback.romalrc || (customConsistent && lyricsContentMatches(fallback.lyric, customLyric || fallback.lyric) ? (data.romalrc || data.rlyric) : '') || '')
+      : (fallback.romalrc || (customConsistent ? (data.romalrc || data.rlyric) : '') || '');
     return {
       ...fallback,
       ...data,
-      coverUrl: data.coverUrl || fallback.coverUrl || portable.coverUrl || '',
-      lyric: hasLyrics(customLyric) ? customLyric : (fallback.lyric || customLyric || ''),
-      tlyric: data.tlyric || fallback.tlyric || '',
-      romalrc: data.romalrc || data.rlyric || fallback.romalrc || '',
+      coverUrl: fallback.coverUrl || data.coverUrl || portable.coverUrl || '',
+      lyric: chosenLyric,
+      tlyric: chosenTlyric,
+      romalrc: chosenRoma,
       instrumental: Boolean(fallback.instrumental),
+      exactIdMatch: chosenExact,
     };
   });
   handle('import-playlist', async (input, source) => {
@@ -272,8 +530,9 @@ function registerLxMineIpc({ userDataPath, trusted, library }) {
     const result = library.importLists(portable.map(list => ({ name: list.name, tracks: list.songs.map(song => toMineTrack(song, song.source)) })));
     return { ...result, warnings: portable.map(list => list.warning).filter(Boolean) };
   });
+  handle('version', () => (typeof app?.getVersion === 'function' ? app.getVersion() : '1.3.0'));
   handle('check-update', async () => {
-    const version = typeof app?.getVersion === 'function' ? app.getVersion() : '1.1.0';
+    const version = typeof app?.getVersion === 'function' ? app.getVersion() : '1.3.0';
     return updater.checkForUpdate(version);
   });
   handle('start-update', async (asset) => {

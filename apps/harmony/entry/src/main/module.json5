@@ -5,7 +5,7 @@
     "srcEntry": "./ets/entryability/EntryAbility.ets",
     "description": "$string:module_desc",
     "mainElement": "EntryAbility",
-    "deviceTypes": ["phone", "tablet", "car"],
+    "deviceTypes": ["phone", "tablet", "2in1", "car"],
     "deliveryWithInstall": true,
     "installationFree": false,
     "pages": "$profile:main_pages",
@@ -37,6 +37,7 @@
       { "name": "ohos.permission.GET_NETWORK_INFO" },
       { "name": "ohos.permission.GET_WIFI_INFO" },
       { "name": "ohos.permission.DETECT_GESTURE", "reason": "$string:grip_permission_reason", "usedScene": { "abilities": ["EntryAbility"], "when": "inuse" } },
+      { "name": "ohos.permission.MICROPHONE", "reason": "$string:mic_permission_reason", "usedScene": { "abilities": ["EntryAbility"], "when": "inuse" } },
       { "name": "ohos.permission.KEEP_BACKGROUND_RUNNING" },
       { "name": "ohos.permission.ACCESS_CAR_DISTRIBUTED_ENGINE" }
     ]

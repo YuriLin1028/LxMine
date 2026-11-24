@@ -1,5 +1,6 @@
 import { Song } from '../model/Song';
 import { MusicPlaylist, songKey } from '../services/MusicLibrary';
+import { isHarmonyPc } from '../services/HarmonyPcWindowService';
 import { FeedPlaylist, HomeFeed, FeedSection } from '../services/HomeFeed';
 import { TEXT, MUTED, ACCENT, sourceBadge, formatPlayCount } from './Theme';
 import { MaterialBall, MaterialIcon } from './MaterialControls';
@@ -96,7 +97,7 @@ export struct MineHome {
     Stack({ alignContent: Alignment.TopEnd }) {
       Stack({ alignContent: Alignment.BottomStart }) {
         if (cover) {
-          Image(cover).width('100%').height('100%').objectFit(ImageFit.Cover)
+          Image(cover).sourceSize({ width: 320, height: 320 }).autoResize(true).width('100%').height('100%').objectFit(ImageFit.Cover)
         } else {
           Column() {
             Text($$.name.slice(0, 2)).fontSize($$.fallback * 0.7).fontWeight(FontWeight.Bold).fontColor('#F2F1F7')
@@ -156,7 +157,7 @@ export struct MineHome {
     Stack({ alignContent: Alignment.TopEnd }) {
       Stack({ alignContent: Alignment.BottomStart }) {
         if (item.cover) {
-          Image(item.cover).width('100%').height('100%').objectFit(ImageFit.Cover)
+          Image(item.cover).sourceSize({ width: 420, height: 420 }).autoResize(true).width('100%').height('100%').objectFit(ImageFit.Cover)
         } else {
           Column()
             .width('100%').height('100%')
@@ -187,24 +188,36 @@ export struct MineHome {
     List({ space: 12 }) {
       LazyForEach(this.rowSource('banner', this.bannerItems()), (item: Object) => {
         ListItem() { this.homeBanner(item as FeedPlaylist) }.width('46%')
-      }, (item: Object) => { const p = item as FeedPlaylist; return `${p.id}|${p.cover ?? ''}|${p.count}|${this.playing ? '1' : '0'}|${this.activeFeedId}`; })
-    }.listDirection(Axis.Horizontal).scrollBar(BarState.Off).edgeEffect(EdgeEffect.Spring)
+      }, (item: Object) => { const p = item as FeedPlaylist; return `${p.id}|${p.cover ?? ''}|${p.count}`; })
+    }.listDirection(Axis.Horizontal).scrollBar(BarState.Off).edgeEffect(EdgeEffect.Spring).cachedCount(3)
       .width('100%').height(238)
       .contentStartOffset(this.bleed()).contentEndOffset(this.bleed())
+  }
+  @Builder private songCardMenu(song: Song, queue: Song[]) {
+    Menu() {
+      MenuItem({ content: '立即播放' }).onClick(() => this.onPlayFeedSong(song, queue))
+      MenuItem({ content: this.likedSong(song) ? '取消收藏' : '收藏' }).onClick(() => this.onLikeSong(song))
+      MenuItem({ content: '添加到歌单' }).onClick(() => this.onAddToPlaylist(song))
+      if (song.source !== 'local') {
+        MenuItem({ content: '下载歌曲' }).onClick(() => this.onDownloadSong(song))
+      }
+    }
   }
   @Builder private feedPlaylistCard(item: FeedPlaylist) {
     Column({ space: 8 }) {
       this.coverWithBadge(item.cover ?? '', 16, item.source, 20,
         { fallback: 40, countText: formatPlayCount(item.playCount), name: item.name })
       Text(item.name).fontSize(13).fontColor(TEXT).maxLines(2).textOverflow({ overflow: TextOverflow.Ellipsis }).width('100%').height(36)
-    }.width(148).height(202).alignItems(HorizontalAlign.Start).onClick(() => this.onOpenFeed(item))
+    }.width(148).height(202).alignItems(HorizontalAlign.Start).borderRadius(16).hoverEffect(HoverEffect.Highlight).onClick(() => this.onOpenFeed(item))
   }
   @Builder private feedSongCard(song: Song, queue: Song[]) {
     Column({ space: 8 }) {
       this.coverWithBadge(song.coverUrl, 16, song.source, 20, { fallback: 36, countText: '', name: song.name })
       Text(song.name).fontSize(13).fontColor(TEXT).maxLines(1).textOverflow({ overflow: TextOverflow.Ellipsis }).width('100%').height(18)
       Text(song.singer).fontSize(10).fontColor(MUTED).maxLines(1).textOverflow({ overflow: TextOverflow.Ellipsis }).width('100%').height(14)
-    }.width(140).height(190).alignItems(HorizontalAlign.Start).onClick(() => this.onPlayFeedSong(song, queue))
+    }.width(140).height(190).alignItems(HorizontalAlign.Start).borderRadius(16).hoverEffect(HoverEffect.Highlight)
+      .bindContextMenu(this.songCardMenu(song, queue), isHarmonyPc() ? ResponseType.RightClick : ResponseType.LongPress)
+      .onClick(() => this.onPlayFeedSong(song, queue))
   }
   @Builder private feedSongLine(song: Song) {
     // 新歌速递行 = 标准 SongRow（与歌单详情/搜索一致），禁止自造列表样式。
@@ -224,19 +237,21 @@ export struct MineHome {
         } else {
           Image($r('app.media.ic_music')).width(34).height(34).fillColor(ACCENT)
         }
-        if ((playlist.songs ?? []).some((s: Song) => s.coverUrl.length > 0)) {
-          Image((playlist.songs ?? []).find((s: Song) => s.coverUrl.length > 0)!.coverUrl).width('100%').height('100%').objectFit(ImageFit.Cover)
+        if (playlist.customCover) {
+          Image(playlist.customCover).sourceSize({ width: 220, height: 220 }).autoResize(true).width('100%').height('100%').objectFit(ImageFit.Cover)
+        } else if ((playlist.songs ?? []).some((s: Song) => s.coverUrl.length > 0)) {
+          Image((playlist.songs ?? []).find((s: Song) => s.coverUrl.length > 0)!.coverUrl).sourceSize({ width: 220, height: 220 }).autoResize(true).width('100%').height('100%').objectFit(ImageFit.Cover)
         }
       }.width('100%').aspectRatio(1).borderRadius(14).clip(true).backgroundColor('#17191C')
       Text(playlist.name).fontSize(12).fontColor(TEXT).maxLines(1).textOverflow({ overflow: TextOverflow.Ellipsis }).width('100%').height(16)
-    }.width(108).height(132).alignItems(HorizontalAlign.Start).onClick(() => this.onOpen(playlist))
+    }.width(108).height(132).alignItems(HorizontalAlign.Start).borderRadius(14).hoverEffect(HoverEffect.Highlight).onClick(() => this.onOpen(playlist))
   }
   @Builder private feedPlaylistRow(key: string, items: FeedPlaylist[]) {
     List({ space: 12 }) {
       LazyForEach(this.rowSource('p:' + key, items), (item: Object) => {
         ListItem() { this.feedPlaylistCard(item as FeedPlaylist) }
       }, (item: Object) => { const p = item as FeedPlaylist; return `${p.source ?? ''}:${p.id}|${p.cover ?? ''}`; })
-    }.listDirection(Axis.Horizontal).scrollBar(BarState.Off).edgeEffect(EdgeEffect.Spring)
+    }.listDirection(Axis.Horizontal).scrollBar(BarState.Off).edgeEffect(EdgeEffect.Spring).cachedCount(3)
       .width('100%').height(216)
       .contentStartOffset(this.bleed()).contentEndOffset(this.bleed())
   }
@@ -245,7 +260,7 @@ export struct MineHome {
       LazyForEach(this.rowSource('s:' + key, items), (item: Object) => {
         ListItem() { this.feedSongCard(item as Song, items) }
       }, (item: Object) => { const song = item as Song; return `${song.source}:${song.id}|${song.coverUrl ?? ''}`; })
-    }.listDirection(Axis.Horizontal).scrollBar(BarState.Off).edgeEffect(EdgeEffect.Spring)
+    }.listDirection(Axis.Horizontal).scrollBar(BarState.Off).edgeEffect(EdgeEffect.Spring).cachedCount(3)
       .width('100%').height(194)
       .contentStartOffset(this.bleed()).contentEndOffset(this.bleed())
   }
@@ -307,7 +322,7 @@ export struct MineHome {
         }
 
       }.width('100%').padding({ bottom: 180, top: this.contentTop + 64 }).alignItems(HorizontalAlign.Start)
-    }.width('100%').height('100%').align(Alignment.TopStart).scrollBar(BarState.Off).edgeEffect(EdgeEffect.Spring)
+    }.width('100%').height('100%').align(Alignment.TopStart).scrollBar(BarState.Off).edgeEffect(EdgeEffect.Spring).fadingEdge(false)
       .onDidScroll((x: number, y: number, state: ScrollState) => { if (state !== ScrollState.Idle) this.onScroll(this.scroller.currentOffset().yOffset); })
       .onScrollEdge((edge: Edge) => { this.onEdge(edge); })
       if (this.newSongsOrderOpen) {

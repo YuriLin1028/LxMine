@@ -613,8 +613,13 @@
     // Balanced gridSize for crisp diamond scale + smooth 60-120fps on mobile/tablet/desktop
     props.gridSize = global.__LXMINE_NATIVE_STAGE ? 220 : 280;
     var defaultDist = defaultWorkshopDistance();
-    if (!state.cameraDistance) {
-      state.cameraDistance = defaultDist;
+    var isPortraitNow = global.innerHeight > global.innerWidth;
+    if (!state.cameraDistance || state.lastOrientationPortrait !== isPortraitNow) {
+      var prevDefault = state.lastOrientationPortrait === true ? 96 : WORKSHOP_DEFAULT_PROPERTIES.cameraDistance;
+      if (!state.cameraDistance || Math.abs(state.cameraDistance - prevDefault) < 1.5) {
+        state.cameraDistance = defaultDist;
+      }
+      state.lastOrientationPortrait = isPortraitNow;
     }
     if (global.__LXMINE_NATIVE_STAGE) {
       var theta = (global.orbit && Number.isFinite(global.orbit.userTheta)) ? Number(global.orbit.userTheta) : 0;

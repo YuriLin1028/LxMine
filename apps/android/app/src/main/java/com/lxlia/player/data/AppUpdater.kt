@@ -6,11 +6,14 @@ import android.net.Uri
 import android.os.Build
 import android.provider.Settings
 import androidx.core.content.FileProvider
+import kotlinx.coroutines.CompletableDeferred
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.async
 import kotlinx.coroutines.awaitAll
 import kotlinx.coroutines.coroutineScope
+import kotlinx.coroutines.delay
 import kotlinx.coroutines.ensureActive
+import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
 import org.json.JSONObject
 import java.io.File
@@ -66,8 +69,6 @@ object AppUpdater {
             "https://yurilin1028.github.io/LxMine/android-release.json?t=$ts",
             "https://gh-proxy.org/https://raw.githubusercontent.com/$REPO/gh-pages/android-release.json",
             "https://ghfast.top/https://raw.githubusercontent.com/$REPO/gh-pages/android-release.json",
-            "https://api.github.com/repos/$REPO/releases/latest",
-            "https://yurilin1028.github.io/LxMine/release.json?t=$ts",
         )
     }
     private val DOWNLOAD_MIRRORS = listOf(
@@ -161,12 +162,30 @@ object AppUpdater {
         val current = baseThreePart(currentVersion)
         val endpoints = releaseEndpoints()
         val results = coroutineScope {
-            endpoints.mapIndexed { idx, endpoint ->
-                async {
+            val collected = java.util.Collections.synchronizedList(mutableListOf<Pair<Int, JSONObject>>())
+            val done = CompletableDeferred<List<Pair<Int, JSONObject>>>()
+            val remaining = java.util.concurrent.atomic.AtomicInteger(endpoints.size)
+            val graceStarted = java.util.concurrent.atomic.AtomicBoolean(false)
+            val jobs = endpoints.mapIndexed { idx, endpoint ->
+                launch {
                     val data = fetchJson(endpoint)
-                    if (data != null) idx to data else null
+                    if (data != null) {
+                        collected.add(idx to data)
+                        if (graceStarted.compareAndSet(false, true) && remaining.get() > 1) {
+                            launch {
+                                delay(1200)
+                                synchronized(collected) { done.complete(collected.toList()) }
+                            }
+                        }
+                    }
+                    if (remaining.decrementAndGet() <= 0) {
+                        synchronized(collected) { done.complete(collected.toList()) }
+                    }
                 }
-            }.awaitAll().filterNotNull()
+            }
+            val list = done.await()
+            jobs.forEach { it.cancel() }
+            list
         }
         if (results.isEmpty()) {
             throw IllegalStateException("无法连接更新服务器，请检查网络")

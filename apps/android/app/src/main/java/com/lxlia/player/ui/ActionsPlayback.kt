@@ -14,34 +14,73 @@ import org.json.JSONObject
 
 // ---- 播放、歌词、收藏：对应鸿蒙 Index.ets 中的同名动作 ----
 
-fun AppViewModel.playSong(song: Song, list: List<Song>, startMs: Long = 0, autoPlay: Boolean = true) {
+fun AppViewModel.playSong(
+    song: Song,
+    list: List<Song>,
+    startMs: Long = 0,
+    autoPlay: Boolean = true,
+    fromSearch: Boolean = false,
+    playAllSearch: Boolean = false,
+    preserveQueue: Boolean = false,
+) {
     pendingPlayback = null
-    val playList = list.ifEmpty { listOf(song) }
+    var playList = list.ifEmpty { listOf(song) }
+    var resolvedFromSearch = fromSearch
+    if ((fromSearch && !playAllSearch) || preserveQueue) {
+        val mappedId = if (fromSearch) searchAddedPlaylistMap[song.key] else null
+        var switchedToTarget = false
+        if (mappedId != null) {
+            val targetList = playlists.firstOrNull { it.id == mappedId }
+            if (targetList != null && targetList.songs.any { it.key == song.key }) {
+                playList = targetList.songs
+                resolvedFromSearch = false
+                switchedToTarget = true
+            }
+        }
+        if (!switchedToTarget) {
+            if (queue.isNotEmpty()) {
+                val existingIdx = queue.indexOfFirst { it.key == song.key }
+                playList = if (existingIdx >= 0) {
+                    queue.toList()
+                } else {
+                    val curKey = selected?.key
+                    val curIdx = if (curKey != null) queue.indexOfFirst { it.key == curKey } else -1
+                    val insertAt = if (curIdx >= 0) (curIdx + 1).coerceAtMost(queue.size) else 0
+                    queue.toMutableList().apply { add(insertAt, song) }
+                }
+            } else {
+                playList = listOf(song)
+            }
+        }
+    }
+    playingFromSearch = resolvedFromSearch
     val index = playList.indexOfFirst { it.key == song.key }.coerceAtLeast(0)
     val local = localMusic.pathFor(song).ifEmpty { downloads.offline(song) }
-    // 音源没就绪时不要先把界面切到新歌：否则底栏显示一首根本播不了的歌，
-    // 播放器里还是上一首。保持原状，只提示并跳到设置。
-    if (local.isEmpty() && !engine.ready) {
-        error = "先在设置中启用一个支持此平台的音源"
+    // 仅在尚未导入任何音源时跳转设置；已有导入音源时直接全源并发竞速，不因单一激活源失败而阻断播放。
+    if (local.isEmpty() && sources.isEmpty()) {
         tab = "设置"
         return
     }
     selected = song
     coverColors = EMPTY_COVER_COLORS
-    loadCoverColors(song)
+    autoMixPreloadToken++
+    autoMixPreloadInFlight = false
+    autoMixPreloadAttempts = 0
+    autoMixPreloadKey = ""
+    autoMixTriggeredKey = ""
+    currentAutoMixPlan = null
     queue = playList
     positionMs = startMs.coerceAtLeast(0)
     livePositionMs = positionMs
     duration = song.durationMs
-    lyrics = emptyList()
-    translatedLyrics = emptyList()
-    romajiLyrics = emptyList()
-    stageTranslations = emptyList()
+    resetLyricsForSong(song.key)
     resolving = true
     error = ""
     playbackUrl = ""
-    PlaybackController.setLyrics(emptyList(), lyricOffset)
+    updateSmartStage(false)
+    loadCoverColors(song)
     loadLyricsFor(song)
+    refreshAutoMixPlan()
     PlaybackController.playFromList(playList, index, startMs, autoPlay)
 }
 
@@ -49,18 +88,18 @@ fun AppViewModel.togglePlayback() {
     if (resolving) return
     if (playing) {
         PlaybackController.pause()
-    } else if (PlaybackController.current == null) {
-        // 冷启动只恢复了上次歌曲、播放器还没装载：按当前进度重新解析播放。
+    } else if (PlaybackController.current == null || !PlaybackController.resume()) {
         val song = selected
         if (song == null) {
             tab = "发现"
             openSearch()
             return
         }
-        playSong(song, queue.ifEmpty { listOf(song) }, positionMs)
+        val rawPos = maxOf(livePositionMs, positionMs, pendingPlayback?.positionMs ?: 0L)
+        val dur = maxOf(duration, song.durationMs)
+        val resumePos = if (dur > 5000L && rawPos >= dur - 2500L) 0L else rawPos
+        playSong(song, queue.ifEmpty { listOf(song) }, resumePos, true, playingFromSearch)
         return
-    } else {
-        PlaybackController.resume()
     }
     duration = PlaybackController.durationMs
     syncPlaybackState()
@@ -70,21 +109,63 @@ fun AppViewModel.advance(step: Int) {
     PlaybackController.advance(step)
 }
 
+fun AppViewModel.removeFromQueue(song: Song) {
+    val next = PlaybackController.removeFromQueue(song.key)
+    queue = next
+    if (next.isEmpty()) {
+        selected = null
+        playing = false
+        positionMs = 0L
+        livePositionMs = 0L
+        duration = 0L
+    }
+    autoMixPreloadKey = ""
+    autoMixPreloadRetryAt = 0L
+    autoMixTriggeredKey = ""
+    refreshAutoMixPlan()
+    savePlayback(true)
+    notify("已从播放队列移除「${song.name}」", 1600)
+}
+
+fun AppViewModel.applyQueueOrder(keys: List<String>) {
+    queueOrderOpen = false
+    val next = PlaybackController.reorderQueue(keys)
+    queue = next
+    autoMixPreloadKey = ""
+    autoMixPreloadRetryAt = 0L
+    autoMixTriggeredKey = ""
+    refreshAutoMixPlan()
+    savePlayback(true)
+    notify("已更新播放队列顺序", 1600)
+    maybeReturnToParentSheet()
+}
+
 fun AppViewModel.seek(timeMs: Long) {
-    PlaybackController.seek(timeMs)
-    positionMs = timeMs.coerceAtLeast(0)
+    val target = timeMs.coerceAtLeast(0L)
+    positionMs = target
+    livePositionMs = target
+    lastPositionUiAt = System.currentTimeMillis()
+    autoMixTriggeredKey = ""
+    autoMixPreloadRetryAt = 0L
+    PlaybackController.seek(target)
 }
 
 fun AppViewModel.setPlayMode(value: String) {
     mode = value
     PlaybackController.setMode(value)
+    refreshAutoMixPlan()
     save()
 }
 
 fun AppViewModel.setQuality(value: String) {
+    val changed = quality != value
     quality = value
     engine.setQuality(value)
     save()
+    val cur = selected
+    if (changed && cur != null && cur.source != "local") {
+        playSong(cur, queue.ifEmpty { listOf(cur) }, startMs = positionMs, autoPlay = playing)
+    }
 }
 
 fun AppViewModel.cycleField(field: String) {
@@ -108,16 +189,67 @@ fun AppViewModel.cycleField(field: String) {
 
 fun AppViewModel.liked(song: Song): Boolean = song.key in likedKeys
 
+private fun AppViewModel.switchSearchQueueToPlaylist(song: Song, target: MusicPlaylist): Boolean {
+    if (searchOpen) searchAddedPlaylistMap[song.key] = target.id
+    if (playingFromSearch && selected?.key == song.key && target.songs.isNotEmpty()) {
+        queue = target.songs
+        PlaybackController.replaceQueueKeepPlaying(target.songs)
+        playingFromSearch = false
+        refreshAutoMixPlan()
+        savePlayback(true)
+        return true
+    }
+    return false
+}
+
 fun AppViewModel.like(song: Song) {
-    val existingFav = playlists.firstOrNull { it.isFavorite || it.name == "我喜欢的" }
-    val favorite = (existingFav ?: createPlaylist("我喜欢的", true)).copy(isFavorite = true)
+    val existingFav = playlists.firstOrNull { it.isFavorite || it.name == "我喜欢的" || it.name == "我的收藏" }
+    val favorite = (existingFav ?: createPlaylist("我的收藏", true)).copy(
+        isFavorite = true,
+        name = existingFav?.name?.takeIf { it.isNotEmpty() && it != "我喜欢的" } ?: "我的收藏",
+    )
     val baseLists = if (existingFav == null) playlists + favorite else playlists
-    val next = playlistWithSong(favorite, song, song.key in likedKeys)
+    val wasLiked = song.key in likedKeys
+    val next = playlistWithSong(favorite, song, wasLiked)
+    playlists = baseLists.map { if (it.id == next.id) next else it }
+    if (openedPlaylist?.id == next.id) openedPlaylist = next
+    if (!wasLiked && switchSearchQueueToPlaylist(song, next)) {
+        notify("已收藏，后续播放已切换为「我的收藏」", 2200)
+    }
+    save()
+    scheduleAutoPlaylistSync()
+    refreshPersonalizationIfNeeded()
+}
+
+fun AppViewModel.collectSongsBatch(songs: List<Song>) {
+    if (songs.isEmpty()) return
+    val existingFav = playlists.firstOrNull { it.isFavorite || it.name == "我喜欢的" || it.name == "我的收藏" }
+    val favorite = (existingFav ?: createPlaylist("我的收藏", true)).copy(
+        isFavorite = true,
+        name = existingFav?.name?.takeIf { it.isNotEmpty() && it != "我喜欢的" } ?: "我的收藏",
+    )
+    val baseLists = if (existingFav == null) listOf(favorite) + playlists else playlists
+    val existingKeys = favorite.songs.mapTo(HashSet()) { it.key }
+    val toAdd = mutableListOf<Song>()
+    for (song in songs) {
+        if (existingKeys.add(song.key)) toAdd.add(song)
+    }
+    if (toAdd.isEmpty()) {
+        notify("所选歌曲均已收藏", 1800)
+        return
+    }
+    val nextSongs = toAdd + favorite.songs
+    val next = favorite.copy(
+        songs = nextSongs,
+        songIds = nextSongs.map { it.key },
+        updatedAt = System.currentTimeMillis(),
+    )
     playlists = baseLists.map { if (it.id == next.id) next else it }
     if (openedPlaylist?.id == next.id) openedPlaylist = next
     save()
     scheduleAutoPlaylistSync()
     refreshPersonalizationIfNeeded()
+    notify("已批量收藏 ${toAdd.size} 首歌曲", 2000)
 }
 
 /** 与鸿蒙相同，居中对话框列出全部 LX 歌单，包含「我喜欢的」。 */
@@ -140,9 +272,11 @@ fun AppViewModel.commitAddToPlaylist(playlistId: String) {
     val next = playlistWithSong(list, song)
     playlists = playlists.map { if (it.id == next.id) next else it }
     if (openedPlaylist?.id == next.id) openedPlaylist = next
+    val switched = switchSearchQueueToPlaylist(song, next)
     save()
     scheduleAutoPlaylistSync()
-    message = "已添加到「${list.name}」"
+    message = if (switched) "已添加到「${list.name}」，后续播放已切换为该歌单" else "已添加到「${list.name}」"
+    if (switched) notify(message, 2200)
     showSheet = false
     addToPlaylistSong = null
 }
@@ -173,7 +307,27 @@ fun AppViewModel.downloadSong(song: Song) {
     }
 }
 
-/** 批量下载：跳过本地音频与已完成/进行中的曲目，按序解析并入队下载。 */
+/** 批量下载选歌弹窗：让用户自主勾选要下载的曲目后再拉起目录选择器（#1）。 */
+fun AppViewModel.openBatchDownloadPicker(songs: List<Song>, title: String = "选择要下载的歌曲") {
+    val onlineSongs = songs
+        .filter { it.source != "local" && localMusic.pathFor(it).isEmpty() }
+        .distinctBy { it.key }
+    if (onlineSongs.isEmpty()) {
+        notify("当前列表没有可下载的在线歌曲", 2000)
+        return
+    }
+    val needsNetwork = onlineSongs.any { downloads.offline(it).isEmpty() }
+    if (needsNetwork && !engine.ready) {
+        error = "先启用音源再批量下载"
+        notify(error)
+        tab = "设置"
+        return
+    }
+    batchDownloadPickerTitle = title
+    batchDownloadPickerSongs = onlineSongs
+}
+
+/** 批量下载：拉起系统目录选择器（SAF OpenDocumentTree），把所有歌曲（含已私有缓存曲目）真正写入可见目录。 */
 fun AppViewModel.downloadBatch(songs: List<Song>) {
     val onlineSongs = songs
         .filter { it.source != "local" && localMusic.pathFor(it).isEmpty() }
@@ -182,35 +336,47 @@ fun AppViewModel.downloadBatch(songs: List<Song>) {
         notify("当前列表没有可下载的在线歌曲", 2000)
         return
     }
-    if (!engine.ready) {
+    val needsNetwork = onlineSongs.any { downloads.offline(it).isEmpty() }
+    if (needsNetwork && !engine.ready) {
         error = "先启用音源再批量下载"
         notify(error)
         tab = "设置"
         return
     }
-    val targets = onlineSongs.filterNot { downloads.isDownloadedOrActive(it) }
-    val skipped = onlineSongs.size - targets.size
-    if (targets.isEmpty()) {
-        notify("列表中的 ${onlineSongs.size} 首歌曲均已下载或正在下载", 2500)
-        return
+    pendingBatchDownloadSongs = onlineSongs
+    batchFolderPickRequest = System.nanoTime()
+}
+
+fun AppViewModel.executeBatchDownloadToTree(treeUri: android.net.Uri) {
+    val songs = pendingBatchDownloadSongs
+    pendingBatchDownloadSongs = emptyList()
+    if (songs.isEmpty()) return
+    runCatching {
+        app.contentResolver.takePersistableUriPermission(
+            treeUri,
+            android.content.Intent.FLAG_GRANT_READ_URI_PERMISSION or android.content.Intent.FLAG_GRANT_WRITE_URI_PERMISSION,
+        )
     }
-    val skipNote = if (skipped > 0) "（跳过已下载 $skipped 首）" else ""
-    message = "开始批量下载 ${targets.size} 首歌曲$skipNote…"
+    message = "开始批量下载 ${songs.size} 首歌曲到所选目录…"
     notify(message, 2500)
     batchDownloadJob?.cancel()
     batchDownloadJob = viewModelScope.launch {
+        var exported = 0
         var started = 0
         var failed = 0
-        targets.forEachIndexed { index, song ->
-            if (downloads.isDownloadedOrActive(song)) return@forEachIndexed
+        songs.forEachIndexed { index, song ->
             try {
-                val info = engine.songInfo(engine.resolveIdentity(song))
-                val url = engine.resolveUrl(song)
-                downloads.start(song, info.type, url)
-                started++
-                message = "批量下载排队中：${index + 1}/${targets.size} · ${song.name}"
+                if (downloads.offline(song).isNotEmpty()) {
+                    if (downloads.exportOfflineToTree(song, treeUri)) exported++
+                } else if (!downloads.isDownloadedOrActive(song)) {
+                    val info = engine.songInfo(engine.resolveIdentity(song))
+                    val url = engine.resolveUrl(song)
+                    downloads.start(song, info.type, url, targetTreeUri = treeUri)
+                    started++
+                }
+                message = "批量下载进度：${index + 1}/${songs.size} · ${song.name}"
                 if ((index + 1) % 5 == 0 || index == 0) {
-                    notify("批量下载进度：${index + 1}/${targets.size}（${song.name}）", 1800)
+                    notify("批量下载进度：${index + 1}/${songs.size}（${song.name}）", 1800)
                 }
             } catch (_: Exception) {
                 failed++
@@ -218,12 +384,17 @@ fun AppViewModel.downloadBatch(songs: List<Song>) {
             delay(180)
         }
         val summary = buildString {
-            append("批量下载已入队 $started 首")
-            if (skipped > 0) append("，跳过 $skipped 首")
-            if (failed > 0) append("，解析失败 $failed 首")
+            append("批量处理完成：")
+            if (started > 0) append("开始下载 $started 首")
+            if (exported > 0) {
+                if (started > 0) append("，")
+                append("导出已缓存 $exported 首")
+            }
+            if (started == 0 && exported == 0 && failed == 0) append("全部歌曲正在下载中")
+            if (failed > 0) append("，失败 $failed 首")
         }
         message = summary
-        notify(summary, 3000)
+        notify(summary, 3500)
     }
 }
 
@@ -234,6 +405,39 @@ fun AppViewModel.cancelDownload(id: String) {
 fun AppViewModel.requestDownloadExport(id: String) {
     pendingDownloadExportId = id
     downloadExportRequest = System.nanoTime()
+}
+
+fun AppViewModel.requestBatchDownloadExport(ids: List<String>) {
+    val valid = ids.filter { id -> downloadItems.any { it.id == id && it.state == "complete" } }
+    if (valid.isEmpty()) return
+    if (valid.size == 1) {
+        requestDownloadExport(valid[0])
+        return
+    }
+    pendingBatchExportDownloadIds = valid
+    batchExportFolderPickRequest = System.nanoTime()
+}
+
+fun AppViewModel.exportDownloadsBatchToTree(treeUri: android.net.Uri) {
+    val ids = pendingBatchExportDownloadIds
+    pendingBatchExportDownloadIds = emptyList()
+    if (ids.isEmpty()) return
+    viewModelScope.launch {
+        runCatching {
+            app.contentResolver.takePersistableUriPermission(
+                treeUri,
+                android.content.Intent.FLAG_GRANT_READ_URI_PERMISSION or android.content.Intent.FLAG_GRANT_WRITE_URI_PERMISSION,
+            )
+        }
+        var okCount = 0
+        for (id in ids) {
+            try {
+                downloads.exportToTree(id, treeUri)
+                okCount += 1
+            } catch (_: Exception) {}
+        }
+        notify(if (okCount > 0) "已批量另存 $okCount 首歌曲到所选目录" else "批量另存失败")
+    }
 }
 
 fun AppViewModel.exportDownload(uri: android.net.Uri) {
@@ -274,6 +478,7 @@ fun AppViewModel.applyHydratedCovers(covers: Map<String, String>) {
         }
     }
     PlaybackController.applyCoverMap(covers)
+    downloads.updateCovers(covers)
 
     val (nextQueue, queueChanged) = patchSongs(queue)
     if (queueChanged) queue = nextQueue
@@ -294,6 +499,7 @@ fun AppViewModel.applyHydratedCovers(covers: Map<String, String>) {
     }
 
     homeFeed?.let { feed ->
+        val (nextForYou, fyChanged) = patchSongs(feed.forYou)
         val (nextSimilar, simChanged) = patchSongs(feed.similar)
         val (nextDaily, dailyChanged) = patchSongs(feed.dailySongs)
         val (nextNew, newChanged) = patchSongs(feed.newSongs)
@@ -301,8 +507,9 @@ fun AppViewModel.applyHydratedCovers(covers: Map<String, String>) {
             nextDaily.firstOrNull { it.coverUrl.isNotEmpty() }?.coverUrl.orEmpty()
         }
         val dailyObjChanged = feed.daily != null && dailyCover.isNotEmpty() && dailyCover != feed.daily.cover
-        if (simChanged || dailyChanged || newChanged || dailyObjChanged) {
+        if (fyChanged || simChanged || dailyChanged || newChanged || dailyObjChanged) {
             val updatedFeed = feed.copy(
+                forYou = if (fyChanged) nextForYou else feed.forYou,
                 similar = if (simChanged) nextSimilar else feed.similar,
                 dailySongs = if (dailyChanged) nextDaily else feed.dailySongs,
                 newSongs = if (newChanged) nextNew else feed.newSongs,
@@ -374,11 +581,40 @@ fun AppViewModel.hydrateLibraryPlaylistCovers() {
 
 fun AppViewModel.openSwitchPlatformFromQueue(queueIndex: Int, song: Song) {
     if (song.source == "local") return
+    openSubSheetFromSheet("播放队列") {
+        switchPlatformTarget = SwitchPlatformTarget(
+            song = song,
+            fromQueue = true,
+            queueIndex = queueIndex,
+        )
+    }
+}
+
+/** 从播控栏「更多」独立触发切换当前歌曲平台（#12）。 */
+fun AppViewModel.openSwitchPlatformFromPlayer(song: Song) {
+    if (song.source == "local") {
+        notify("本地音频无需切换平台", 1600)
+        return
+    }
+    val qIdx = queue.indexOfFirst { it.key == song.key }
+    closeSheet()
     switchPlatformTarget = SwitchPlatformTarget(
         song = song,
         fromQueue = true,
-        queueIndex = queueIndex,
+        queueIndex = qIdx,
     )
+}
+
+/** 当前曲目就绪后在后台静默预解析下一首的音源 URL，切歌秒开（#9）。 */
+fun AppViewModel.preResolveNextTrack() {
+    val next = peekNextQueueSong() ?: return
+    if (next.source == "local" || localMusic.pathFor(next).isNotEmpty() || downloads.offline(next).isNotEmpty()) return
+    if (!engine.ready) return
+    preResolveJob?.cancel()
+    preResolveJob = viewModelScope.launch {
+        delay(1200)
+        runCatching { engine.preResolveUrl(next) }
+    }
 }
 
 fun AppViewModel.openSwitchPlatformFromPlaylist(playlist: MusicPlaylist, song: Song) {
@@ -397,6 +633,7 @@ fun AppViewModel.confirmSwitchPlatform(candidate: Song) {
     val oldSong = target.song
     if (candidate.key == oldSong.key && candidate.coverUrl == oldSong.coverUrl) {
         notify("已是当前所选平台版本", 1500)
+        maybeReturnToParentSheet()
         return
     }
     val mergedCandidate = if (candidate.coverUrl.isEmpty() && oldSong.coverUrl.isNotEmpty()) {
@@ -422,6 +659,7 @@ fun AppViewModel.confirmSwitchPlatform(candidate: Song) {
         }
         if (mergedCandidate.coverUrl.isEmpty()) hydrateCoversFor(listOf(mergedCandidate))
         notify("已切换为${platformName(mergedCandidate.source)}版本", 1800)
+        maybeReturnToParentSheet()
         return
     }
 
@@ -479,7 +717,10 @@ fun AppViewModel.loadCoverColors(song: Song) {
     viewModelScope.launch {
         if (song.coverUrl.isNotEmpty()) {
             val initialColors = app.coverPalette.colors(song.coverUrl)
-            if (selected?.key == song.key) coverColors = initialColors
+            if (selected?.key == song.key) {
+                coverColors = initialColors
+                updateSmartStage(false)
+            }
         }
         val assets = if (song.source == "local" && song.coverUrl.isNotEmpty()) null
             else runCatching { engine.songAssets(song) }.getOrNull()
@@ -489,26 +730,35 @@ fun AppViewModel.loadCoverColors(song: Song) {
         }
         if (selected?.key != song.key) return@launch
         val publicLines = LyricParser.parse(assets?.optString("lyric").orEmpty())
-        if (publicLines.size > lyrics.size || (lyrics.isEmpty() && publicLines.isNotEmpty())) {
+        val publicExact = assets?.optBoolean("exactIdMatch", false) == true && publicLines.isNotEmpty()
+        val sameSongLyrics = lyricsSongKey == song.key
+        if (publicLines.isNotEmpty() && (!sameSongLyrics || publicExact || (!lyricsExactMatched && publicLines.size > lyrics.size) || lyrics.isEmpty())) {
+            lyricsSongKey = song.key
+            if (publicExact) lyricsExactMatched = true
             lyrics = publicLines
-            if (translatedLyrics.isEmpty()) translatedLyrics = LyricParser.parse(assets?.optString("tlyric").orEmpty())
-            if (romajiLyrics.isEmpty()) romajiLyrics = LyricParser.parse(assets?.optString("romalrc").orEmpty())
+            if (!sameSongLyrics || publicExact || translatedLyrics.isEmpty()) translatedLyrics = LyricParser.parse(assets?.optString("tlyric").orEmpty())
+            if (!sameSongLyrics || publicExact || romajiLyrics.isEmpty()) romajiLyrics = LyricParser.parse(assets?.optString("romalrc").orEmpty())
             updateStageTranslations()
             PlaybackController.setLyrics(lyrics, lyricOffset)
+            refreshAutoMixPlan()
         }
         if (cover.isNotEmpty()) {
             val colors = app.coverPalette.colors(cover)
-            if (selected?.key == song.key) coverColors = colors
+            if (selected?.key == song.key) {
+                coverColors = colors
+                updateSmartStage(false)
+            }
         }
     }
 }
 
 /** 歌词 100% 级联兜底：无论自定义源返回结果如何，缺词或缺封面均合并 song-assets 并回写全局状态。 */
-fun AppViewModel.loadLyricsFor(song: Song, retry: Boolean = false) {
-    val token = ++playToken
+fun AppViewModel.loadLyricsFor(song: Song, retryCount: Int = 0) {
+    val token = ++lyricLoadToken
     if (song.source == "local") {
         val localLines = LyricParser.parse(localMusic.lyricFor(song))
-        if (localLines.isNotEmpty()) {
+        if (localLines.isNotEmpty() && selected?.key == song.key) {
+            lyricsSongKey = song.key
             lyrics = localLines
             translatedLyrics = emptyList()
             romajiLyrics = emptyList()
@@ -521,26 +771,42 @@ fun AppViewModel.loadLyricsFor(song: Song, retry: Boolean = false) {
         val media = runCatching {
             engine.lyricAndCoverBundle(song, lyricPrefs.showTranslation, lyricPrefs.showRomaji)
         }.getOrNull()
-        if (token != playToken) return@launch
+        if (token != lyricLoadToken || selected?.key != song.key) return@launch
         if (media != null) {
-            if (media.lines.size >= lyrics.size && media.lines.isNotEmpty()) {
+            val sameSongLyrics = lyricsSongKey == song.key
+            if (media.lines.isNotEmpty() && (!sameSongLyrics || media.exactIdMatch || (!lyricsExactMatched && media.lines.size >= lyrics.size) || lyrics.isEmpty())) {
+                lyricsSongKey = song.key
+                if (media.exactIdMatch) lyricsExactMatched = true
                 lyrics = media.lines
             }
-            if (media.translation.isNotEmpty()) translatedLyrics = media.translation
-            if (media.romaji.isNotEmpty()) romajiLyrics = media.romaji
+            if (media.translation.isNotEmpty()) {
+                lyricsSongKey = song.key
+                translatedLyrics = media.translation
+            } else if (!sameSongLyrics) {
+                translatedLyrics = emptyList()
+            }
+            if (media.romaji.isNotEmpty()) {
+                lyricsSongKey = song.key
+                romajiLyrics = media.romaji
+            } else if (!sameSongLyrics) {
+                romajiLyrics = emptyList()
+            }
             updateStageTranslations()
-            PlaybackController.setLyrics(lyrics, lyricOffset)
+            PlaybackController.setLyrics(if (lyricsSongKey == song.key) lyrics else emptyList(), lyricOffset)
             if (media.coverUrl.isNotEmpty() && media.coverUrl != song.coverUrl) {
                 applyHydratedCovers(mapOf(song.key to media.coverUrl))
                 val colors = app.coverPalette.colors(media.coverUrl)
                 if (selected?.key == song.key) coverColors = colors
             }
+            updateSmartStage(true)
+            refreshAutoMixPlan()
         }
-        if (!retry && (lyrics.isEmpty() || selected?.coverUrl.isNullOrEmpty())) {
-            delay(8000)
-            if (token == playToken && selected?.key == song.key) {
+        val currentSongHasLyrics = lyricsSongKey == song.key && lyrics.isNotEmpty()
+        if (retryCount < 2 && (!currentSongHasLyrics || selected?.coverUrl.isNullOrEmpty())) {
+            delay(if (retryCount == 0) 1200 else 3200)
+            if (token == lyricLoadToken && selected?.key == song.key) {
                 loadCoverColors(selected ?: song)
-                loadLyricsFor(selected ?: song, retry = true)
+                loadLyricsFor(selected ?: song, retryCount = retryCount + 1)
             }
         }
     }
@@ -550,16 +816,19 @@ fun AppViewModel.reloadLyricExtras() {
     selected?.let { song -> loadLyricsFor(song) }
 }
 
-/** 翻译与罗马音按时间合并成舞台副歌词。 */
+/** 翻译与罗马音按 ±650ms 就近对齐主歌词时间戳后合并为舞台副歌词。 */
 fun AppViewModel.updateStageTranslations() {
     val grouped = linkedMapOf<Long, MutableList<String>>()
     val merged = buildList {
-        if (lyricPrefs.showTranslation) addAll(translatedLyrics)
-        if (lyricPrefs.showRomaji) addAll(romajiLyrics)
+        if (lyricPrefs.showTranslation) addAll(LyricParser.alignAuxToMain(lyrics, translatedLyrics))
+        if (lyricPrefs.showRomaji) addAll(LyricParser.alignAuxToMain(lyrics, romajiLyrics))
     }
+    val placeholderRe = Regex("^[\\\\/\\-—–_~·•\\s]+$")
     for (line in merged) {
+        val clean = line.text.trim()
+        if (clean.isEmpty() || placeholderRe.matches(clean)) continue
         val values = grouped.getOrPut(line.timeMs) { mutableListOf() }
-        if (!values.contains(line.text)) values.add(line.text)
+        if (!values.contains(clean)) values.add(clean)
     }
     stageTranslations = grouped.entries.sortedBy { it.key }.map { (time, values) ->
         LyricLine(time, values.joinToString("\n"))
@@ -596,14 +865,569 @@ fun AppViewModel.setShowRomaji(value: Boolean) {
 }
 
 fun AppViewModel.setLyricScale(value: Float) {
-    val rounded = (Math.round(value.coerceIn(0.75f, 1.40f) * 100f) / 100f).coerceIn(0.75f, 1.40f)
+    val rounded = (Math.round(value.coerceIn(0.55f, 1.50f) * 100f) / 100f).coerceIn(0.55f, 1.50f)
     lyricPrefs = lyricPrefs.copy(lyricScale = rounded)
+    scheduleSave()
+}
+
+fun AppViewModel.setLyricLineSpacing(value: Float) {
+    val rounded = (Math.round(value.coerceIn(0.85f, 1.80f) * 100f) / 100f).coerceIn(0.85f, 1.80f)
+    lyricPrefs = lyricPrefs.copy(lyricLineSpacing = rounded)
+    scheduleSave()
+}
+
+fun AppViewModel.setLyricMaxLines(value: Int) {
+    lyricPrefs = lyricPrefs.copy(lyricMaxLines = value.coerceIn(0, 10))
     save()
+}
+
+fun AppViewModel.setAudioFx(config: com.lxlia.player.audio.AudioFxConfig) {
+    audioFx = config
+    PlaybackController.setAudioFx(config)
+    scheduleSave()
+}
+
+fun AppViewModel.setSpatialMode(mode: String) {
+    val normalized = if (mode in listOf("off", "system", "binaural")) mode else "system"
+    setAudioFx(audioFx.copy(spatialMode = normalized))
+    spatialHardwareStatus = PlaybackController.querySpatialStatus(app)
+}
+
+fun AppViewModel.requestEarMonitorMode(nextMode: String) {
+    if (nextMode == "off") {
+        pendingEarMonitorMode = ""
+        earMonitor.setMode("off")
+        return
+    }
+    val granted = androidx.core.content.ContextCompat.checkSelfPermission(
+        app,
+        android.Manifest.permission.RECORD_AUDIO,
+    ) == android.content.pm.PackageManager.PERMISSION_GRANTED
+    if (!granted) {
+        pendingEarMonitorMode = nextMode
+        earMonitorPermissionRequest = System.nanoTime()
+        return
+    }
+    val ok = earMonitor.setMode(nextMode)
+    if (!ok) {
+        notify("耳返启动失败，请检查麦克风占用或权限", 2200)
+    }
+}
+
+fun AppViewModel.onEarMonitorPermissionResult(granted: Boolean) {
+    val target = pendingEarMonitorMode
+    pendingEarMonitorMode = ""
+    if (!granted) {
+        notify("未获得麦克风权限，请在系统应用权限设置中开启「麦克风」", 3200)
+        runCatching {
+            val intent = android.content.Intent(
+                android.provider.Settings.ACTION_APPLICATION_DETAILS_SETTINGS,
+                android.net.Uri.fromParts("package", app.packageName, null),
+            ).addFlags(android.content.Intent.FLAG_ACTIVITY_NEW_TASK)
+            app.startActivity(intent)
+        }
+        return
+    }
+    if (target.isNotEmpty()) {
+        val ok = earMonitor.setMode(target)
+        if (!ok) notify("耳返启动失败，请确认耳机与麦克风未被占用后重试", 2600)
+    }
+}
+
+fun AppViewModel.setEarMonitorMicVolume(value: Float) {
+    earMonitor.setMicVolume(value)
+}
+
+fun AppViewModel.setEarMonitorVocalVolume(value: Float) {
+    earMonitor.setVocalVolume(value)
+}
+
+fun AppViewModel.setAutoMixEnabled(enabled: Boolean) {
+    autoMixEnabled = enabled
+    if (!enabled) {
+        PlaybackController.cancelAutoMix()
+        currentAutoMixPlan = null
+        autoMixPreview = ""
+        autoMixPreloadToken++
+        autoMixPreloadInFlight = false
+        autoMixPreloadAttempts = 0
+        autoMixPreloadJob?.cancel()
+        autoMixPreloadKey = ""
+        autoMixTriggeredKey = ""
+    } else {
+        refreshAutoMixPlan()
+    }
+    save()
+}
+
+fun AppViewModel.peekNextQueueSong(): Song? {
+    PlaybackController.peekNextSong()?.let { return it }
+    val cur = selected ?: return null
+    if (queue.size <= 1 || mode == "单曲循环") return null
+    val idx = queue.indexOfFirst { it.key == cur.key }
+    if (idx < 0) return null
+    if (mode == "顺序播放" && idx >= queue.lastIndex) return null
+    val nextIdx = (idx + 1) % queue.size
+    return queue.getOrNull(nextIdx)?.takeIf { it.key != cur.key }
+}
+
+fun AppViewModel.ensureAutoMixPreload(forceRetry: Boolean = false) {
+    if (!autoMixEnabled || resolving || sleepMode == "song" || sleepPendingStop || PlaybackController.autoMixActive) return
+    val cur = selected ?: return
+    val next = peekNextQueueSong() ?: return
+    val plan = currentAutoMixPlan ?: return
+    if (!plan.enabled) return
+    val pairKey = "${cur.key}->${next.key}"
+    val now = System.currentTimeMillis()
+    if (PlaybackController.isPreloadedFor(next)) {
+        autoMixPreloadKey = pairKey
+        autoMixPreloadInFlight = false
+        autoMixPreloadRetryAt = 0L
+        return
+    }
+    if (!forceRetry && autoMixPreloadInFlight && autoMixPreloadKey == pairKey && (now - autoMixPreloadStartedAt) < 12_000L) {
+        return
+    }
+    if (!forceRetry && autoMixPreloadKey == pairKey && now < autoMixPreloadRetryAt) {
+        return
+    }
+    if (autoMixPreloadKey != pairKey) {
+        autoMixPreloadAttempts = 0
+    }
+    if (autoMixPreloadAttempts >= 3 && !forceRetry) return
+    val attempt = autoMixPreloadAttempts
+    autoMixPreloadAttempts++
+    val token = ++autoMixPreloadToken
+    autoMixPreloadKey = pairKey
+    autoMixPreloadInFlight = true
+    autoMixPreloadStartedAt = now
+    autoMixPreloadRetryAt = now + 12_000L
+    val capturedPlan = plan
+    autoMixPreloadJob?.cancel()
+    autoMixPreloadJob = viewModelScope.launch {
+        var usedUrl = ""
+        try {
+            val rawLocal = localMusic.pathFor(next).ifEmpty { downloads.offline(next) }
+            val localPath = rawLocal.removePrefix("file://")
+            if (localPath.isNotEmpty()) {
+                PlaybackController.preloadNext(next, localPath, true, capturedPlan.nextEntryMs)
+            } else if (engine.ready) {
+                val badUrls = autoMixFailedUrls[next.key]?.toList().orEmpty()
+                val url = engine.resolveUrl(
+                    song = next,
+                    raceAll = true,
+                    silent = true,
+                    forceResolve = attempt > 0,
+                    preferCrossPlatform = attempt >= 1,
+                    excludeUrls = badUrls,
+                )
+                if (token != autoMixPreloadToken || selected?.key != cur.key) return@launch
+                usedUrl = url
+                if (url.isNotEmpty()) {
+                    PlaybackController.preloadNext(next, url, false, capturedPlan.nextEntryMs)
+                } else {
+                    throw IllegalStateException("empty preload url")
+                }
+            } else {
+                autoMixPreloadInFlight = false
+                autoMixPreloadRetryAt = System.currentTimeMillis() + 3000L
+                return@launch
+            }
+            // 等待副轨 ExoPlayer 进入 STATE_READY（最多 10s），避免坏链静默卡死
+            val deadline = System.currentTimeMillis() + 10_000L
+            while (token == autoMixPreloadToken && System.currentTimeMillis() < deadline) {
+                if (PlaybackController.isPreloadedFor(next)) {
+                    autoMixPreloadInFlight = false
+                    autoMixPreloadRetryAt = 0L
+                    if (playing && !PlaybackController.autoMixActive && selected?.key == cur.key) {
+                        tickAutoMix(livePositionMs.takeIf { it > 0L } ?: positionMs, duration)
+                    }
+                    return@launch
+                }
+                delay(150)
+            }
+            if (token != autoMixPreloadToken) return@launch
+            if (usedUrl.isNotEmpty()) {
+                val list = autoMixFailedUrls.getOrPut(next.key) { mutableListOf() }
+                if (usedUrl !in list) list.add(usedUrl)
+                while (list.size > 4) list.removeAt(0)
+            }
+            autoMixPreloadInFlight = false
+            autoMixPreloadRetryAt = System.currentTimeMillis() + 2500L
+            if (autoMixPreloadAttempts < 3 && autoMixEnabled) {
+                delay(1200)
+                if (token == autoMixPreloadToken && autoMixEnabled) ensureAutoMixPreload(true)
+            }
+        } catch (_: Throwable) {
+            if (token != autoMixPreloadToken) return@launch
+            if (usedUrl.isNotEmpty()) {
+                val list = autoMixFailedUrls.getOrPut(next.key) { mutableListOf() }
+                if (usedUrl !in list) list.add(usedUrl)
+                while (list.size > 4) list.removeAt(0)
+            }
+            autoMixPreloadInFlight = false
+            autoMixPreloadRetryAt = System.currentTimeMillis() + 2500L
+            if (autoMixPreloadAttempts < 3 && autoMixEnabled) {
+                delay(1200)
+                if (token == autoMixPreloadToken && autoMixEnabled) ensureAutoMixPreload(true)
+            }
+        }
+    }
+}
+
+fun AppViewModel.prefetchNextLyricsForAutoMix(next: Song) {
+    val key = next.key
+    if (autoMixNextLyricsCache.containsKey(key) || autoMixNextLyricsPending.contains(key)) return
+    if (next.source == "local") {
+        autoMixNextLyricsCache[key] = LyricParser.parse(localMusic.lyricFor(next))
+        return
+    }
+    if (next.name.isBlank()) return
+    autoMixNextLyricsPending.add(key)
+    viewModelScope.launch {
+        val lines = runCatching {
+            engine.lyricAndCoverBundle(next, needTranslation = false, needRomaji = false).lines
+        }.getOrDefault(emptyList())
+        autoMixNextLyricsPending.remove(key)
+        autoMixNextLyricsCache[key] = lines
+        if (autoMixNextLyricsCache.size > 24) {
+            val oldest = autoMixNextLyricsCache.keys.firstOrNull()
+            if (oldest != null) autoMixNextLyricsCache.remove(oldest)
+        }
+        val curNext = peekNextQueueSong()
+        if (autoMixEnabled && !PlaybackController.autoMixActive && curNext?.key == key) {
+            refreshAutoMixPlan()
+        }
+    }
+}
+
+fun AppViewModel.refreshAutoMixPlan() {
+    if (!autoMixEnabled) {
+        currentAutoMixPlan = null
+        autoMixPlanDurationMs = 0L
+        autoMixPreview = ""
+        return
+    }
+    val cur = selected ?: return
+    val prevNextKey = autoMixNextSongKey
+    val next = peekNextQueueSong()
+    autoMixNextSongKey = next?.key.orEmpty()
+    if (next != null) {
+        val pairKey = "${cur.key}->${next.key}"
+        if (autoMixTriggeredKey.isNotEmpty() && autoMixTriggeredKey != pairKey) autoMixTriggeredKey = ""
+        if (prevNextKey.isNotEmpty() && prevNextKey != next.key && !PlaybackController.autoMixActive) {
+            autoMixPreloadToken++
+            autoMixPreloadInFlight = false
+            autoMixPreloadKey = ""
+            autoMixPreloadRetryAt = 0L
+            autoMixPreloadAttempts = 0
+            autoMixPreloadJob?.cancel()
+        }
+    }
+    val realDur = PlaybackController.durationMs.takeIf { it > 15_000L }
+        ?: duration.takeIf { it > 15_000L }
+        ?: cur.durationMs
+    autoMixPlanDurationMs = realDur
+    val cachedNextLyrics = if (next != null) autoMixNextLyricsCache[next.key].orEmpty() else emptyList()
+    if (next != null && !autoMixNextLyricsCache.containsKey(next.key)) {
+        prefetchNextLyricsForAutoMix(next)
+    }
+    val plan = com.lxlia.player.audio.AutoMixPlanner.plan(
+        currentSong = cur,
+        currentDurationMs = realDur,
+        currentLyrics = lyrics,
+        nextSong = next,
+        nextLyrics = cachedNextLyrics,
+    )
+    currentAutoMixPlan = if (plan.enabled) plan else null
+    autoMixPreview = if (plan.enabled && next != null) "${plan.summary} → ${next.name}" else plan.summary
+    // 主动式提前预载：规划就绪后立即后台预热副轨，不再等到最后 40 秒
+    if (plan.enabled && next != null && playing && !resolving && !PlaybackController.autoMixActive) {
+        ensureAutoMixPreload(false)
+    }
+}
+
+fun AppViewModel.tickAutoMix(posMs: Long, durMs: Long) {
+    if (!autoMixEnabled || !playing || sleepMode == "song" || sleepPendingStop || PlaybackController.autoMixActive) return
+    val cur = selected ?: return
+    val next = peekNextQueueSong() ?: return
+    val effDur = PlaybackController.durationMs.takeIf { it > 15_000L }
+        ?: durMs.takeIf { it > 15_000L }
+        ?: cur.durationMs
+    var plan = currentAutoMixPlan
+    if ((plan == null || kotlin.math.abs(effDur - autoMixPlanDurationMs) > 2500L) && effDur > 22_000L) {
+        refreshAutoMixPlan()
+        plan = currentAutoMixPlan
+    }
+    if (plan == null || !plan.enabled) return
+    val pairKey = "${cur.key}->${next.key}"
+    // 播放满 2 秒起即主动维持副轨已预加载（换歌单/拖进度/网络抖动均自动补齐）
+    if (posMs >= 2000L) {
+        ensureAutoMixPreload(false)
+    }
+    val remainingMs = (effDur - posMs).coerceAtLeast(0L)
+    if (posMs >= plan.mixStartMs && remainingMs >= 1600L && autoMixTriggeredKey != pairKey && PlaybackController.isPreloadedFor(next)) {
+        autoMixTriggeredKey = pairKey
+        val effCrossfade = plan.crossfadeMs.coerceAtMost((remainingMs - 250L).coerceAtLeast(1600L)).coerceAtLeast(1600L)
+        PlaybackController.startAutoMix(effCrossfade, plan.strategy, plan.tempoMatch, plan.rateA, plan.rateB)
+    }
+}
+
+fun AppViewModel.isSongInUserLibrary(song: Song?): Boolean {
+    if (song == null) return false
+    if (song.source == "local") return true
+    if (song.key in likedKeys) return true
+    if (localMusic.pathFor(song).isNotEmpty() || downloads.offline(song).isNotEmpty()) return true
+    return playlists.any { pl -> pl.kind == "lx" && pl.songs.any { it.key == song.key } }
+}
+
+fun AppViewModel.dislikeCurrentSong() {
+    val song = selected ?: return
+    closeSheet()
+    if (song.key !in dislikedKeys) {
+        dislikedKeys = (listOf(song.key) + dislikedKeys).take(300)
+        save()
+    }
+    homeFeed?.let { feed ->
+        val disliked = dislikedKeys.toSet()
+        homeFeed = feed.copy(
+            forYou = feed.forYou.filterNot { it.key in disliked },
+            similar = feed.similar.filterNot { it.key in disliked },
+            newSongs = feed.newSongs.filterNot { it.key in disliked },
+            dailySongs = feed.dailySongs.filterNot { it.key in disliked },
+        )
+    }
+    notify("已减少此类推荐", 1800)
+    if (queue.size > 1) {
+        val nextQueue = queue.filterNot { it.key == song.key }
+        val idx = queue.indexOfFirst { it.key == song.key }.coerceAtLeast(0)
+        val nextSong = nextQueue[idx % nextQueue.size]
+        playSong(nextSong, nextQueue)
+    } else {
+        PlaybackController.pause()
+    }
+}
+
+fun AppViewModel.clearDislikedSongs() {
+    dislikedKeys = emptyList()
+    save()
+    notify("已清空不感兴趣屏蔽列表", 1800)
+}
+
+fun AppViewModel.setPlayPauseFadeEnabled(enabled: Boolean) {
+    playPauseFadeEnabled = enabled
+    PlaybackController.playPauseFadeEnabled = enabled
+    save()
+}
+
+fun AppViewModel.setStageResetCameraOnSong(enabled: Boolean) {
+    stageResetCameraOnSong = enabled
+    save()
+}
+
+fun AppViewModel.viewCurrentArtist() {
+    val song = selected ?: return
+    val artist = song.singer.split(Regex("[、/,，;&]+")).firstOrNull()?.trim().orEmpty()
+    if (artist.isEmpty() || artist == "未知歌手") {
+        notify("当前歌曲没有可用的艺人信息", 1800)
+        return
+    }
+    val fromPlayer = showPlayer
+    closeSheet()
+    showPlayer = false
+    tab = "发现"
+    searchKind = "artist"
+    keyword = artist
+    openSearch()
+    searchReturnToPlayer = fromPlayer
+    keyword = artist
+    search()
+}
+
+fun AppViewModel.viewCurrentAlbum() {
+    val song = selected ?: return
+    val rawAlbum = song.albumName.trim()
+    val album = rawAlbum.ifEmpty { song.name.trim() }
+    if (album.isEmpty()) {
+        notify("当前歌曲没有可用的专辑信息", 1800)
+        return
+    }
+    val fromPlayer = showPlayer
+    closeSheet()
+    showPlayer = false
+    tab = "发现"
+    searchKind = if (rawAlbum.isNotEmpty()) "album" else "music"
+    keyword = album
+    openSearch()
+    searchReturnToPlayer = fromPlayer
+    keyword = album
+    search()
+}
+
+fun AppViewModel.openSimilarSongs() {
+    val song = selected ?: return
+    val fromPlayer = showPlayer
+    closeSheet()
+    showPlayer = false
+    val returnTab = tab
+    val shell = MusicPlaylist(
+        id = "similar-${song.key}",
+        name = "相似歌曲 · ${song.name}",
+        kind = "lx",
+        songs = emptyList(),
+        createdAt = System.currentTimeMillis(),
+        updatedAt = System.currentTimeMillis(),
+        preserveQueue = true,
+    )
+    playlistReturnTab = returnTab
+    playlistReturnFeed = feedSection
+    playlistReturnSearch = searchOpen
+    playlistReturnToPlayer = fromPlayer
+    openedPlaylist = shell
+    openedFeedLoading = true
+    tab = "资料库"
+    discoveryCompact = false
+    viewModelScope.launch {
+        try {
+            val disliked = dislikedKeys.toSet()
+            val found = mutableListOf<Song>()
+            runCatching {
+                val raw = engine.catalogue("similar-songs", song.toJson().toString())
+                val arr = JSONObject(raw).optJSONArray("items")
+                if (arr != null) {
+                    for (i in 0 until arr.length()) {
+                        Song.fromJson(arr.optJSONObject(i))?.let { cand ->
+                            if (cand.key != song.key && cand.key !in disliked) found.add(cand)
+                        }
+                    }
+                }
+            }
+            if (found.size < 8) {
+                val artist = song.singer.split(Regex("[、/,，;&]+")).firstOrNull()?.trim().orEmpty().ifEmpty { song.name }
+                val searchRes = runCatching {
+                    com.lxlia.player.lx.SearchApi.search(com.lxlia.player.lx.SearchSource.ALL, artist, page = 1, limit = 24).items
+                }.getOrDefault(emptyList())
+                val seen = found.map { it.key }.toMutableSet()
+                seen.add(song.key)
+                searchRes.forEach { cand ->
+                    if (cand.key !in disliked && seen.add(cand.key)) found.add(cand)
+                }
+            }
+            openedFeedLoading = false
+            if (found.isEmpty()) {
+                notify("暂时没有找到相似歌曲", 2000)
+                openedPlaylist = null
+                tab = returnTab
+                return@launch
+            }
+            openedPlaylist = shell.copy(songs = found, songIds = found.map { it.key })
+            hydrateCoversFor(found.take(36))
+        } catch (_: Throwable) {
+            openedFeedLoading = false
+            openedPlaylist = null
+            tab = returnTab
+            notify("获取相似歌曲失败", 2000)
+        }
+    }
+}
+
+fun AppViewModel.setSleepTimer(modeId: String, minutes: Int) {
+    sleepTimerJob?.cancel()
+    sleepTimerJob = null
+    sleepPendingStop = false
+    if (modeId == "off") {
+        clearSleepTimer()
+        return
+    }
+    if (modeId == "song" || minutes < 0) {
+        sleepMode = "song"
+        sleepEndAt = 0L
+        sleepRemainingText = "播完本首"
+        notify("定时关闭：播完本首后暂停", 2000)
+        return
+    }
+    val mins = minutes.coerceIn(1, 480)
+    sleepMode = modeId
+    sleepEndAt = System.currentTimeMillis() + mins * 60_000L
+    updateSleepRemainingText()
+    notify("定时关闭：${mins} 分钟后停止播放", 2000)
+    sleepTimerJob = viewModelScope.launch {
+        while (sleepMode != "off" && sleepMode != "song") {
+            val left = sleepEndAt - System.currentTimeMillis()
+            if (left <= 0L) {
+                if (sleepFinishSong && playing) {
+                    sleepPendingStop = true
+                    sleepRemainingText = "播完本首后暂停"
+                    notify("倒计时结束，将播完当前歌曲后暂停", 2400)
+                } else {
+                    clearSleepTimer(silent = true)
+                    PlaybackController.fadeOutAndPause(1400L)
+                    notify("定时关闭已到，已暂停播放", 2400)
+                }
+                break
+            }
+            updateSleepRemainingText()
+            delay(1000)
+        }
+    }
+}
+
+private fun AppViewModel.updateSleepRemainingText() {
+    val leftSec = ((sleepEndAt - System.currentTimeMillis()) / 1000L).coerceAtLeast(0L)
+    val mins = leftSec / 60L
+    val secs = leftSec % 60L
+    sleepRemainingText = String.format(java.util.Locale.US, "%02d:%02d", mins, secs)
+}
+
+fun AppViewModel.clearSleepTimer(silent: Boolean = false) {
+    sleepTimerJob?.cancel()
+    sleepTimerJob = null
+    sleepMode = "off"
+    sleepEndAt = 0L
+    sleepPendingStop = false
+    sleepRemainingText = ""
+    if (!silent) notify("已关闭定时关闭", 1600)
+}
+
+fun AppViewModel.setSleepFinishSong(enabled: Boolean) {
+    sleepFinishSong = enabled
+    save()
+}
+
+fun AppViewModel.confirmClearRecentSongs() {
+    pendingClearRecent = false
+    recentSongs = emptyList()
+    store.saveRecentSongs("[]")
+    if (openedPlaylist?.kind == "recent") {
+        openedPlaylist = openedPlaylist?.copy(songs = emptyList(), songIds = emptyList(), updatedAt = System.currentTimeMillis())
+    }
+    notify("已清空最近播放记录", 1800)
 }
 
 fun AppViewModel.setLyricOffset(value: Long) {
     lyricOffset = value.coerceIn(-10000, 10000)
     PlaybackController.setLyricOffset(lyricOffset)
+    scheduleSave()
+}
+
+fun AppViewModel.setBluetoothCarLyricsEnabled(enabled: Boolean) {
+    bluetoothCarLyricsEnabled = enabled
+    PlaybackController.setBluetoothCarLyrics(enabled, bluetoothCarLyricsMode)
+    save()
+    notify(
+        if (enabled) {
+            if (bluetoothAudioConnected) "蓝牙车载歌词已开启（已检测到蓝牙音频，播放时自动同步）"
+            else "蓝牙车载歌词已开启（连接车载蓝牙后自动同步）"
+        } else {
+            "蓝牙车载歌词已关闭"
+        },
+        2400,
+    )
+}
+
+fun AppViewModel.setBluetoothCarLyricsMode(mode: String) {
+    bluetoothCarLyricsMode = com.lxlia.player.audio.BluetoothCarLyrics.normalizeMode(mode)
+    PlaybackController.setBluetoothCarLyrics(bluetoothCarLyricsEnabled, bluetoothCarLyricsMode)
     save()
 }
 

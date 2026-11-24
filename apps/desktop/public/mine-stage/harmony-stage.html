@@ -7,17 +7,22 @@
   <title>LxMine</title>
   <meta name="referrer" content="no-referrer">
   
-  <script src="vendor/three.r128.min.js?revision=3750b7a7a96d1dcb"></script>
-  <script src="vendor/music-tempo.min.js?revision=3750b7a7a96d1dcb"></script>
-  <script src="vendor/gsap.min.js?revision=3750b7a7a96d1dcb"></script>
-  <script>window.__LXMINE_NATIVE_STAGE=true;window.__LXMINE_STAGE_REVISION='3750b7a7a96d1dcb';window.__lxmineStagePresentation={visible:false,detail:false};window.lxMusic={};window.__lxmineFetch=window.fetch.bind(window);window.fetch=function(url,options){if(new URL(typeof url==='string'?url:url.url,location.href).pathname.startsWith('/api/'))return Promise.resolve({ok:false,status:503,json:async function(){return {}},text:async function(){return ''}});return window.__lxmineFetch(url,options)};</script>
-  <script src="mine-stage-lyrics.js?revision=3750b7a7a96d1dcb"></script>
-  <link rel="stylesheet" href="css/index.css?v=20260716-we-continuity-vsync&revision=3750b7a7a96d1dcb">
+  <script src="vendor/three.r128.min.js?revision=0b0fbbf3b6a20173"></script>
+  <script src="vendor/music-tempo.min.js?revision=0b0fbbf3b6a20173"></script>
+  <script src="vendor/gsap.min.js?revision=0b0fbbf3b6a20173"></script>
+  <script>window.__LXMINE_NATIVE_STAGE=true;window.__LXMINE_STAGE_REVISION='0b0fbbf3b6a20173';if(location.search.indexOf('wallpaper=1')>=0)document.documentElement.classList.add('wallpaper-host');var __wpHost=location.search.indexOf('wallpaper=1')>=0;window.__lxmineStagePresentation={visible:__wpHost,detail:__wpHost};window.lxMusic={};window.__lxmineFetch=window.fetch.bind(window);window.fetch=function(url,options){if(new URL(typeof url==='string'?url:url.url,location.href).pathname.startsWith('/api/'))return Promise.resolve({ok:false,status:503,json:async function(){return {}},text:async function(){return ''}});return window.__lxmineFetch(url,options)};</script>
+  <script src="mine-stage-lyrics.js?revision=0b0fbbf3b6a20173"></script>
+  <link rel="stylesheet" href="css/index.css?v=20260716-we-continuity-vsync&revision=0b0fbbf3b6a20173">
 <style>
 html,body,#desktop-window-shell,#canvas-container{width:100%;height:100%;margin:0;overflow:hidden;background:transparent!important}
 html,body{width:100vw;height:100vh}
 /* Native shells own the cover and theme wash beneath the transparent effects. */
 #album-bg,#album-bg-next,#custom-bg{display:none!important}
+html.wallpaper-host{background:transparent!important}
+html.wallpaper-host body{background:rgba(9,11,16,var(--wp-bg-opacity,0.42))!important}
+html.wallpaper-host.light-theme body{background:rgba(220,224,229,var(--wp-bg-opacity,0.42))!important}
+html.wallpaper-host #album-bg,html.wallpaper-host #album-bg-next,html.wallpaper-host #custom-bg{display:block!important;opacity:var(--wp-bg-opacity,0.42)!important}
+html.wallpaper-host #canvas-container,html.wallpaper-host #sonic-workshop-layer{opacity:var(--wp-overall-opacity,0.95)!important}
 body>:not(#desktop-window-shell){display:none!important}
 #desktop-window-shell>:not(#canvas-container):not(#sonic-workshop-layer):not(#album-bg):not(#album-bg-next):not(#custom-bg):not(#wallpaper-engine-layer){display:none!important}
 #sonic-workshop-layer{position:fixed!important;inset:0!important;width:100%!important;height:100%!important;z-index:1!important;pointer-events:none!important}
@@ -1962,7 +1967,7 @@ body>:not(#desktop-window-shell){display:none!important}
     </section>
     <p id="lxmine-library-status" role="status" aria-live="polite"></p>
   </dialog>
-  <script src="mine-stage-appearance.js?revision=3750b7a7a96d1dcb"></script><script src="mine-stage-engine.js?revision=3750b7a7a96d1dcb"></script><script src="mine-stage-bridge.js?revision=3750b7a7a96d1dcb"></script><script src="mine-stage-touch.js?revision=3750b7a7a96d1dcb"></script><script src="mine-stage-gestures.js?revision=3750b7a7a96d1dcb"></script><script>if(typeof renderer!=="undefined"&&renderer)LxMineGestures.bind(renderer.domElement, false)</script>
+  <script src="mine-stage-appearance.js?revision=0b0fbbf3b6a20173"></script><script src="mine-stage-engine.js?revision=0b0fbbf3b6a20173"></script><script src="mine-stage-bridge.js?revision=0b0fbbf3b6a20173"></script><script src="mine-stage-touch.js?revision=0b0fbbf3b6a20173"></script><script src="mine-stage-gestures.js?revision=0b0fbbf3b6a20173"></script><script>if(typeof renderer!=="undefined"&&renderer)LxMineGestures.bind(renderer.domElement, false)</script>
 </body>
 
 </html>

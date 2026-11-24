@@ -1,7 +1,11 @@
-// Generated from MineRadio's actual preset registry.
-export const MINE_STAGE_REVISION: string = '3750b7a7a96d1dcb';
+// Generated from MineRadio & Folia stage preset registry.
+export const MINE_STAGE_REVISION: string = '0b0fbbf3b6a20173';
 export interface MineRadioMode { id: string; label: string; }
 export const MINE_RADIO_MODES: MineRadioMode[] = [
+  {
+    "id": "smart-auto",
+    "label": "随声绘色"
+  },
   {
     "id": "off",
     "label": "关闭动效"
@@ -57,5 +61,57 @@ export const MINE_RADIO_MODES: MineRadioMode[] = [
   {
     "id": "mine-12",
     "label": "深海绽放"
+  },
+  {
+    "id": "folia-partita",
+    "label": "Folia · 云阶"
+  },
+  {
+    "id": "folia-pendolo",
+    "label": "Folia · Pendolo"
+  },
+  {
+    "id": "folia-diorama",
+    "label": "Folia · 镜台"
+  },
+  {
+    "id": "folia-fume",
+    "label": "Folia · Fume"
+  },
+  {
+    "id": "folia-sonnet",
+    "label": "Folia · 商籁"
+  },
+  {
+    "id": "folia-tempera",
+    "label": "Folia · 凝彩"
+  },
+  {
+    "id": "folia-lumiere",
+    "label": "Folia · 绘光"
+  },
+  {
+    "id": "folia-monet",
+    "label": "Folia · Monet"
+  },
+  {
+    "id": "folia-cadenza",
+    "label": "Folia · Mindscape"
+  },
+  {
+    "id": "folia-claddagh",
+    "label": "Folia · Claddagh"
+  },
+  {
+    "id": "folia-tilt",
+    "label": "Folia · Tilt"
+  },
+  {
+    "id": "folia-classic",
+    "label": "Folia · Luminous"
+  },
+  {
+    "id": "folia-cappella",
+    "label": "Folia · Cappella"
   }
 ];

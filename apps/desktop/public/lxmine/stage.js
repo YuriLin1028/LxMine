@@ -5,7 +5,7 @@
   'use strict';
   const stage = { ready: false, playing: false, style: 'mine-7', colors: ['#1e3a5f', '#64d2ff', '#172033'], intensity: 0 };
   let renderer, scene, camera, particles, hills, hillData = [], light, clock;
-  let width = 1, height = 1, raf = 0, lastHill = 0;
+  let width = 1, height = 1, raf = 0, lastHill = 0, resizeDirty = false;
   const COLORS = [
     ['#1e3a5f', '#64d2ff', '#172033'],
     ['#2563eb', '#a5b4fc', '#111827'],
@@ -37,14 +37,23 @@
     buildParticles();
     buildHills();
     applyStyle(stage.style);
-    resize();
-    window.addEventListener('resize', resize);
+    flushResize();
+    window.addEventListener('resize', () => { resizeDirty = true; });
+    document.addEventListener('visibilitychange', () => {
+      if (document.hidden) {
+        if (raf) { cancelAnimationFrame(raf); raf = 0; }
+      } else if (stage.ready && !raf) {
+        resizeDirty = true;
+        raf = requestAnimationFrame(animate);
+      }
+    });
     stage.ready = true;
-    animate();
+    if (!document.hidden) animate();
   }
 
-  function resize() {
+  function flushResize() {
     if (!renderer) return;
+    resizeDirty = false;
     width = window.innerWidth; height = window.innerHeight;
     renderer.setSize(width, height, false);
     camera.aspect = width / Math.max(1, height);
@@ -140,8 +149,10 @@
   }
 
   function animate() {
+    if (document.hidden) { raf = 0; return; }
     raf = requestAnimationFrame(animate);
     if (!renderer || !scene) return;
+    if (resizeDirty) flushResize();
     const t = clock.getElapsedTime();
     const energy = stage.playing ? 0.55 + Math.sin(t * 2.1) * 0.18 + Math.sin(t * 5.3) * 0.07 : 0.2;
     stage.intensity += (energy - stage.intensity) * 0.04;

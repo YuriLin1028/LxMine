@@ -15,7 +15,11 @@ LxMine 是 Mineradio 的衍生作品，并与 LX Music 的自定义音源协议�
   `apps/desktop/docs/THIRD_PARTY_PORTS.md`。
 - LxMine 修改：工程与产品品牌、构建配置、LX 音源与资料库接入、局域网同步、
   鸿蒙原生移植。修改状态见 [PLAN.md](PLAN.md)，不代表上述工作已全部完成。
-- 不使用加入 Folia 动效的 MineRadio 社区分支作为新基座。
+
+## 上游三：Folia（独立舞台渲染子包 `packages/folia-stage`）
+
+- 许可证：**AGPL-3.0-only**，原文保留在 `packages/folia-stage/LICENSE` 与构建产物 `folia-stage/LICENSE`。
+- 用途：以独立打包的前端可视化舞台子包形式提供 `folia-*` 原生歌词与视觉动效模式（`Partita`、`Pendolo`、`Diorama`、`Fume`、`Sonnet`、`Tempera`、`Lumiere`、`Monet`、`Cadenza`、`Claddagh`、`Tilt`、`Classic`、`Cappella`），并通过 `window.lxmineStage` 桥接协议与三端宿主打通，源码完整保留于 `packages/folia-stage`。
 
 因为桌面端是 Mineradio 的衍生作品，**LxMine 整体按 GPL-3.0-only 分发**。根目录
 `LICENSE` 为 GPL-3.0 原文；`NOTICE.md` 汇总上游与第三方声明。

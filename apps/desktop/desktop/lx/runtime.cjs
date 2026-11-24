@@ -164,6 +164,13 @@ function createLxRuntime(options) {
     clearTimeout,
     setInterval,
     clearInterval,
+    setImmediate,
+    clearImmediate,
+    Buffer,
+    process: {
+      env: {},
+      nextTick: (fn, ...args) => Promise.resolve().then(() => fn(...args)),
+    },
     URL,
     URLSearchParams,
     TextDecoder,
@@ -173,6 +180,8 @@ function createLxRuntime(options) {
     lx: api,
   };
   sandbox.globalThis = sandbox;
+  sandbox.window = sandbox;
+  sandbox.self = sandbox;
 
   const context = vm.createContext(sandbox, { name: `lx-source:${info.name ?? 'unknown'}` });
 

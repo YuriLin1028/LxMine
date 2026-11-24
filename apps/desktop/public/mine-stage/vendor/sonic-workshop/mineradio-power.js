@@ -3,12 +3,24 @@
   const isMobileNative = (() => {
     try { return !!(window.parent && window.parent !== window && window.parent.__LXMINE_NATIVE_STAGE); } catch (_) { return false; }
   })();
+  const MOBILE_MAX_PIXELS = 380000;
+  function effectiveMobileScale(cssW, cssH) {
+    if (!isMobileNative) return Math.min(Math.max(1, Number(window.devicePixelRatio) || 1), 1.25);
+    const area = Math.max(1, cssW * cssH);
+    if (area <= MOBILE_MAX_PIXELS) return 1.0;
+    return Math.max(0.50, Math.sqrt(MOBILE_MAX_PIXELS / area));
+  }
   if (isMobileNative) {
     try {
-      const realDpr = Math.max(1, Number(window.devicePixelRatio) || 1);
-      // Never set DPR < 1.0: Three.js/R3F viewport scaling breaks when DPR < 1.
-      const cappedDpr = Math.min(realDpr, 1.0);
-      Object.defineProperty(window, 'devicePixelRatio', { configurable: true, get: () => cappedDpr });
+      // Dynamically match effectiveMobileScale so React Three Fiber's ResizeObserver
+      // and EffectComposer render targets stay within the 560k pixel budget on 2.8K tablets.
+      Object.defineProperty(window, 'devicePixelRatio', {
+        configurable: true,
+        get: () => effectiveMobileScale(
+          Math.max(1, Number(window.innerWidth) || 1280),
+          Math.max(1, Number(window.innerHeight) || 720)
+        )
+      });
     } catch (_) {}
   } else {
     try {
@@ -22,7 +34,16 @@
   const nativeGetContext = HTMLCanvasElement.prototype.getContext;
   const glContexts = new WeakMap();
   HTMLCanvasElement.prototype.getContext = function (type, attrs) {
-    const ctx = nativeGetContext.apply(this, arguments);
+    let nextAttrs = attrs;
+    if (isMobileNative && (type === 'webgl' || type === 'webgl2' || type === 'experimental-webgl')) {
+      nextAttrs = Object.assign({}, attrs || {}, {
+        antialias: false,
+        stencil: false,
+        preserveDrawingBuffer: false,
+        powerPreference: 'high-performance'
+      });
+    }
+    const ctx = nativeGetContext.call(this, type, nextAttrs);
     if (ctx && (type === 'webgl' || type === 'webgl2' || type === 'experimental-webgl')) {
       glContexts.set(this, ctx);
     }
@@ -36,11 +57,12 @@
   let wakeTimer = 0;
   let frames = 0;
   let lastFrameAt = 0;
+  // 解除人为 35fps 锁帧：靠精简网格(96x96) + 关闭 MSAA + 380k 像素预算让移动端稳定跑满 60/120Hz 原生满帧。
   const minFrameGapMs = 0;
 
   function schedule(id, item) {
     item.handle = nativeRequest(time => {
-      if (minFrameGapMs > 0 && visible && lastFrameAt > 0 && time - lastFrameAt < minFrameGapMs) {
+      if (minFrameGapMs > 0 && visible && lastFrameAt > 0 && time > lastFrameAt && time - lastFrameAt < minFrameGapMs) {
         schedule(id, item);
         return;
       }
@@ -62,9 +84,9 @@
     const cssW = Math.max(1, Math.round(window.innerWidth || document.documentElement.clientWidth || 0));
     const cssH = Math.max(1, Math.round(window.innerHeight || document.documentElement.clientHeight || 0));
     if (cssW < 10 || cssH < 10) return false;
-    const dpr = Math.max(1, Number(window.devicePixelRatio) || 1);
-    const bufW = Math.max(1, Math.round(cssW * dpr));
-    const bufH = Math.max(1, Math.round(cssH * dpr));
+    const scale = effectiveMobileScale(cssW, cssH);
+    const bufW = Math.max(1, Math.round(cssW * scale));
+    const bufH = Math.max(1, Math.round(cssH * scale));
     document.querySelectorAll('canvas').forEach(canvas => {
       if (canvas.width !== bufW) canvas.width = bufW;
       if (canvas.height !== bufH) canvas.height = bufH;
@@ -172,5 +194,13 @@
   }
   // The bridge starts at 1 px, uploads its shared shaders, then keeps callbacks dormant.
   window.addEventListener('load', () => { if (!visible) warmHandle = nativeRequest(finishWarmFrame); }, { once: true });
+  let resizeSyncRaf = 0;
+  window.addEventListener('resize', () => {
+    if (!visible || resizeSyncRaf) return;
+    resizeSyncRaf = nativeRequest(() => {
+      resizeSyncRaf = 0;
+      if (visible) syncCanvasToViewport();
+    });
+  }, { passive: true });
   document.addEventListener('visibilitychange', () => { if (document.hidden) window.__mineradioSetPresentation(false); });
 })();

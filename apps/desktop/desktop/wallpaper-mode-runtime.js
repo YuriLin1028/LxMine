@@ -108,6 +108,12 @@ using System.Runtime.InteropServices;
 public static class MineradioDesktopWallpaperNative {
   [StructLayout(LayoutKind.Sequential)] public struct RECT { public int Left; public int Top; public int Right; public int Bottom; }
   [StructLayout(LayoutKind.Sequential)] public struct POINT { public int X; public int Y; }
+  [StructLayout(LayoutKind.Sequential, CharSet=CharSet.Unicode)] public struct MONITORINFO {
+    public int cbSize;
+    public RECT rcMonitor;
+    public RECT rcWork;
+    public uint dwFlags;
+  }
   public delegate bool EnumWindowsProc(IntPtr hWnd, IntPtr lParam);
   [DllImport("user32.dll", CharSet=CharSet.Unicode, SetLastError=true)] private static extern IntPtr FindWindow(string lpClassName, string lpWindowName);
   [DllImport("user32.dll", CharSet=CharSet.Unicode, SetLastError=true)] private static extern IntPtr FindWindowEx(IntPtr parent, IntPtr childAfter, string className, string windowName);
@@ -117,17 +123,60 @@ public static class MineradioDesktopWallpaperNative {
   [DllImport("user32.dll", SetLastError=true)] [return: MarshalAs(UnmanagedType.Bool)] public static extern bool IsWindow(IntPtr hWnd);
   [DllImport("user32.dll", SetLastError=true)] [return: MarshalAs(UnmanagedType.Bool)] public static extern bool SetWindowPos(IntPtr hWnd, IntPtr insertAfter, int x, int y, int width, int height, uint flags);
   [DllImport("user32.dll", SetLastError=true)] [return: MarshalAs(UnmanagedType.Bool)] public static extern bool ScreenToClient(IntPtr hWnd, ref POINT point);
+  [DllImport("user32.dll", SetLastError=true)] public static extern IntPtr MonitorFromPoint(POINT pt, uint dwFlags);
+  [DllImport("user32.dll", CharSet=CharSet.Unicode, SetLastError=true)] [return: MarshalAs(UnmanagedType.Bool)] public static extern bool GetMonitorInfo(IntPtr hMonitor, ref MONITORINFO lpmi);
   [DllImport("user32.dll", EntryPoint="GetWindowLongPtrW", SetLastError=true)] private static extern IntPtr GetWindowLongPtr64(IntPtr hWnd, int index);
   [DllImport("user32.dll", EntryPoint="GetWindowLongW", SetLastError=true)] private static extern IntPtr GetWindowLong32(IntPtr hWnd, int index);
   [DllImport("user32.dll", EntryPoint="SetWindowLongPtrW", SetLastError=true)] private static extern IntPtr SetWindowLongPtr64(IntPtr hWnd, int index, IntPtr value);
   [DllImport("user32.dll", EntryPoint="SetWindowLongW", SetLastError=true)] private static extern IntPtr SetWindowLong32(IntPtr hWnd, int index, IntPtr value);
   [DllImport("user32.dll", CharSet=CharSet.Unicode)] public static extern int GetClassName(IntPtr hWnd, System.Text.StringBuilder value, int maxCount);
+  [DllImport("user32.dll", SetLastError=true)] public static extern IntPtr GetWindow(IntPtr hWnd, uint uCmd);
+  [DllImport("user32.dll", SetLastError=true)] public static extern uint GetWindowThreadProcessId(IntPtr hWnd, out uint processId);
+  [DllImport("user32.dll", SetLastError=true)] [return: MarshalAs(UnmanagedType.Bool)] public static extern bool IsWindowVisible(IntPtr hWnd);
+  [DllImport("user32.dll", SetLastError=true)] [return: MarshalAs(UnmanagedType.Bool)] public static extern bool SetLayeredWindowAttributes(IntPtr hWnd, uint crKey, byte bAlpha, uint dwFlags);
   [DllImport("user32.dll", SetLastError=true)] public static extern IntPtr SendMessageTimeout(IntPtr hWnd, uint message, IntPtr wParam, IntPtr lParam, uint flags, uint timeout, out IntPtr result);
   [DllImport("user32.dll")] public static extern IntPtr SetThreadDpiAwarenessContext(IntPtr dpiContext);
   public static IntPtr FindWindowByClass(string className) { return FindWindow(className, null); }
   public static IntPtr FindWindowExByClass(IntPtr parent, IntPtr childAfter, string className) { return FindWindowEx(parent, childAfter, className, null); }
   public static IntPtr GetWindowLongPtr(IntPtr hWnd, int index) { return IntPtr.Size == 8 ? GetWindowLongPtr64(hWnd, index) : GetWindowLong32(hWnd, index); }
   public static IntPtr SetWindowLongPtr(IntPtr hWnd, int index, IntPtr value) { return IntPtr.Size == 8 ? SetWindowLongPtr64(hWnd, index, value) : SetWindowLong32(hWnd, index, value); }
+  public static string ProcessNameOf(IntPtr hWnd) {
+    try {
+      uint pid = 0;
+      GetWindowThreadProcessId(hWnd, out pid);
+      if (pid == 0) return "";
+      return System.Diagnostics.Process.GetProcessById((int)pid).ProcessName ?? "";
+    } catch { return ""; }
+  }
+  public static IntPtr FindSafeProgmanInsertAfter(IntPtr progman, IntPtr shellDefView, IntPtr selfHwnd) {
+    // Walk Progman's direct children top-to-bottom (Z-order) and place LxMine strictly
+    // BELOW SHELLDLL_DefView and BELOW every desktop widget/organizer (DeskBox, Fences,
+    // Rainmeter, BitDock, etc.), while staying strictly ABOVE WorkerW / Wallpaper Engine.
+    IntPtr insertAfter = shellDefView;
+    IntPtr child = GetWindow(progman, 5); // GW_CHILD
+    int guard = 0;
+    while (child != IntPtr.Zero && guard++ < 256) {
+      if (child != selfHwnd) {
+        var cn = new System.Text.StringBuilder(128);
+        GetClassName(child, cn, cn.Capacity);
+        string cls = cn.ToString();
+        if (string.Equals(cls, "WorkerW", StringComparison.OrdinalIgnoreCase)) {
+          break;
+        }
+        string proc = ProcessNameOf(child);
+        if (proc.IndexOf("wallpaper", StringComparison.OrdinalIgnoreCase) >= 0 ||
+            proc.IndexOf("lively", StringComparison.OrdinalIgnoreCase) >= 0) {
+          break;
+        }
+        // Keep SHELLDLL_DefView and any persistent desktop widgets (DeskBox, etc.) ABOVE LxMine.
+        if (child == shellDefView || IsWindowVisible(child)) {
+          insertAfter = child;
+        }
+      }
+      child = GetWindow(child, 2); // GW_HWNDNEXT
+    }
+    return insertAfter;
+  }
 }
 "@
 }
@@ -135,38 +184,125 @@ $previousDpiContext = [IntPtr]::Zero
 try { $previousDpiContext = [MineradioDesktopWallpaperNative]::SetThreadDpiAwarenessContext([IntPtr]::new([Int64]-4)) } catch { }
 $progman = [MineradioDesktopWallpaperNative]::FindWindowByClass("Progman")
 if ($progman -eq [IntPtr]::Zero) { throw "WALLPAPER_PROGMAN_NOT_FOUND" }
-$sendResult = [IntPtr]::Zero
-[MineradioDesktopWallpaperNative]::SendMessageTimeout($progman, 0x052C, [IntPtr]::Zero, [IntPtr]::Zero, 0, 1000, [ref]$sendResult) | Out-Null
 $script:workerw = [IntPtr]::Zero
-$callback = [MineradioDesktopWallpaperNative+EnumWindowsProc]{
-  param([IntPtr]$top, [IntPtr]$state)
-  $shellView = [MineradioDesktopWallpaperNative]::FindWindowExByClass($top, [IntPtr]::Zero, "SHELLDLL_DefView")
-  if ($shellView -ne [IntPtr]::Zero) {
-    $candidate = [MineradioDesktopWallpaperNative]::FindWindowExByClass([IntPtr]::Zero, $top, "WorkerW")
-    if ($candidate -ne [IntPtr]::Zero) { $script:workerw = $candidate }
+$script:shellDefView = [IntPtr]::Zero
+$useProgmanRaised = $false
+$progmanShell = [MineradioDesktopWallpaperNative]::FindWindowExByClass($progman, [IntPtr]::Zero, "SHELLDLL_DefView")
+if ($progmanShell -ne [IntPtr]::Zero) {
+  # Windows 11 24H2 / 25H2 / 26H2 raised-desktop: SHELLDLL_DefView is a direct child of Progman.
+  # NEVER send 0x052C here — it destabilizes Progman's DComp tree and breaks desktop widgets.
+  # Attach into Progman strictly BELOW SHELLDLL_DefView & all desktop widgets (DeskBox, etc.)
+  # and strictly ABOVE WorkerW / Wallpaper Engine so neither icons, widgets, nor WE fight Z-order.
+  $script:shellDefView = $progmanShell
+  $script:workerw = $progman
+  $useProgmanRaised = $true
+} else {
+  $findSiblingWorker = {
+    $script:workerw = [IntPtr]::Zero
+    $script:shellDefView = [IntPtr]::Zero
+    $callback = [MineradioDesktopWallpaperNative+EnumWindowsProc]{
+      param([IntPtr]$top, [IntPtr]$state)
+      $shellView = [MineradioDesktopWallpaperNative]::FindWindowExByClass($top, [IntPtr]::Zero, "SHELLDLL_DefView")
+      if ($shellView -ne [IntPtr]::Zero) {
+        $script:shellDefView = $shellView
+        $candidate = [MineradioDesktopWallpaperNative]::FindWindowExByClass([IntPtr]::Zero, $top, "WorkerW")
+        if ($candidate -ne [IntPtr]::Zero) { $script:workerw = $candidate }
+      }
+      return $true
+    }
+    [MineradioDesktopWallpaperNative]::EnumWindows($callback, [IntPtr]::Zero) | Out-Null
+    if ($script:workerw -eq [IntPtr]::Zero) {
+      $childWorker = [MineradioDesktopWallpaperNative]::FindWindowExByClass($progman, [IntPtr]::Zero, "WorkerW")
+      if ($childWorker -ne [IntPtr]::Zero) { $script:workerw = $childWorker }
+    }
   }
-  return $true
+  & $findSiblingWorker
+  if ($script:workerw -eq [IntPtr]::Zero) {
+    $sendResult = [IntPtr]::Zero
+    [MineradioDesktopWallpaperNative]::SendMessageTimeout($progman, 0x052C, [IntPtr]::new(0xD), [IntPtr]::new(0x1), 0, 1000, [ref]$sendResult) | Out-Null
+    & $findSiblingWorker
+    if ($script:workerw -eq [IntPtr]::Zero) {
+      $progmanShellRetry = [MineradioDesktopWallpaperNative]::FindWindowExByClass($progman, [IntPtr]::Zero, "SHELLDLL_DefView")
+      if ($progmanShellRetry -ne [IntPtr]::Zero) {
+        $script:shellDefView = $progmanShellRetry
+        $script:workerw = $progman
+        $useProgmanRaised = $true
+      }
+    }
+  }
 }
-[MineradioDesktopWallpaperNative]::EnumWindows($callback, [IntPtr]::Zero) | Out-Null
 if ($script:workerw -eq [IntPtr]::Zero) { throw "WALLPAPER_WORKERW_NOT_FOUND" }
 $target = [IntPtr]::new([Int64]${hwnd})
 if (-not [MineradioDesktopWallpaperNative]::IsWindow($target)) { throw "WALLPAPER_TARGET_NOT_FOUND" }
 $GWL_STYLE = -16
+$GWL_EXSTYLE = -20
 $WS_POPUP = [Int64]0x80000000
 $WS_CHILD = [Int64]0x40000000
+$WS_CLIPSIBLINGS = [Int64]0x04000000
+$WS_CLIPCHILDREN = [Int64]0x02000000
+$WS_VISIBLE = [Int64]0x10000000
+$WS_FRAME_BITS = [Int64]0x00CF0000
+$WS_EX_APPWINDOW = [Int64]0x00040000
+$WS_EX_LAYERED = [Int64]0x00080000
+$WS_EX_NOACTIVATE = [Int64]0x08000000
+$WS_EX_TOOLWINDOW = [Int64]0x00000080
+$WS_EX_TRANSPARENT = [Int64]0x00000020
 $style = [MineradioDesktopWallpaperNative]::GetWindowLongPtr($target, $GWL_STYLE).ToInt64()
-$childStyle = ($style -band (-bnot $WS_POPUP)) -bor $WS_CHILD
+$childStyle = ($style -band (-bnot ($WS_POPUP -bor $WS_FRAME_BITS))) -bor $WS_CHILD -bor $WS_CLIPSIBLINGS -bor $WS_CLIPCHILDREN -bor $WS_VISIBLE
 [MineradioDesktopWallpaperNative]::SetWindowLongPtr($target, $GWL_STYLE, [IntPtr]::new([Int64]$childStyle)) | Out-Null
+$exStyle = [MineradioDesktopWallpaperNative]::GetWindowLongPtr($target, $GWL_EXSTYLE).ToInt64()
+# On Windows 11 24H2/25H2/26H2 raised Progman (WS_EX_NOREDIRECTIONBITMAP), a direct child MUST carry
+# WS_EX_LAYERED + LWA_ALPHA=255 (opaque hardware DComp visual) so Explorer's RaiseDesktop pass and
+# persistent desktop widgets (DeskBox, Fences, Rainmeter) never invalidate, flash, or hide it.
+$layeredBit = if ($useProgmanRaised) { $WS_EX_LAYERED } else { [Int64]0 }
+$childExStyle = ($exStyle -band (-bnot $WS_EX_APPWINDOW)) -bor $layeredBit -bor $WS_EX_NOACTIVATE -bor $WS_EX_TOOLWINDOW -bor $WS_EX_TRANSPARENT
+[MineradioDesktopWallpaperNative]::SetWindowLongPtr($target, $GWL_EXSTYLE, [IntPtr]::new([Int64]$childExStyle)) | Out-Null
+if ($useProgmanRaised) {
+  [MineradioDesktopWallpaperNative]::SetLayeredWindowAttributes($target, 0, [byte]255, [uint32]2) | Out-Null
+}
 $verifiedStyle = [MineradioDesktopWallpaperNative]::GetWindowLongPtr($target, $GWL_STYLE).ToInt64()
 if (($verifiedStyle -band $WS_CHILD) -eq 0 -or ($verifiedStyle -band $WS_POPUP) -ne 0) { throw "WALLPAPER_CHILD_STYLE_FAILED" }
 [MineradioDesktopWallpaperNative]::SetParent($target, $script:workerw) | Out-Null
 $parent = [MineradioDesktopWallpaperNative]::GetParent($target)
 if ($parent -ne $script:workerw) { throw "WALLPAPER_WORKERW_ATTACH_FAILED" }
+$physX = [int]${x}
+$physY = [int]${y}
+$physW = [int]${width}
+$physH = [int]${height}
+try {
+  $probe = New-Object MineradioDesktopWallpaperNative+POINT
+  $probe.X = $physX + 16
+  $probe.Y = $physY + 16
+  $hMon = [MineradioDesktopWallpaperNative]::MonitorFromPoint($probe, 2)
+  if ($hMon -ne [IntPtr]::Zero) {
+    $mi = New-Object MineradioDesktopWallpaperNative+MONITORINFO
+    $mi.cbSize = [System.Runtime.InteropServices.Marshal]::SizeOf([type][MineradioDesktopWallpaperNative+MONITORINFO])
+    if ([MineradioDesktopWallpaperNative]::GetMonitorInfo($hMon, [ref]$mi)) {
+      $monW = $mi.rcMonitor.Right - $mi.rcMonitor.Left
+      $monH = $mi.rcMonitor.Bottom - $mi.rcMonitor.Top
+      if ($monW -ge 320 -and $monH -ge 240) {
+        $physX = $mi.rcMonitor.Left
+        $physY = $mi.rcMonitor.Top
+        $physW = $monW
+        $physH = $monH
+      }
+    }
+  }
+} catch { }
 $origin = New-Object MineradioDesktopWallpaperNative+POINT
-$origin.X = ${x}
-$origin.Y = ${y}
+$origin.X = $physX
+$origin.Y = $physY
 if (-not [MineradioDesktopWallpaperNative]::ScreenToClient($script:workerw, [ref]$origin)) { throw "WALLPAPER_WORKERW_BOUNDS_FAILED" }
-$positioned = [MineradioDesktopWallpaperNative]::SetWindowPos($target, [IntPtr]::new([Int64]1), $origin.X, $origin.Y, ${width}, ${height}, 0x0030)
+# In raised Progman: insert below SHELLDLL_DefView AND below every persistent desktop widget
+# (DeskBox, Fences, Rainmeter, etc.), while staying above WorkerW / Wallpaper Engine.
+# In classic sibling WorkerW: insert at HWND_TOP inside the dedicated background WorkerW.
+$insertAfter = if ($useProgmanRaised -and $script:shellDefView -ne [IntPtr]::Zero) {
+  [MineradioDesktopWallpaperNative]::FindSafeProgmanInsertAfter($progman, $script:shellDefView, $target)
+} else {
+  [IntPtr]::Zero
+}
+# SWP_NOACTIVATE (0x0010) | SWP_FRAMECHANGED (0x0020) | SWP_SHOWWINDOW (0x0040) | SWP_NOOWNERZORDER (0x0200) = 0x0270
+$positioned = [MineradioDesktopWallpaperNative]::SetWindowPos($target, $insertAfter, $origin.X, $origin.Y, $physW, $physH, 0x0270)
 if (-not $positioned) { throw "WALLPAPER_WORKERW_POSITION_FAILED" }
 $className = New-Object System.Text.StringBuilder 128
 [MineradioDesktopWallpaperNative]::GetClassName($script:workerw, $className, $className.Capacity) | Out-Null
@@ -175,10 +311,10 @@ $className = New-Object System.Text.StringBuilder 128
   targetWindowId = $target.ToInt64().ToString()
   parentWindowId = $parent.ToInt64().ToString()
   parentClassName = $className.ToString()
-  x = ${x}
-  y = ${y}
-  width = ${width}
-  height = ${height}
+  x = $physX
+  y = $physY
+  width = $physW
+  height = $physH
 } | ConvertTo-Json -Compress
 if ($previousDpiContext -ne [IntPtr]::Zero) {
   try { [MineradioDesktopWallpaperNative]::SetThreadDpiAwarenessContext($previousDpiContext) | Out-Null } catch { }
@@ -200,7 +336,10 @@ function parseAttachOutput(stdout) {
 function nativeAttachFailureMessage(error, stderr) {
   const diagnostic = String(stderr || error && error.message || 'WALLPAPER_WORKERW_ATTACH_FAILED');
   const code = diagnostic.match(/WALLPAPER_[A-Z0-9_]+/);
-  return code ? code[0] : String(error && error.code || 'WALLPAPER_WORKERW_ATTACH_FAILED');
+  if (code) return code[0];
+  const firstLine = diagnostic.split(/\r?\n/).map((line) => line.trim()).find(Boolean) || '';
+  if (firstLine && firstLine.length <= 160) return firstLine;
+  return String(error && error.code || 'WALLPAPER_WORKERW_ATTACH_FAILED');
 }
 
 function attachWallpaperWindowToDesktop(options = {}) {

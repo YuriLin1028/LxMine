@@ -182,7 +182,7 @@ object HomeFeedApi {
             addSong(song, if (index < 12) 3 else 2)
         }
         for (playlist in playlists) {
-            if (playlist.isFavorite || playlist.name == "我喜欢的") {
+            if (playlist.isFavorite || playlist.name == "我喜欢的" || playlist.name == "我的收藏") {
                 playlist.songs.forEach { addSong(it, 4) }
             } else if (playlist.kind == "lx") {
                 playlist.songs.take(40).forEach { addSong(it, 1) }
@@ -242,12 +242,34 @@ object HomeFeedApi {
         artists: List<String>,
         excludeKeys: Set<String> = emptySet(),
         algoSeed: Int = 0,
+        dislikedKeys: Set<String> = emptySet(),
+        host: LxHost? = null,
+        seedSongs: List<Song> = emptyList(),
     ): List<Song> = withContext(Dispatchers.IO) {
-        val targets = artists.map { it.trim() }.filter { it.isNotEmpty() }.distinct().take(3)
-        if (targets.isEmpty()) return@withContext emptyList()
+        val targets = artists.map { it.trim() }.filter { it.isNotEmpty() }.distinct().take(4)
+        if (targets.isEmpty() && seedSongs.isEmpty()) return@withContext emptyList()
         val page = if (algoSeed <= 0) 1 else (algoSeed % 3) + 1
-        val perArtist = supervisorScope {
-            targets.map { artist ->
+
+        val (cfSongs, perArtist) = supervisorScope {
+            val cfJob = async {
+                if (host == null || seedSongs.isEmpty()) emptyList()
+                else runCatching {
+                    val params = JSONObject()
+                        .put("seeds", JSONArray().apply { seedSongs.take(12).forEach { put(it.toJson()) } })
+                        .put("artists", JSONArray(targets))
+                        .put("dislikedKeys", JSONArray(dislikedKeys.toList()))
+                        .put("seed", algoSeed)
+                        .put("limit", 24)
+                    val raw = host.catalogue("personalized-mix", params.toString())
+                    val obj = JSONObject(raw)
+                    val out = mutableListOf<Song>()
+                    obj.optJSONArray("items")?.let { arr ->
+                        for (i in 0 until arr.length()) Song.fromJson(arr.optJSONObject(i))?.let(out::add)
+                    }
+                    out
+                }.getOrDefault(emptyList())
+            }
+            val artistJobs = targets.take(3).map { artist ->
                 async {
                     val primary = runCatching { SearchApi.search(SearchSource.ALL, artist, page = page, limit = 10).items }
                         .getOrDefault(emptyList())
@@ -255,20 +277,39 @@ object HomeFeedApi {
                     else runCatching { SearchApi.search(SearchSource.ALL, artist, page = 1, limit = 10).items }
                         .getOrDefault(emptyList())
                 }
-            }.awaitAll()
+            }
+            cfJob.await() to artistJobs.awaitAll()
         }
-        val merged = roundRobinSongs(perArtist)
+
+        val combinedLists = buildList {
+            if (cfSongs.isNotEmpty()) add(cfSongs)
+            perArtist.forEach { if (it.isNotEmpty()) add(it) }
+        }
+        val merged = roundRobinSongs(combinedLists).filterNot { it.key in dislikedKeys }
         if (merged.isEmpty()) return@withContext emptyList()
+
+        // 限制单个主歌手最多出现 2 首，避免推荐流被同一位歌手刷屏（#13）
         val deduped = mutableListOf<Song>()
         val seenNames = mutableSetOf<String>()
+        val artistCount = mutableMapOf<String, Int>()
+        val overflow = mutableListOf<Song>()
         for (song in merged) {
             val sig = "${song.name.trim().lowercase()}|${song.singer.trim().lowercase()}"
-            if (seenNames.add(sig)) deduped.add(song)
+            if (!seenNames.add(sig)) continue
+            val mainArtist = song.singer.split(artistSplitRegex).firstOrNull()?.trim()?.lowercase().orEmpty()
+            val curCnt = if (mainArtist.isNotEmpty()) artistCount.getOrDefault(mainArtist, 0) else 0
+            if (curCnt < 2) {
+                if (mainArtist.isNotEmpty()) artistCount[mainArtist] = curCnt + 1
+                deduped.add(song)
+            } else {
+                overflow.add(song)
+            }
         }
+        val balanced = if (deduped.size >= 16) deduped else deduped + overflow
         val orderedPool = if (algoSeed > 0) {
-            dailyShuffle(deduped, algoSeed.toLong() * 2654435761L, deduped.size.coerceAtLeast(1))
+            dailyShuffle(balanced, algoSeed.toLong() * 2654435761L, balanced.size.coerceAtLeast(1))
         } else {
-            deduped
+            balanced
         }
         val freshWithCover = orderedPool.filter { it.key !in excludeKeys && it.coverUrl.isNotEmpty() }
         val freshRest = orderedPool.filter { it.key !in excludeKeys && it.coverUrl.isEmpty() }
@@ -281,6 +322,8 @@ object HomeFeedApi {
         tasteArtists: List<String> = emptyList(),
         knownKeys: Set<String> = emptySet(),
         algoSeed: Int = 0,
+        dislikedKeys: Set<String> = emptySet(),
+        seedSongs: List<Song> = emptyList(),
     ): HomeFeed = withContext(Dispatchers.IO) {
         val platforms = listOf("wy", "tx", "kw", "kg")
         val reasons = java.util.Collections.synchronizedList(mutableListOf<String>())
@@ -293,7 +336,7 @@ object HomeFeedApi {
                 }
             }
             val personalJob = async {
-                runCatching { fetchPersonalizedSongs(tasteArtists, knownKeys, algoSeed) }.getOrDefault(emptyList())
+                runCatching { fetchPersonalizedSongs(tasteArtists, knownKeys, algoSeed, dislikedKeys, host, seedSongs) }.getOrDefault(emptyList())
             }
             platformJobs.awaitAll() to personalJob.await()
         }
@@ -338,6 +381,7 @@ object HomeFeedApi {
             concepts[current.name]?.let { charts[index] = it }
         }
         val rawNewSongs = roundRobin(ok.map { it.newSongs }) { "${it.source}:${it.id}" }
+            .filterNot { it.key in dislikedKeys }
         // 跨平台新歌按规范化歌名+主歌手去重，避免四平台同一热歌重复出现。
         val seenCanonicalNew = mutableSetOf<String>()
         val dedupedNewSongs = mutableListOf<Song>()
@@ -442,7 +486,11 @@ object HomeFeedApi {
             playlists = recommend,
             newSongs = newSongs,
             charts = shuffledCharts,
-            similar = personalizedSongs,
+            bannerCharts = shuffledCharts.take(5),
+            similar = emptyList(),
+            forYou = personalizedSongs,
+            personalized = isPersonalized,
+            topArtists = tasteArtists.take(4),
             daily = daily,
             dailySongs = dailySongs,
         )

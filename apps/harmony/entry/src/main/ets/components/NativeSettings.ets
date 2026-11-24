@@ -1,14 +1,16 @@
 import { ON_ACCENT } from './Theme';
 import { musicButtonPress } from './MaterialControls';
 import { SyncSourcePayload } from '../services/LanSyncClient';
-import { PRODUCT_NAME } from 'BuildProfile';
+import { isHarmonyPc } from '../services/HarmonyPcWindowService';
+import { PRODUCT_NAME, VERSION_NAME } from 'BuildProfile';
 import { LanDevice } from '../services/LanDiscovery';
-import { MaterialSurface, MaterialToggle, musicMaterial } from './MaterialControls';
+import { MaterialSurface, MaterialToggle, musicMaterial, HdsExquisiteCapsule } from './MaterialControls';
 import { TEXT, MUTED, ACCENT, devicePlatformName } from './Theme';
-import { curves } from '@kit.ArkUI';
+import { curves, uiMaterial } from '@kit.ArkUI';
 import { MINE_RADIO_MODES, MineRadioMode } from '../model/MineRadioModes';
 @Component
 export struct NativeSettings {
+  @StorageProp('lxmineBoostImmersive') private boostImmersive: boolean = false;
   @Prop sources: SyncSourcePayload[] = [];
   @Prop activeId: string = '';
   @Prop devices: LanDevice[] = [];
@@ -24,6 +26,7 @@ export struct NativeSettings {
   @State private offsetText: string = '';
   @Prop message: string = '';
   @Prop gripEnabled: boolean = false;
+  @Prop gripSupported: boolean = false;
   @Prop resumeOnStartup: boolean = false;
   @Prop startupAnimation: boolean = true;
   @Prop sourcesOnly: boolean = false;
@@ -80,10 +83,20 @@ export struct NativeSettings {
   @Builder private sourcesContent() {
     MaterialSurface({ surfaceHeight: 58 }) {
       Row({ space: 12 }) {
-        Button('批量导入音源').attributeModifier(musicButtonPress).height(44).layoutWeight(1).stateEffect(false).clip(false).fontColor(TEXT)
-          .backgroundColor(Color.Transparent).systemMaterial(musicMaterial()).id('source-import-file').onClick(() => this.onImportFile())
-        Button('粘贴脚本').attributeModifier(musicButtonPress).height(44).layoutWeight(1).stateEffect(false).clip(false).fontColor(TEXT)
-          .backgroundColor(Color.Transparent).systemMaterial(musicMaterial()).id('source-import-text').onClick(() => this.onImportText())
+        Stack({ alignContent: Alignment.Center }) {
+          if (this.boostImmersive) {
+            HdsExquisiteCapsule({ pillWidth: 0, pillHeight: 44 })
+          }
+          Button('批量导入音源').attributeModifier(musicButtonPress).width('100%').height(44).stateEffect(false).clip(false).fontColor(TEXT)
+            .backgroundColor(Color.Transparent).systemMaterial(this.boostImmersive ? uiMaterial.Material.empty : musicMaterial()).id('source-import-file').onClick(() => this.onImportFile())
+        }.layoutWeight(1).height(44).clip(false)
+        Stack({ alignContent: Alignment.Center }) {
+          if (this.boostImmersive) {
+            HdsExquisiteCapsule({ pillWidth: 0, pillHeight: 44 })
+          }
+          Button('粘贴脚本').attributeModifier(musicButtonPress).width('100%').height(44).stateEffect(false).clip(false).fontColor(TEXT)
+            .backgroundColor(Color.Transparent).systemMaterial(this.boostImmersive ? uiMaterial.Material.empty : musicMaterial()).id('source-import-text').onClick(() => this.onImportText())
+        }.layoutWeight(1).height(44).clip(false)
       }.width('100%').padding({ top: 16, bottom: 16, left: 12, right: 12 }).clip(false)
     }
     Column() {
@@ -97,7 +110,7 @@ export struct NativeSettings {
           }.alignItems(HorizontalAlign.Start).layoutWeight(1)
           Image($r('app.media.ic_more')).width(22).height(22).fillColor(TEXT).padding(0)
             .bindMenu(this.sourceMenu(source)).accessibilityText('音源操作')
-        }.width('100%').padding(16).onClick(() => this.onActivate(source)).bindContextMenu(this.sourceMenu(source), ResponseType.LongPress)
+        }.width('100%').padding(16).hoverEffect(HoverEffect.Highlight).onClick(() => this.onActivate(source)).bindContextMenu(this.sourceMenu(source), isHarmonyPc() ? ResponseType.RightClick : ResponseType.LongPress)
       }, (source: SyncSourcePayload) => source.id ?? source.name)
     }.width('100%').borderRadius(20).backgroundColor($r('app.color.card_surface')).clip(true)
     Text('播放使用你启用的音源，公共搜索无需登录。').fontSize(12).fontColor(MUTED).width('100%').padding({ top: 10, left: 4 })
@@ -107,7 +120,7 @@ export struct NativeSettings {
     Scroll(this.scroller) {
       Column({ space: 2 }) {
         if (this.sourcesOnly) {
-          Column() { this.sourcesContent() }.width('100%').transition(TransitionEffect.OPACITY.combine(TransitionEffect.translate({ x: 42 })).animation({ curve: curves.springMotion(0.5, 0.9) }))
+          Column() { this.sourcesContent() }.width('100%')
         } else {
           this.section('音乐源')
           this.sourceSummary()
@@ -129,15 +142,17 @@ export struct NativeSettings {
           }.width('100%').padding(18).borderRadius(20).backgroundColor($r('app.color.card_surface'))
           Text('连接 HiCar 后，车机通过系统媒体会话读取歌曲、歌词并控制播放/暂停/切歌。').fontSize(12).fontColor(MUTED).width('100%').padding({ top: 10, left: 4 })
         }
-        this.section('单手操作')
-        Row({ space: 16 }) {
-          Column({ space: 6 }) {
-            Text('智感握姿').fontSize(16).fontColor(TEXT)
-            Text('合并播控时，导航圆钮随握持换边').fontSize(12).fontColor(MUTED)
-          }.alignItems(HorizontalAlign.Start).layoutWeight(1)
-          MaterialToggle({ value: this.gripEnabled, label: '智感握姿', onChange: (value: boolean) => this.onGrip(value) })
-        }.width('100%').padding(18).borderRadius(20).backgroundColor($r('app.color.card_surface'))
-        Text('使用华为系统握持感知；双手或平放时保持常规布局。').fontSize(12).fontColor(MUTED).width('100%').padding({ top: 10, left: 4 })
+        if (this.gripSupported) {
+          this.section('单手操作')
+          Row({ space: 16 }) {
+            Column({ space: 6 }) {
+              Text('智感握姿').fontSize(16).fontColor(TEXT)
+              Text('合并播控时，导航圆钮随握持换边').fontSize(12).fontColor(MUTED)
+            }.alignItems(HorizontalAlign.Start).layoutWeight(1)
+            MaterialToggle({ value: this.gripEnabled, label: '智感握姿', onChange: (value: boolean) => this.onGrip(value) })
+          }.width('100%').padding(18).borderRadius(20).backgroundColor($r('app.color.card_surface'))
+          Text('使用华为系统握持感知；双手或平放时保持常规布局。').fontSize(12).fontColor(MUTED).width('100%').padding({ top: 10, left: 4 })
+        }
         this.section('启动')
         Row({ space: 16 }) {
           Column({ space: 6 }) {
@@ -166,7 +181,11 @@ export struct NativeSettings {
                 if (Number.isFinite(parsed)) this.onOffset(Math.max(-10000, Math.min(10000, Math.round(parsed))));
               })
             Text('ms').fontSize(12).fontColor(MUTED)
-            Button('重置').attributeModifier(musicButtonPress).fontSize(12).fontColor(ACCENT).height(32).borderRadius(16).backgroundColor('#10FFFFFF').onClick(() => { this.offsetText = '0'; this.onOffset(0); })
+            Button({ type: ButtonType.Circle }) {
+              Image($r('app.media.refresh')).width(15).height(15).fillColor(this.lyricOffset !== 0 ? ACCENT : MUTED)
+            }.attributeModifier(musicButtonPress).width(30).height(30).padding(0).backgroundColor('#14FFFFFF')
+              .opacity(this.lyricOffset !== 0 ? 1 : 0.55).accessibilityText('重置歌词偏移')
+              .onClick(() => { this.offsetText = '0'; this.onOffset(0); })
           }.width('100%')
           Slider({ value: this.lyricOffset, min: -5000, max: 5000, step: 100 }).selectedColor(ACCENT).blockColor(TEXT).trackColor('#38FFFFFF').backgroundColor(Color.Transparent)
             .onChange((value: number, mode: SliderChangeMode) => { if (mode === SliderChangeMode.End || mode === SliderChangeMode.Click) this.onOffset(value); })
@@ -189,10 +208,10 @@ export struct NativeSettings {
           }, (device: LanDevice) => device.id)
         }.width('100%').borderRadius(20).backgroundColor($r('app.color.card_surface'))
         if (this.message) { Text(this.message).fontSize(13).fontColor(ACCENT).width('100%').padding({ top: 12 }) }
-        Text('LxMine · 1.1.0\n融合 LX Music 与 MineRadio').fontSize(12).fontColor(MUTED).lineHeight(22).width('100%').padding({ top: 32, bottom: 28, left: 4 })
+        Text(`LxMine · ${VERSION_NAME}\n融合 LX Music 与 MineRadio`).fontSize(12).fontColor(MUTED).lineHeight(22).width('100%').padding({ top: 32, bottom: 28, left: 4 })
         }
       }.width('100%').alignItems(HorizontalAlign.Start).padding({ top: this.contentTop, bottom: 180 })
-    }.width('100%').height('100%').align(Alignment.TopStart).scrollBar(BarState.Off).edgeEffect(EdgeEffect.Spring)
+    }.width('100%').height('100%').align(Alignment.TopStart).scrollBar(BarState.Off).edgeEffect(EdgeEffect.Spring).fadingEdge(false)
       .onDidScroll((x: number, y: number, state: ScrollState) => { if (state !== ScrollState.Idle) this.onScroll(this.scroller.currentOffset().yOffset); })
   }
 }

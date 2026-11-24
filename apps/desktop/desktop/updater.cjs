@@ -7,14 +7,10 @@ const path = require('path');
 const { spawn } = require('child_process');
 
 const REPO = 'YuriLin1028/LxMine';
-const GITHUB_API_URL = `https://api.github.com/repos/${REPO}/releases/latest`;
 const RELEASE_SNAPSHOT_URLS = [
   `https://yurilin1028.github.io/LxMine/windows-release.json`,
   `https://gh-proxy.org/https://raw.githubusercontent.com/${REPO}/gh-pages/windows-release.json`,
   `https://ghfast.top/https://raw.githubusercontent.com/${REPO}/gh-pages/windows-release.json`,
-  `https://yurilin1028.github.io/LxMine/release.json`,
-  `https://gh-proxy.org/https://raw.githubusercontent.com/${REPO}/gh-pages/release.json`,
-  `https://ghfast.top/https://raw.githubusercontent.com/${REPO}/gh-pages/release.json`,
 ];
 const DOWNLOAD_MIRRORS = [
   { name: 'GH-Proxy', prefix: 'https://gh-proxy.org/' },
@@ -123,25 +119,42 @@ function fetchJson(url, timeoutMs = 8000, redirects = 0) {
 }
 
 async function fetchLatestRelease() {
-  const candidates = [GITHUB_API_URL, ...RELEASE_SNAPSHOT_URLS];
-  // Race all endpoints in parallel, preferring the highest valid version (or GitHub API when tied).
-  const results = await Promise.allSettled(candidates.map(url => fetchJson(url, 8500)));
-  const valid = [];
-  for (let i = 0; i < results.length; i += 1) {
-    if (results[i].status === 'fulfilled') {
-      valid.push({ data: results[i].value, isPrimary: i === 0 });
-    }
-  }
-  if (!valid.length) {
-    const firstErr = results.find(r => r.status === 'rejected');
-    throw new Error(firstErr && firstErr.reason ? firstErr.reason.message : '无法连接更新服务器');
-  }
-  valid.sort((a, b) => {
-    const cmp = compareVersions(b.data.tag_name, a.data.tag_name);
-    if (cmp !== 0) return cmp;
-    return (b.isPrimary ? 1 : 0) - (a.isPrimary ? 1 : 0);
+  // Windows 端严格隔离，仅拉取 windows-release.json；任一镜像返回后最多等待 1200ms 择优，避免慢镜像拖累 8.5s。
+  const candidates = RELEASE_SNAPSHOT_URLS.slice();
+  return new Promise((resolve, reject) => {
+    const valid = [];
+    let settled = 0;
+    let firstErr = null;
+    let done = false;
+    let graceTimer = null;
+    const finish = () => {
+      if (done) return;
+      done = true;
+      if (graceTimer) clearTimeout(graceTimer);
+      if (!valid.length) {
+        reject(new Error(firstErr ? firstErr.message : '无法连接更新服务器'));
+        return;
+      }
+      valid.sort((a, b) => {
+        const cmp = compareVersions(b.data.tag_name, a.data.tag_name);
+        if (cmp !== 0) return cmp;
+        return a.idx - b.idx;
+      });
+      resolve(valid[0].data);
+    };
+    candidates.forEach((url, idx) => {
+      fetchJson(url, 8500).then((data) => {
+        valid.push({ data, idx });
+        settled += 1;
+        if (settled >= candidates.length || idx === 0) finish();
+        else if (!graceTimer) graceTimer = setTimeout(finish, 1200);
+      }).catch((err) => {
+        if (!firstErr) firstErr = err;
+        settled += 1;
+        if (settled >= candidates.length) finish();
+      });
+    });
   });
-  return valid[0].data;
 }
 
 function getReceiptPaths(execDir) {
@@ -193,7 +206,7 @@ function writeInstalledAssetReceipt(receipt, targetDir) {
 }
 
 async function checkForUpdate(currentVersion) {
-  const current = String(currentVersion || '1.1.0').replace(/^v/i, '');
+  const current = String(currentVersion || '1.3.0').replace(/^v/i, '');
   const release = await fetchLatestRelease();
   const rawLatest = String(release.tag_name || '').replace(/^v/i, '');
   const latestVersion = rawLatest.split('.').slice(0, 3).join('.');

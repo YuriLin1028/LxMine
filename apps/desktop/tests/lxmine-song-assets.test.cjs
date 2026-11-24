@@ -8,8 +8,10 @@ test('the actual Android and Harmony runtime entries load public asset repair be
   const fs = require('node:fs'), path = require('node:path');
   for (const file of ['../../android/app/src/main/assets/lx-runtime/index-android.html', '../../harmony/entry/src/main/resources/rawfile/lx-runtime/index.html']) {
     const html = fs.readFileSync(path.join(__dirname, file), 'utf8');
-    assert(html.indexOf('src="lx-song-assets.js"') >= 0);
-    assert(html.indexOf('src="lx-song-assets.js"') < html.indexOf('src="host.js"'));
+    const assetsIdx = html.search(/src="lx-song-assets\.js(\?[^"]*)?"/);
+    const hostIdx = html.search(/src="host\.js(\?[^"]*)?"/);
+    assert(assetsIdx >= 0);
+    assert(assetsIdx < hostIdx);
   }
 });
 
@@ -127,4 +129,38 @@ test('fuzzy cross-platform candidates resolve covers and lyrics across artist al
     json: async () => ({ nolyric: true })
   }, core);
   assert.equal(instrumental.lyric, '[00:00.00]纯音乐，请欣赏');
+});
+
+test('foreign songs request rv=-1 romaji, cross-enrich missing tlyric/romalrc, and synthesize Hangul/Kana romaji fallback', async () => {
+  const seenUrls = [];
+  const jpOnKw = { source: 'kw', id: 'kw-jp-1', name: 'Lemon', singer: '米津玄师', durationMs: 255000 };
+  const enriched = await assets.get(jpOnKw, {
+    json: async url => {
+      seenUrls.push(url);
+      if (url.includes('m.kuwo.cn')) {
+        return { data: { songinfo: { pic: 'https://img.test/lemon.jpg' }, lrclist: [{ time: '1.0', lineLyric: '夢ならばどれほどよかったでしょう' }] } };
+      }
+      if (url.includes('/search/get/web')) {
+        return { result: { songs: [{ id: 536622304, name: 'Lemon', artists: [{ name: '米津玄师' }], duration: 255000 }] } };
+      }
+      if (url.includes('/api/song/lyric')) {
+        assert.match(url, /rv=-1/);
+        return {
+          lrc: { lyric: '[00:01.00]夢ならばどれほどよかったでしょう' },
+          tlyric: { lyric: '[00:01.00]如果这是一场梦该有多好' },
+          romalrc: { lyric: '[00:01.00]yume naraba dore hodo yokatta deshou' }
+        };
+      }
+      return {};
+    }
+  }, core);
+  assert.match(enriched.tlyric, /如果这是一场梦/);
+  assert.match(enriched.romalrc, /yume naraba/);
+
+  const krNoUpstreamRoma = { source: 'wy', id: 'wy-kr-1', name: '사랑해', singer: 'IU', coverUrl: 'https://img.test/iu.jpg' };
+  const krRes = await assets.get(krNoUpstreamRoma, {
+    json: async () => ({ lrc: { lyric: '[00:05.00]사랑해요 내 마음속에' }, tlyric: { lyric: '[00:05.00]我爱你 在我心中' } })
+  }, core);
+  assert.match(krRes.tlyric, /我爱你/);
+  assert.match(krRes.romalrc, /\[00:05\.00\].*sa rang hae yo/i);
 });

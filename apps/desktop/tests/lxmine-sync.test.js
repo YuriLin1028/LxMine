@@ -90,3 +90,30 @@ test('legacy ID collisions preserve distinct scripts and remain stable across a 
   await another.apply(saved);
   assert.deepEqual(another.snapshot().sources, saved.sources);
 });
+
+test('favorites auto-sync union-merges songs across devices, resists empty wipes, and supports mine-17 presets', async t => {
+  const root = scratch(t);
+  const library = new BuiltInPlaylistLibrary({ userDataPath: root });
+  const store = new LanSyncData({ root, library, sourceManager: { reload() {} } });
+  await library.setFavoriteTracks([{ source: 'wy', lxSource: 'wy', provider: 'netease', id: '1001', name: 'PC Fav', singer: 'Singer A' }], { touch: true });
+  // Incoming peer has an older updatedAt but a distinct favorite song, plus missing isFavorite flag (name-only fallback).
+  const res = await store.mergePlaylists([
+    { id: 'mobile-fav-1', name: '我喜欢的', updatedAt: 1000, songs: [{ source: 'tx', id: '2002', name: 'Phone Fav', singer: 'Singer B' }] }
+  ]);
+  assert.equal(res.changed, true);
+  const after = store.snapshot();
+  const fav = after.playlists.find(p => p.isFavorite);
+  assert.ok(fav);
+  assert.equal(fav.songs.length, 2);
+  assert.deepEqual(fav.songs.map(s => s.id).sort(), ['1001', '2002']);
+  // Empty incoming favorite with newer timestamp must NOT wipe existing favorites.
+  const emptyRes = await store.mergePlaylists([
+    { id: 'empty-fav', name: '我喜欢的', isFavorite: true, updatedAt: Date.now() + 60000, songs: [] }
+  ]);
+  assert.equal(emptyRes.changed, false);
+  assert.equal(store.snapshot().playlists.find(p => p.isFavorite).songs.length, 2);
+  // Presets up to mine-12 survive apply().
+  await store.apply({ ...fixture(), settings: { lxlia_native_style: 'mine-12' } });
+  const fxSaved = JSON.parse(fs.readFileSync(path.join(root, 'current-fx-autosave.json'), 'utf8'));
+  assert.equal(fxSaved.preset, 12);
+});

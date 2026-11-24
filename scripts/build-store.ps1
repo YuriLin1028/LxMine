@@ -1,4 +1,4 @@
-param([switch]$SkipStage, [switch]$ReleaseSigning, [string]$ReleaseDir, [string]$SigningConfig)
+﻿param([switch]$SkipStage, [switch]$ReleaseSigning, [string]$ReleaseDir, [string]$SigningConfig)
 $ErrorActionPreference = 'Stop'
 [Console]::OutputEncoding = [System.Text.Encoding]::UTF8
 if ($PSVersionTable.PSVersion.Major -lt 7) { throw '请使用 PowerShell 7。' }
@@ -219,7 +219,7 @@ $release = Join-Path $releaseRoot "LxMine-$appVersion-Store-$stamp.app"
 if ($appPack -ne $release) { Copy-Item -LiteralPath $appPack -Destination $release -Force }
 $hash = (Get-FileHash -LiteralPath $release -Algorithm SHA256).Hash
 Write-Host "STORE: $release"
-Write-Host "versionName $appVersion / versionCode $appVersionCode / bundleName $storeBundle / deviceTypes phone,tablet"
+Write-Host "versionName $appVersion / versionCode $appVersionCode / bundleName $storeBundle / deviceTypes phone,tablet,2in1"
 Write-Host "SHA256: $hash"
 Write-Host ''
 Write-Host '下一步（AGC 邀请测试）：'

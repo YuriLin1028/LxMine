@@ -95,26 +95,23 @@ fun AppViewModel.openEntity(entity: CatalogueEntity) {
         try {
             val song = entity.song
             if (song != null) {
-                playSong(song, entities.mapNotNull { it.song })
-                return@launch
-            }
-            if (entity.kind == "songlist") {
-                val json = engine.importPlaylist(entity.id, entity.source)
-                val lists = parsePlaylists(json)
-                playlists = playlists.filter { existing -> lists.none { it.id == existing.id } } + lists
-                persist()
-                scheduleAutoPlaylistSync()
-                hydrateLibraryPlaylistCovers()
-                lists.firstOrNull()?.let { hydrateCoversFor(it.songs.take(36)) }
-                message = "已导入「${entity.name}」"
-                tab = "资料库"
-                libraryRestoreOffset = 0
-                openedPlaylist = lists.firstOrNull()
+                playSong(song, listOf(song), fromSearch = true)
                 return@launch
             }
             loading = true
             openedEntity = entity
             entitySongs = emptyList()
+            if (entity.kind == "songlist") {
+                val json = engine.importPlaylist(entity.id, entity.source)
+                if (openedEntity?.id != entity.id) return@launch
+                val lists = parsePlaylists(json)
+                val songs = lists.firstOrNull()?.songs.orEmpty()
+                entitySongs = songs
+                hydrateCoversFor(songs.take(40))
+                openedEntity = entity
+                message = if (songs.isNotEmpty()) "共 ${songs.size} 首歌曲" else "歌单暂时没有可播放歌曲"
+                return@launch
+            }
             val tracks = CatalogueApi.tracks(
                 host = host,
                 entity = entity,
@@ -142,19 +139,32 @@ fun AppViewModel.openEntity(entity: CatalogueEntity) {
 
 // ---- 首页融合数据 ----
 
-private fun AppViewModel.collectTasteSeed(seedOffset: Int = algoRefreshSeed): Pair<List<String>, Set<String>> {
+private fun AppViewModel.collectTasteSeed(seedOffset: Int = algoRefreshSeed): Triple<List<String>, Set<String>, List<Song>> {
     val artists = HomeFeedApi.extractTopTasteArtists(
         playlists = playlists,
         recentSongs = recentSongs,
         currentSong = selected,
-        maxArtists = 3,
+        maxArtists = 4,
         seedOffset = seedOffset,
     )
+    val favoriteSongs = playlists.firstOrNull { it.isFavorite || it.name == "我喜欢的" || it.name == "我的收藏" }?.songs.orEmpty()
     val known = buildSet {
         recentSongs.take(15).forEach { add(it.key) }
-        playlists.firstOrNull { it.isFavorite || it.name == "我喜欢的" }?.songs?.take(20)?.forEach { add(it.key) }
+        favoriteSongs.take(20).forEach { add(it.key) }
     }
-    return artists to known
+    // 协同过滤种子曲目：融合当前曲目、红心喜欢与最近播放（按种子偏移轮换，避免首页推荐反复雷同，#13）
+    val pool = buildList {
+        selected?.let { if (it.source != "local") add(it) }
+        addAll(favoriteSongs.filter { it.source != "local" }.take(24))
+        addAll(recentSongs.filter { it.source != "local" }.take(18))
+    }.distinctBy { it.key }
+    val seedSongs = if (pool.size <= 10 || seedOffset <= 0) {
+        pool.take(10)
+    } else {
+        val shift = ((seedOffset * 3) % pool.size + pool.size) % pool.size
+        (0 until minOf(10, pool.size)).map { idx -> pool[(shift + idx) % pool.size] }
+    }
+    return Triple(artists, known, seedSongs)
 }
 
 /** 双击首页左上角 LxMine 标题：按开关决定是否同步重算猜你喜欢与每日推荐。 */
@@ -181,18 +191,29 @@ fun AppViewModel.refreshHomeFeed(
     homeFeedRefreshing = true
     val token = ++homeFeedToken
     val seed = algoRefreshSeed
-    val (tasteArtists, knownKeys) = if (recalculateAlgo) collectTasteSeed(seed) else (emptyList<String>() to emptySet())
+    val (tasteArtists, knownKeys, seedSongs) = if (recalculateAlgo) collectTasteSeed(seed) else Triple(emptyList(), emptySet(), emptyList())
+    val disliked = dislikedKeys.toSet()
     val previousFeed = homeFeed
     viewModelScope.launch {
         try {
             var feed = withContext(Dispatchers.IO) {
-                HomeFeedApi.loadMergedHome(host, tasteArtists, knownKeys, algoSeed = if (recalculateAlgo) seed else 0)
+                HomeFeedApi.loadMergedHome(
+                    host = host,
+                    tasteArtists = tasteArtists,
+                    knownKeys = knownKeys,
+                    algoSeed = if (recalculateAlgo) seed else 0,
+                    dislikedKeys = disliked,
+                    seedSongs = seedSongs,
+                )
             }
             if (!recalculateAlgo && previousFeed != null &&
-                (previousFeed.similar.isNotEmpty() || previousFeed.dailySongs.isNotEmpty())
+                (previousFeed.forYou.isNotEmpty() || previousFeed.similar.isNotEmpty() || previousFeed.dailySongs.isNotEmpty())
             ) {
                 feed = feed.copy(
+                    forYou = previousFeed.forYou.ifEmpty { previousFeed.similar },
                     similar = previousFeed.similar,
+                    personalized = previousFeed.personalized,
+                    topArtists = previousFeed.topArtists,
                     daily = previousFeed.daily ?: feed.daily,
                     dailySongs = previousFeed.dailySongs.ifEmpty { feed.dailySongs },
                 )
@@ -209,12 +230,13 @@ fun AppViewModel.refreshHomeFeed(
 
 fun AppViewModel.refreshPersonalizationIfNeeded() {
     val current = homeFeed ?: return
-    if (current.similar.isNotEmpty() || homeFeedRefreshing || !storeReady) return
-    val (tasteArtists, knownKeys) = collectTasteSeed()
-    if (tasteArtists.isEmpty()) return
+    if ((current.forYou.isNotEmpty() || current.similar.isNotEmpty()) || homeFeedRefreshing || !storeReady) return
+    val (tasteArtists, knownKeys, seedSongs) = collectTasteSeed()
+    if (tasteArtists.isEmpty() && seedSongs.isEmpty()) return
+    val disliked = dislikedKeys.toSet()
     viewModelScope.launch {
         val personal = runCatching {
-            HomeFeedApi.fetchPersonalizedSongs(tasteArtists, knownKeys, algoRefreshSeed)
+            HomeFeedApi.fetchPersonalizedSongs(tasteArtists, knownKeys, algoRefreshSeed, disliked, host, seedSongs)
         }.getOrDefault(emptyList())
         if (personal.isEmpty()) return@launch
         val latest = homeFeed ?: return@launch
@@ -230,7 +252,9 @@ fun AppViewModel.refreshPersonalizationIfNeeded() {
         )
         queueHomeFeed(
             latest.copy(
-                similar = personal,
+                forYou = personal,
+                personalized = true,
+                topArtists = tasteArtists.take(4),
                 daily = updatedDaily,
                 dailySongs = blended,
             ),
@@ -245,14 +269,14 @@ fun AppViewModel.queueHomeFeed(feed: HomeFeed, immediate: Boolean = false) {
         homeFeedApplyJob?.cancel()
         homeFeed = feed
         store.saveHomeCache("all", feed.toJson().toString())
-        hydrateCoversFor(feed.similar + feed.dailySongs + feed.newSongs.take(30))
+        hydrateCoversFor(feed.forYou + feed.similar + feed.dailySongs + feed.newSongs.take(30))
         return
     }
     // 缓存快照与网络结果通常完全一致；直接跳过整表替换，避免滚动中无意义重建。
     if (feed.signature() == homeFeed?.signature()) {
         pendingHomeFeed = null
         homeFeedApplyJob?.cancel()
-        hydrateCoversFor(feed.similar + feed.dailySongs + feed.newSongs.take(30))
+        hydrateCoversFor(feed.forYou + feed.similar + feed.dailySongs + feed.newSongs.take(30))
         return
     }
     pendingHomeFeed = feed
@@ -272,7 +296,7 @@ private fun AppViewModel.schedulePendingHomeFeed() {
             pendingHomeFeed = null
             homeFeed = feed
             store.saveHomeCache("all", feed.toJson().toString())
-            hydrateCoversFor(feed.similar + feed.dailySongs + feed.newSongs.take(30))
+            hydrateCoversFor(feed.forYou + feed.similar + feed.dailySongs + feed.newSongs.take(30))
             return@launch
         }
     }
@@ -290,9 +314,10 @@ fun AppViewModel.refreshLibraryMosaic() {
 
 fun AppViewModel.feedSectionTitle(): String = when (feedSection) {
     "playlists" -> "推荐歌单"
-    "newSongs" -> "每周新歌"
+    "newSongs" -> "新歌速递"
     "charts" -> "排行榜"
-    "similar" -> "猜你喜欢"
+    "forYou" -> "猜你喜欢"
+    "similar" -> "相似推荐"
     "recent" -> "最近常听"
     "library" -> "我的歌单"
     else -> homeFeed?.sections?.firstOrNull { it.id == feedSection }?.title ?: "更多"
@@ -303,6 +328,7 @@ fun AppViewModel.feedSectionSubtitle(): String {
         "playlists" -> homeFeed?.playlists?.size ?: 0
         "newSongs" -> homeFeed?.newSongs?.size ?: 0
         "charts" -> homeFeed?.charts?.size ?: 0
+        "forYou" -> homeFeed?.forYou?.size?.takeIf { it > 0 } ?: (homeFeed?.similar?.size ?: 0)
         "similar" -> homeFeed?.similar?.size ?: 0
         "recent" -> (if (selected != null) 1 else 0) + playlists.size
         "library" -> playlists.size
@@ -319,6 +345,7 @@ fun AppViewModel.feedSectionPlaylists(): List<FeedPlaylist> = when (feedSection)
 
 fun AppViewModel.feedSectionSongs(): List<Song> = when (feedSection) {
     "newSongs" -> homeFeed?.newSongs.orEmpty()
+    "forYou" -> homeFeed?.forYou?.takeIf { it.isNotEmpty() } ?: homeFeed?.similar.orEmpty()
     "similar" -> homeFeed?.similar.orEmpty()
     "recent" -> selected?.let { listOf(it) }.orEmpty()
     else -> emptyList()
@@ -415,10 +442,21 @@ fun AppViewModel.closeFeedSection() {
     }
 }
 
+private fun AppViewModel.isChartFeedItem(item: FeedPlaylist): Boolean {
+    if (item.id == "daily-30" || item.kind == "chart" || item.parts.isNotEmpty()) return true
+    val feed = homeFeed
+    if (feed != null) {
+        if (feed.charts.any { it.id == item.id }) return true
+        if (feed.sections.any { s -> (s.id == "charts" || s.title.contains("榜")) && s.items.any { it.id == item.id } }) return true
+    }
+    return item.name.contains("榜")
+}
+
 fun AppViewModel.openFeedPlaylist(item: FeedPlaylist, autoplay: Boolean = false) {
     resetListTools()
     val returnTab = tab
     val returnFeed = feedSection
+    val returnSearch = searchOpen
     if (item.id == "daily-30") {
         val songs = homeFeed?.dailySongs.orEmpty().ifEmpty { homeFeed?.newSongs.orEmpty().take(30) }
         if (songs.isEmpty()) {
@@ -429,6 +467,7 @@ fun AppViewModel.openFeedPlaylist(item: FeedPlaylist, autoplay: Boolean = false)
         openedFeedSourceId = "daily-30"
         playlistReturnTab = returnTab
         playlistReturnFeed = returnFeed
+        playlistReturnSearch = returnSearch
         openedPlaylist = com.lxlia.player.model.MusicPlaylist(
             id = "daily-30",
             name = "每日三十首",
@@ -437,6 +476,7 @@ fun AppViewModel.openFeedPlaylist(item: FeedPlaylist, autoplay: Boolean = false)
             songIds = songs.map { it.key },
             createdAt = System.currentTimeMillis(),
             updatedAt = System.currentTimeMillis(),
+            preserveQueue = true,
         )
         libraryRestoreOffset = 0
         feedSection = ""
@@ -459,17 +499,21 @@ fun AppViewModel.openFeedPlaylist(item: FeedPlaylist, autoplay: Boolean = false)
         return
     }
     // 先跳转出歌单壳（立即响应），歌曲在后台装载；失败退回来源页并报错。
+    val preserveQueue = isChartFeedItem(item)
     val shell = com.lxlia.player.model.MusicPlaylist(
         id = "feed-${item.id}",
         name = item.name,
         kind = "lx",
         songs = emptyList(),
+        customCover = item.cover,
         createdAt = System.currentTimeMillis(),
         updatedAt = System.currentTimeMillis(),
+        preserveQueue = preserveQueue,
     )
     openedFeedSourceId = item.id
     playlistReturnTab = returnTab
     playlistReturnFeed = returnFeed
+    playlistReturnSearch = returnSearch
     openedPlaylist = shell
     openedFeedLoading = true
     libraryRestoreOffset = 0

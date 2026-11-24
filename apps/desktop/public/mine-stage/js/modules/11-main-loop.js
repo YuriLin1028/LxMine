@@ -85,10 +85,53 @@ function resolveAdaptiveRenderCadence(now, mode) {
   var context = currentRenderAdaptiveContext(now);
   return selectAdaptiveRenderCadence(context.kind, context.tier);
 }
+function isLxMineMobileStage() {
+  if (typeof window !== 'undefined' && window.__LXMINE_NATIVE_STAGE) return true;
+  return typeof navigator !== 'undefined' && /Android|HarmonyOS|OpenHarmony|OHOS|Mobile|iPhone|iPad/i.test(navigator.userAgent || '');
+}
+var parentOverlayHoldUntil = 0;
+var parentOverlayBurstUntil = 0;
+var parentOverlayWasActive = false;
+var cachedThumbCoverEl = undefined;
+function isParentUiOverlayBurst(now) {
+  var t = Number(now) || performance.now();
+  isParentUiOverlayAnimating(t);
+  return t < parentOverlayBurstUntil;
+}
+function isParentUiOverlayAnimating(now) {
+  var t = Number(now) || performance.now();
+  var active = !!window.__lxmineParentOverlayActive;
+  if (!active && !window.__LXMINE_NATIVE_STAGE) {
+    try {
+      if (window.parent && window.parent !== window) {
+        var pDoc = window.parent.document;
+        if (pDoc && pDoc.body) {
+          active = pDoc.body.classList.contains('detail-entering')
+            || pDoc.body.classList.contains('detail-leaving')
+            || pDoc.body.classList.contains('overlay-active');
+        }
+      }
+    } catch (_) {}
+  }
+  if (active) {
+    if (!parentOverlayWasActive) parentOverlayBurstUntil = t + 760;
+    parentOverlayWasActive = true;
+    parentOverlayHoldUntil = Math.max(parentOverlayHoldUntil, t + 520);
+    return true;
+  }
+  parentOverlayWasActive = false;
+  parentOverlayBurstUntil = 0;
+  return t < parentOverlayHoldUntil;
+}
 function getAdaptiveRenderFps(now) {
   if (isDeepBackgroundMode()) return 1;
-  if (window.__lxmineStagePresentation && !window.__lxmineStagePresentation.detail) return 15;
-  if (isLxMineDetailStageVisible()) return 0;
+  if (window.__lxmineStagePresentation && !window.__lxmineStagePresentation.detail) return 6;
+  if (isLxMineDetailStageVisible()) {
+    if (isParentUiOverlayAnimating(now)) return 24;
+    if (!playing && !(typeof isRenderInteractionActive === 'function' && isRenderInteractionActive(now))) return 30;
+    // 播放详情页播放态/交互态全端满帧跟随原生 VSync（60/120Hz），由动态像素预算兜底负载不掉帧。
+    return 0;
+  }
   var mode = (typeof normalizeForegroundFpsMode === 'function') ? normalizeForegroundFpsMode(fx && fx.foregroundFpsMode) : 'adaptive';
   var fixedFps = (typeof foregroundFixedFpsForMode === 'function') ? foregroundFixedFpsForMode(mode) : null;
   if (fixedFps !== null) return fixedFps;
@@ -169,12 +212,12 @@ function sampleRenderPerf(now, dt) {
   maybeTrimRuntimeCaches(now);
 }
 var mainFrameGates = {
-  audio: createFrameGate('main.audio', 60),
-  shelf: createFrameGate('main.shelf', 30),
-  lyricsParticles: createFrameGate('main.lyricsParticles', 120),
-  stageLyrics: createFrameGate('main.stageLyrics', 120),
-  skullParticles: createFrameGate('main.skullParticles', 120),
-  homeAudio: createFrameGate('main.homeAudio', 15),
+  audio: createFrameGate('main.audio', 45),
+  shelf: createFrameGate('main.shelf', 24),
+  lyricsParticles: createFrameGate('main.lyricsParticles', 60),
+  stageLyrics: createFrameGate('main.stageLyrics', 60),
+  skullParticles: createFrameGate('main.skullParticles', 50),
+  homeAudio: createFrameGate('main.homeAudio', 12),
   desktopOverlay: createFrameGate('main.desktopOverlay', 12)
 };
 window.__mineradioMainFrameGates = mainFrameGates;
@@ -188,12 +231,13 @@ function mainLoopDeepBackgroundSleeping() {
 }
 function mainLoopBackgroundDelayMs() {
   if (window.__lxmineStagePresentation && window.__lxmineStagePresentation.visible && !window.__lxmineStagePresentation.detail) {
-    return Math.max(16, 1000 / 15 - 1000 / estimatedDisplayRefreshHz());
+    return Math.max(80, 1000 / 6 - 1000 / estimatedDisplayRefreshHz());
   }
   if (!mainLoopDeepBackgroundSleeping()) return 0;
   if (fx && (fx.desktopLyrics || fx.wallpaperMode)) return 250;
-  if (typeof isBackgroundReleaseMode === 'function' && isBackgroundReleaseMode()) return 1500;
-  return 1000;
+  // When completely hidden (Home/Library/Settings or minimized) with no desktop overlay,
+  // return -1 to suspend the rAF/timer loop completely (0 GPU/compositor wakes) until woken.
+  return -1;
 }
 function requestMainLoopAnimationFrame() {
   if (mainLoopAnimationRequested) return;
@@ -202,6 +246,7 @@ function requestMainLoopAnimationFrame() {
 }
 function scheduleNextMainLoopFrame() {
   var delay = mainLoopBackgroundDelayMs();
+  if (delay < 0) return;
   if (delay > 0) {
     if (mainLoopBackgroundTimer) return;
     mainLoopBackgroundTimer = setTimeout(function () {
@@ -238,13 +283,14 @@ function mainLoopInteractionActive(now) {
 function visibleMotionFollowVsync(now) {
   if (isDeepBackgroundMode()) return false;
   if (window.__lxmineStagePresentation && !window.__lxmineStagePresentation.detail) return false;
+  if (isLxMineDetailStageVisible()) return false;
   var mode = (typeof normalizeForegroundFpsMode === 'function')
     ? normalizeForegroundFpsMode(fx && fx.foregroundFpsMode)
     : 'vsync';
-  if (mode !== 'vsync' && !isLxMineDetailStageVisible()) return false;
+  if (mode !== 'vsync') return false;
   if (typeof isProgressDragPreviewActive === 'function' && isProgressDragPreviewActive()) return true;
   if (mainLoopInteractionActive(now)) return true;
-  return !!(playing || isLxMineDetailStageVisible());
+  return !!playing;
 }
 function capMainLoopFpsToDisplay(fps) {
   var hz = (typeof estimatedDisplayRefreshHz === 'function') ? estimatedDisplayRefreshHz() : 60;
@@ -319,7 +365,9 @@ function animate() {
     tickDeepBackgroundFrame(now, deepDt);
     return;
   }
-  if (shouldSkipAdaptiveRenderFrame(now)) return;
+  var viewportFlushed = !!(window.__lxmineViewportDirty && typeof flushPendingMainRendererViewport === 'function' && flushPendingMainRendererViewport());
+  if (!viewportFlushed && isLxMineDetailStageVisible() && isParentUiOverlayBurst(now)) return;
+  if (!viewportFlushed && shouldSkipAdaptiveRenderFrame(now)) return;
   var dt = Math.min((now - prevTime) / 1000, 0.05);
   prevTime = now;
   sampleRenderPerf(now, dt);
@@ -657,7 +705,8 @@ function animate() {
   var presetUsesStarRiverParticles = fx && (Number(fx.preset) === 5 || (typeof SONIC_PRESET_INDEX !== 'undefined' && Number(fx.preset) === SONIC_PRESET_INDEX));
   var presetStarRiverMuted = presetUsesStarRiverParticles && fx.backgroundStarRiver === false;
   particles.visible = !skullPresetActive && !workshopPresetActive && !presetStarRiverMuted;
-  if (bloomParticles) bloomParticles.visible = !skullPresetActive && !workshopPresetActive && !presetStarRiverMuted && fx.bloom && fx.bloomStrength > 0.01;
+  var mobileOverdrawGuard = isLxMineMobileStage();
+  if (bloomParticles) bloomParticles.visible = !mobileOverdrawGuard && !skullPresetActive && !workshopPresetActive && !presetStarRiverMuted && fx.bloom && fx.bloomStrength > 0.01;
   if (floatGroup) floatGroup.visible = !skullPresetActive && !workshopPresetActive;
   if (backCoverGroup) backCoverGroup.visible = !skullPresetActive && !workshopPresetActive;
   var targetRotY = orbit.centerLocked ? 0 : (headParallax.active ? headParallax.x * 0.5 : 0) + gestureRotation.y;
@@ -705,7 +754,7 @@ function animate() {
   }
   if (perfProbe && perfProbe.markSince) perfProbe.markSince('visual.sonic-workshop', sonicWorkshopPerfStart);
   var stageLyricsPerfStart = performance.now();
-  var stageLyricsStepDt = consumeFrameGate(mainFrameGates.stageLyrics, now, dt, targetMainStageLyricsFps(now), false, 'stage-lyrics');
+  var stageLyricsStepDt = consumeFrameGate(mainFrameGates.stageLyrics, now, dt, targetMainStageLyricsFps(now), !!(orbit && orbit.rotating), 'stage-lyrics');
   if (stageLyricsStepDt > 0) updateStageLyrics3D(stageLyricsStepDt);
   if (perfProbe && perfProbe.markSince) perfProbe.markSince('visual.stage-lyrics', stageLyricsPerfStart);
   var desktopOverlayPerfStart = performance.now();
@@ -714,10 +763,12 @@ function animate() {
   if (perfProbe && perfProbe.markSince) perfProbe.markSince('desktop.overlay-sync', desktopOverlayPerfStart);
 
   // 缩略图脉动
-  if (currentIdx >= 0) {
-    var s = 1 + bass * 0.08;
-    var thumbCoverEl = document.getElementById('thumb-cover');
-    if (thumbCoverEl) thumbCoverEl.style.transform = 'scale(' + s + ')';
+  if (currentIdx >= 0 && !window.__LXMINE_NATIVE_STAGE) {
+    if (cachedThumbCoverEl === undefined) cachedThumbCoverEl = document.getElementById('thumb-cover') || null;
+    if (cachedThumbCoverEl) {
+      var s = 1 + bass * 0.08;
+      cachedThumbCoverEl.style.transform = 'scale(' + s + ')';
+    }
   }
 
   var rendererPerfStart = performance.now();

@@ -12,9 +12,23 @@
   var cover = '';
   var songCover = '';
   var songId = '';
+  var resetCameraOnSong = true;
   var customBgImage = '';
   var customBgOpacity = null;
+  var wpBgOpacity = 0.42;
+  var wpOverallOpacity = 0.95;
   var bgOverrideStyle = null;
+  function isPlaceholderLyricLine(text) {
+    var s = String(text || '').trim();
+    return !s || /^[\/\\\-—–_~·•\s]+$/.test(s);
+  }
+  function applyWallpaperOpacity() {
+    var rootEl = document.documentElement;
+    if (!rootEl) return;
+    rootEl.style.setProperty('--wp-bg-opacity', String(Math.max(0, Math.min(1, Number(wpBgOpacity)))));
+    rootEl.style.setProperty('--wp-overall-opacity', String(Math.max(0.2, Math.min(1, Number(wpOverallOpacity)))));
+  }
+  applyWallpaperOpacity();
   function syncEffectiveVisualCover() {
     var effective = customBgImage || songCover || '';
     if (effective !== cover) {
@@ -97,22 +111,76 @@
     shelfManager.setMode = function () { fx.shelf = 'off'; originalShelfMode('off'); };
     shelfManager.setMode('off');
   }
+  // Never show legacy MineRadio upstream source-fallback popups or loading chips inside LxMine stage.
+  window.showSourceFallbackNotice = function () {};
+  window.showToast = function () {};
+  (function hideLegacyLoadingBoxes() {
+    if (document.getElementById('lxmine-no-loading-chips')) return;
+    var s = document.createElement('style');
+    s.id = 'lxmine-no-loading-chips';
+    s.textContent = '#loading-overlay,#ai-depth-chip,#beat-chip,#trial-banner,#source-fallback-notice{display:none!important;opacity:0!important;visibility:hidden!important;pointer-events:none!important;}';
+    document.head.appendChild(s);
+  })();
   fx.lyricSize = Math.min(Number(fx.lyricSize) || 1, 1);
   fx.userLyricScale = 1;
-  var isNativeMobileStage = typeof window.__lxmineNative !== 'undefined';
+  function enforceUprightStageLyrics() {
+    if (typeof fx === 'undefined') return;
+    // Keep lyrics in 3D world space (lyricCameraLock = false) so 360° orbit rotates both visuals and lyrics together,
+    // while keeping zero tilt/offset at rest so lines stay straight and centered.
+    fx.lyricCameraLock = false;
+    fx.lyricTiltX = 0;
+    fx.lyricTiltY = 0;
+    fx.lyricOffsetX = 0;
+  }
+  function resetStageCameraView() {
+    try {
+      if (typeof orbit !== 'undefined' && orbit) {
+        orbit.rotating = false;
+        if (typeof defaultOrbitStateForPreset === 'function' && typeof fx !== 'undefined' && fx) {
+          var base = defaultOrbitStateForPreset(fx.preset);
+          if (base) {
+            orbit.baselineTheta = Number.isFinite(base.theta) ? base.theta : 0;
+            orbit.baselinePhi = typeof clampRange === 'function' ? clampRange(base.phi, orbit.minPhi, orbit.maxPhi) : (Number.isFinite(base.phi) ? base.phi : 0.08);
+            orbit.baselineRadius = typeof clampRange === 'function' ? clampRange(base.radius, orbit.minRadius, orbit.maxRadius) : (Number.isFinite(base.radius) ? base.radius : 6.6);
+          }
+        }
+      }
+      if (typeof particlePointerSpin !== 'undefined' && particlePointerSpin) {
+        particlePointerSpin.active = false;
+      }
+      if (typeof freeCamera !== 'undefined' && freeCamera && (freeCamera.active || freeCamera.locked) && typeof resetFreeCameraToDefault === 'function') {
+        resetFreeCameraToDefault();
+      }
+      if (typeof recenterCamera === 'function') {
+        recenterCamera();
+      }
+      if (window.MineradioSonicWorkshop && typeof MineradioSonicWorkshop.resetView === 'function') {
+        MineradioSonicWorkshop.resetView();
+      }
+      if (typeof markRenderInteraction === 'function') {
+        markRenderInteraction('track-camera-reset', 1200);
+      }
+    } catch (_) {}
+  }
+  enforceUprightStageLyrics();
+  var isNativeMobileStage = typeof navigator !== 'undefined' && /Android|HarmonyOS|OpenHarmony|OHOS|Mobile|iPhone|iPad/i.test(navigator.userAgent || '');
   if (isNativeMobileStage) {
-    fx.foregroundFpsMode = '60';
-    fx.performanceQuality = 'eco';
-    RENDER_DPR_CAP = 0.78;
-    RENDER_PIXEL_BUDGET = 540000;
+    fx.foregroundFpsMode = '50';
+    fx.performanceQuality = 'balanced';
+    RENDER_DPR_CAP = 1.65;
+    RENDER_PIXEL_BUDGET = 1500000;
+    if (typeof applyRendererPowerMode === 'function') applyRendererPowerMode();
   } else {
-    RENDER_DPR_CAP = 1.3;
-    RENDER_PIXEL_BUDGET = 2400000;
+    fx.foregroundFpsMode = 'adaptive';
+    RENDER_DPR_CAP = 1.50;
+    RENDER_PIXEL_BUDGET = 2200000;
+    if (typeof applyRendererPowerMode === 'function') applyRendererPowerMode();
   }
   audio = new Audio(); audio.crossOrigin = 'anonymous'; audio.preload = 'auto';
   playQueue = [{ id: 'native', name: 'LxMine', artist: '', type: 'song' }]; currentIdx = 0;
   uniforms.uAlpha.value = 1;
-  function position() { return Math.max(0, nativeClock.position + (nativeClock.playing ? (performance.now() - nativeClock.at) / 1000 : 0)); }
+  var nativeClockRate = 1;
+  function position() { return Math.max(0, nativeClock.position + (nativeClock.playing ? ((performance.now() - nativeClock.at) / 1000) * nativeClockRate : 0)); }
   function visualReady() {
     if (visualReadyPending || !presentation.visible || !presentation.detail) return;
     if (lyricsLines.length && fx.particleLyrics && (!stageLyrics.current || stageLyrics.currentIdx === -1)) {
@@ -133,6 +201,42 @@
   }
   window.lxmineNativeTime = position;
 
+  var vocalCancelState = { active: false, vocalGain: 1.0 };
+  var vocalCancelNodes = null;
+  function makeSoftClipCurve(knee, ceiling) {
+    var n = 4096, curve = new Float32Array(n), span = ceiling - knee;
+    for (var i = 0; i < n; i += 1) {
+      var x = (i * 2) / (n - 1) - 1;
+      var ax = Math.abs(x);
+      if (ax <= knee) curve[i] = x;
+      else {
+        var y = knee + span * Math.tanh((ax - knee) / span);
+        curve[i] = x < 0 ? -y : y;
+      }
+    }
+    return curve;
+  }
+  function applyVocalCancelGains() {
+    if (!vocalCancelNodes || !audioCtx) return;
+    var now = audioCtx.currentTime;
+    var active = !!vocalCancelState.active;
+    var v = Math.max(0, Math.min(1.5, Number(vocalCancelState.vocalGain)));
+    if (!isFinite(v)) v = 1.0;
+    var suppress = Math.max(0, 1 - Math.min(1, v));
+    var boost = Math.max(0, (v - 1.0) * 2.0);
+    var midDirect = v <= 1.0 ? (v * v) : 1.0;
+    var lowKeep = suppress * (1 + suppress * 0.12);
+    var midBoostDb = boost * 5.2;
+    var sideNotchDb = suppress > 0 ? (-7.5 * suppress) : (-2.2 * boost);
+    var sideGain = suppress > 0 ? (1.0 + suppress * 0.42) : (1.0 - boost * 0.34);
+    var trim = 1.0 / (1.0 + boost * 0.24);
+    vocalCancelNodes.midVocalDirect.gain.setTargetAtTime(midDirect, now, 0.025);
+    vocalCancelNodes.midLowPreserve.gain.setTargetAtTime(lowKeep, now, 0.025);
+    vocalCancelNodes.midVocalBoostEq.gain.setTargetAtTime(midBoostDb, now, 0.025);
+    vocalCancelNodes.sideVocalNotch.gain.setTargetAtTime(sideNotchDb, now, 0.025);
+    vocalCancelNodes.sidePreserve.gain.setTargetAtTime(sideGain, now, 0.025);
+    vocalCancelNodes.outGain.gain.setTargetAtTime(active ? trim : 0.0, now, 0.025);
+  }
   function readyGraph() {
     if (graphReady) return;
     try {
@@ -143,11 +247,47 @@
       beatAnalyser = audioCtx.createAnalyser(); beatAnalyser.fftSize = BEAT_FFT_SIZE;
       gainNode = audioCtx.createGain(); gainNode.gain.value = 0.000001;
       source.connect(analyser); source.connect(beatAnalyser); analyser.connect(gainNode); gainNode.connect(audioCtx.destination);
+      // 4th-Order Sub-Bass (105Hz) + Mid-Side Vocal Suppressor / Zero-Clip Vocal Booster
+      var vcSplit = audioCtx.createChannelSplitter(2);
+      var vcMerge = audioCtx.createChannelMerger(2);
+      var lToMid = audioCtx.createGain(); lToMid.gain.value = 0.5;
+      var rToMid = audioCtx.createGain(); rToMid.gain.value = 0.5;
+      var lToSide = audioCtx.createGain(); lToSide.gain.value = 0.5;
+      var rToSide = audioCtx.createGain(); rToSide.gain.value = -0.5;
+      var midBus = audioCtx.createGain(); midBus.gain.value = 1.0;
+      var sideBus = audioCtx.createGain(); sideBus.gain.value = 1.0;
+      var midVocalDirect = audioCtx.createGain(); midVocalDirect.gain.value = 1.0;
+      var midLowLp1 = audioCtx.createBiquadFilter(); midLowLp1.type = 'lowpass'; midLowLp1.frequency.value = 105; midLowLp1.Q.value = 0.7071;
+      var midLowLp2 = audioCtx.createBiquadFilter(); midLowLp2.type = 'lowpass'; midLowLp2.frequency.value = 105; midLowLp2.Q.value = 0.7071;
+      var midLowPreserve = audioCtx.createGain(); midLowPreserve.gain.value = 0.0;
+      var midVocalBoostEq = audioCtx.createBiquadFilter(); midVocalBoostEq.type = 'peaking'; midVocalBoostEq.frequency.value = 1850; midVocalBoostEq.Q.value = 0.65; midVocalBoostEq.gain.value = 0.0;
+      var midOut = audioCtx.createGain(); midOut.gain.value = 1.0;
+      var sideVocalNotch = audioCtx.createBiquadFilter(); sideVocalNotch.type = 'peaking'; sideVocalNotch.frequency.value = 1550; sideVocalNotch.Q.value = 0.52; sideVocalNotch.gain.value = 0.0;
+      var sidePreserve = audioCtx.createGain(); sidePreserve.gain.value = 1.0;
+      var sideInvert = audioCtx.createGain(); sideInvert.gain.value = -1.0;
+      var outGain = audioCtx.createGain(); outGain.gain.value = 0.0;
+      var shaper = audioCtx.createWaveShaper(); shaper.curve = makeSoftClipCurve(0.72, 0.94); shaper.oversample = '2x';
+      var limiter = audioCtx.createDynamicsCompressor();
+      limiter.threshold.value = -10; limiter.knee.value = 14; limiter.ratio.value = 6; limiter.attack.value = 0.002; limiter.release.value = 0.08;
+      source.connect(vcSplit);
+      vcSplit.connect(lToMid, 0); vcSplit.connect(rToMid, 1);
+      vcSplit.connect(lToSide, 0); vcSplit.connect(rToSide, 1);
+      lToMid.connect(midBus); rToMid.connect(midBus);
+      lToSide.connect(sideBus); rToSide.connect(sideBus);
+      midBus.connect(midVocalDirect); midVocalDirect.connect(midVocalBoostEq); midVocalBoostEq.connect(midOut);
+      midBus.connect(midLowLp1); midLowLp1.connect(midLowLp2); midLowLp2.connect(midLowPreserve); midLowPreserve.connect(midOut);
+      sideBus.connect(sideVocalNotch); sideVocalNotch.connect(sidePreserve);
+      sidePreserve.connect(sideInvert);
+      midOut.connect(vcMerge, 0, 0); sidePreserve.connect(vcMerge, 0, 0);
+      midOut.connect(vcMerge, 0, 1); sideInvert.connect(vcMerge, 0, 1);
+      vcMerge.connect(outGain); outGain.connect(limiter); limiter.connect(shaper); shaper.connect(audioCtx.destination);
+      vocalCancelNodes = { midVocalDirect: midVocalDirect, midLowPreserve: midLowPreserve, midVocalBoostEq: midVocalBoostEq, sideVocalNotch: sideVocalNotch, sidePreserve: sidePreserve, outGain: outGain };
+      applyVocalCancelGains();
       audioReady = true; graphReady = true;
     } catch (error) { console.warn('[LxMineStage] analysis unavailable', error.message); }
   }
   function syncAudio() {
-    if (nativeAnalysis.enabled) {
+    if (nativeAnalysis.enabled && !vocalCancelState.active) {
       nativeAnalysis.active = presentation.visible && presentation.detail && nativeClock.playing;
       if (!nativeAnalysis.active) {
         nativeAnalysis.receivedAt = 0;
@@ -156,18 +296,23 @@
       }
       return;
     }
-    if (!presentation.visible || !presentation.detail || !sourceUrl || !nativeClock.playing) {
+    var needStream = vocalCancelState.active
+      ? (!!sourceUrl && nativeClock.playing)
+      : (presentation.visible && presentation.detail && !!sourceUrl && nativeClock.playing);
+    if (!needStream) {
       audio.pause();
       if (audioCtx && audioCtx.state === 'running') audioCtx.suspend().catch(function () {});
-      if ((!presentation.visible || !presentation.detail) && audio.getAttribute('src')) {
+      if (!vocalCancelState.active && (!presentation.visible || !presentation.detail) && audio.getAttribute('src')) {
         audio.removeAttribute('src'); audio.load();
       }
       return;
     }
     if (audio.getAttribute('src') !== sourceUrl) { audio.src = sourceUrl; audio.load(); }
     readyGraph();
+    applyVocalCancelGains();
     if (audioCtx && audioCtx.state === 'suspended') audioCtx.resume().catch(function () {});
-    if (Math.abs((audio.currentTime || 0) - position()) > 0.45 && audio.readyState >= 1) {
+    var driftLimit = vocalCancelState.active ? 0.30 : 0.45;
+    if (Math.abs((audio.currentTime || 0) - position()) > driftLimit && audio.readyState >= 1) {
       try { audio.currentTime = position(); } catch (_) {}
     }
     if (audio.paused) audio.play().catch(function (error) { console.warn('[LxMineStage] analysis stream', error.message); });
@@ -197,6 +342,15 @@
     if (!data) return;
     LxMineAppearance.apply(data.appearance);
     var palette = LxMineAppearance.colors(data.lyricColors);
+    if (palette && palette.primary) {
+      window.__lxminePalette = {
+        primary: palette.primary,
+        secondary: palette.secondary || palette.primary,
+        highlight: palette.highlight || palette.glow || palette.primary
+      };
+    } else if (typeof stageLyrics !== 'undefined' && stageLyrics && stageLyrics.coverPalette && stageLyrics.coverPalette.primary) {
+      window.__lxminePalette = stageLyrics.coverPalette;
+    }
     var mode = String(data.lyricColorMode || '');
     if (!palette || !mode) return;
     if (typeof fx === 'undefined' || typeof setStageLyricPalette !== 'function') return;
@@ -233,12 +387,26 @@
       if (!presentation.visible || !presentation.detail) window.dispatchEvent(new Event('lxmine-stage-hidden'));
       if (!presentation.visible) wakingPreset = true;
       updateRenderPowerClasses();
-      applyRendererPowerMode();
+      if (presentation.visible && presentation.detail && typeof refreshMainRendererViewport === 'function') {
+        if (window.__lxmineViewportDirty && typeof flushPendingMainRendererViewport === 'function') {
+          flushPendingMainRendererViewport();
+        }
+        refreshMainRendererViewport('sync', false);
+      } else {
+        applyRendererPowerMode();
+      }
       if (window.MineradioSonicWorkshop) MineradioSonicWorkshop.presentation(presentation.visible && presentation.detail);
       syncAudio();
       if (presentation.visible && presentation.detail) markRenderInteraction('native-presentation', 500);
       wakeMainLoopFromBackground();
       visualReady();
+    },
+    setInsets: function (insets) {
+      if (!insets) return;
+      window.__lxmineStageInsets = {
+        topInset: Math.max(0, Number(insets.topInset) || 0),
+        bottomInset: Math.max(0, Number(insets.bottomInset) || 0)
+      };
     },
     seek: function (seconds) {
       if (!window.__lxmineNative || typeof window.__lxmineNative.seek !== 'function') return false;
@@ -265,10 +433,20 @@
       }
       applyLyricPaletteFromMetadata(data);
       nativeOffset = Number(data.lyricOffset || 0) / 1000;
-      if (songId !== data.id) {
+      if (typeof data.resetCameraOnSong === 'boolean') resetCameraOnSong = data.resetCameraOnSong;
+      var hadPrevSong = Boolean(songId);
+      var songChanged = songId !== data.id;
+      if (songChanged) {
         nativeAnalysis.receivedAt = 0;
         nativeAnalysis.frequency.fill(0);
         nativeAnalysis.waveform.fill(128);
+        nativeClock.position = 0;
+        nativeClock.at = performance.now();
+        nativeClock.playing = false;
+        playing = false;
+        lyricKey = '';
+        if (typeof clearStageLyrics === 'function') clearStageLyrics();
+        if (typeof stageLyrics !== 'undefined' && stageLyrics) stageLyrics.currentIdx = -1;
         songId = data.id; sourceUrl = ''; audio.pause(); audio.removeAttribute('src'); audio.load();
         // A paused native track still belongs on the playback stage; never let
         // the empty-home wallpaper replace it between tracks.
@@ -279,36 +457,101 @@
       var song = { id: data.id || data.name, name: data.name, artist: data.singer, cover: data.cover, durationMs: data.duration };
       playQueue[0] = song; currentIdx = 0;
       var preset = Math.max(0, Math.min(presetMeta.length - 1, Number(String(data.mode || 'mine-0').replace('mine-', '')) || 0));
-      if (fx.preset !== preset) setPreset(preset, { silent: true, noSave: true, skipTransition: wakingPreset });
+      if (fx.preset !== preset) setPreset(preset, { silent: true, noSave: true, skipTransition: wakingPreset, preserveCamera: songChanged && hadPrevSong && !resetCameraOnSong });
+      if (songChanged && hadPrevSong && resetCameraOnSong) resetStageCameraView();
+      enforceUprightStageLyrics();
       wakingPreset = false;
       songCover = data.cover || '';
       if (typeof data.bgImage === 'string' && data.bgImage !== customBgImage) { customBgImage = data.bgImage; }
       if (data.bgOpacity !== undefined && data.bgOpacity !== null && isFinite(Number(data.bgOpacity))) {
         customBgOpacity = Math.max(0, Math.min(1, Number(data.bgOpacity)));
       }
+      if (data.wallpaperBgOpacity !== undefined && data.wallpaperBgOpacity !== null && isFinite(Number(data.wallpaperBgOpacity))) {
+        wpBgOpacity = Math.max(0, Math.min(1, Number(data.wallpaperBgOpacity)));
+        applyWallpaperOpacity();
+      }
+      if (data.wallpaperOverallOpacity !== undefined && data.wallpaperOverallOpacity !== null && isFinite(Number(data.wallpaperOverallOpacity))) {
+        wpOverallOpacity = Math.max(0.2, Math.min(1, Number(data.wallpaperOverallOpacity)));
+        applyWallpaperOpacity();
+      }
       syncEffectiveVisualCover();
       applyStageBackground();
-      var userScale = Math.max(0.75, Math.min(1.4, Number(data.lyricScale) || 1));
-      if (typeof fx !== 'undefined') fx.userLyricScale = userScale;
-      var nextLyrics = JSON.stringify([data.id, data.lines, data.translationLines, data.lyricOffset]);
+      var userScale = Math.max(0.55, Math.min(1.5, Number(data.lyricScale) || 1));
+      var userLineSpacing = Math.max(0.85, Math.min(1.8, Number(data.lyricLineSpacing) || 1.2));
+      var userMaxLines = Math.max(0, Math.min(10, Math.round(Number(data.lyricMaxLines) || 0)));
+      if (typeof fx !== 'undefined') {
+        fx.userLyricScale = userScale;
+        fx.lyricLineHeight = Math.max(0.85, Math.min(1.5, userLineSpacing));
+        fx.lyricContextSpread = Math.max(0.75, Math.min(2.0, 1.24 * (userLineSpacing / 1.2)));
+        // Pin translation/romaji scale & opacity to match plain-stage.html visual size & #ffffff8f tone regardless of saved localStorage/preset state.
+        fx.lyricTranslationScale = 0.48;
+        fx.lyricTranslationOpacity = 0.58;
+        fx.lyricTranslationGap = Math.max(0.28, Math.min(1.2, 0.40 * (0.78 + userLineSpacing * 0.18)));
+        if (userMaxLines > 0) {
+          fx.lyricDisplayMode = userMaxLines === 1 ? 'single' : 'custom';
+          fx.lyricCustomLineCount = userMaxLines;
+        } else {
+          fx.lyricDisplayMode = 'cinema';
+        }
+      }
+      var wrapBucket = typeof lyricWrapWidthBucket === 'function' ? lyricWrapWidthBucket() : 0;
+      var rawLines = Array.isArray(data.lines) ? data.lines : [];
+      var rawTrans = Array.isArray(data.translationLines) ? data.translationLines : [];
+      var firstL = rawLines[0], midL = rawLines[rawLines.length >> 1], lastL = rawLines[rawLines.length - 1];
+      var firstT = rawTrans[0], lastT = rawTrans[rawTrans.length - 1];
+      var nextLyrics = [
+        data.id || '', rawLines.length, rawTrans.length, Number(data.lyricOffset) || 0,
+        userLineSpacing, userMaxLines, wrapBucket,
+        firstL ? (firstL.timeMs + ':' + (firstL.text || '').slice(0, 16) + ':' + (firstL.words ? firstL.words.length : 0)) : '',
+        midL ? (midL.timeMs + ':' + (midL.text || '').slice(0, 12)) : '',
+        lastL ? (lastL.timeMs + ':' + (lastL.text || '').slice(0, 16)) : '',
+        firstT ? (firstT.timeMs + ':' + (firstT.text || '').slice(0, 12)) : '',
+        lastT ? (lastT.timeMs + ':' + (lastT.text || '').slice(0, 12)) : ''
+      ].join('|');
       if (nextLyrics !== lyricKey) {
         lyricKey = nextLyrics;
         var lines = LxMineLyrics.stageLines(data.lines || [], data.duration);
         var translations = (data.translationLines || []).map(function (line, index, all) {
-          return { t: line.timeMs / 1000, text: line.text, duration: Math.max(0.1, ((all[index + 1] ? all[index + 1].timeMs : data.duration || line.timeMs + 4800) - line.timeMs) / 1000) };
+          var cleanText = String(line.text || '').trim();
+          return { t: line.timeMs / 1000, text: isPlaceholderLyricLine(cleanText) ? '' : cleanText, duration: Math.max(0.1, ((all[index + 1] ? all[index + 1].timeMs : data.duration || line.timeMs + 4800) - line.timeMs) / 1000) };
         }).filter(function (line) { return line.text; });
-        if (typeof fx !== 'undefined') fx.lyricTranslationMode = translations.length ? 'multi' : 'off';
-        setOriginalLyricsState(lines, lines.some(function (line) { return line.words.length; }), 'native-clock', translations, translations.length ? 'lxmine-settings' : 'none');
+        // Attach matched translation/romaji directly onto each stage lyric line so dynamic 3D lyrics render it identically to plain mode.
+        if (translations.length && lines.length) {
+          for (var li = 0; li < lines.length; li++) {
+            if (lines[li].translation) continue;
+            var bestText = '';
+            var bestDiff = 0.68;
+            for (var ti = 0; ti < translations.length; ti++) {
+              var diff = Math.abs(translations[ti].t - lines[li].t);
+              if (diff <= bestDiff) {
+                bestDiff = diff;
+                bestText = translations[ti].text;
+              }
+            }
+            if (bestText) lines[li].translation = bestText;
+          }
+        }
+        var hasAnyTranslation = translations.length > 0 || lines.some(function (line) { return !!line.translation; });
+        if (typeof fx !== 'undefined') fx.lyricTranslationMode = hasAnyTranslation ? 'multi' : 'off';
+        setOriginalLyricsState(lines, lines.some(function (line) { return line.words.length; }), 'native-clock', translations, hasAnyTranslation ? 'lxmine-settings' : 'none');
         if (typeof applyOriginalLyricsState === 'function') applyOriginalLyricsState({ immediate: true, rebuild: true });
         else applyPreferredLyricsForCurrent(false);
-        if (lines.length && !stageLyrics.current) {
+        if (lines.length) {
           var index = Math.max(0, findStageLyricIndexAtTime(position() + nativeOffset));
           var initial = buildStageLyricDisplayPayload(index, { lightweightTrack: true });
           if (initial) {
             clearStageLyricWarmup();
             if (showStageLine(initial, true)) stageLyrics.currentIdx = index;
           }
+        } else {
+          // Switching to a new track whose lyrics are still fetching or instrumental:
+          // always clear the previous track's 3D lyric meshes immediately so stale lyrics never linger.
+          if (typeof clearStageLyrics === 'function') clearStageLyrics();
+          if (typeof stageLyrics !== 'undefined' && stageLyrics) stageLyrics.currentIdx = -1;
         }
+      } else if (typeof fx !== 'undefined') {
+        var existingTrans = (lyricsTranslationLines && lyricsTranslationLines.length > 0) || (lyricsLines && lyricsLines.some(function (line) { return !!line.translation; }));
+        fx.lyricTranslationMode = existingTrans ? 'multi' : 'off';
       }
       if (data.audioUrl && data.audioUrl !== sourceUrl) {
         sourceUrl = data.audioUrl; audio.pause();
@@ -330,37 +573,71 @@
       applyStageBackground();
     },
     clock: function (data) {
-      nativeClock.position = Math.max(0, Number(data.positionMs) || 0) / 1000;
-      nativeClock.at = performance.now(); nativeClock.playing = data.playing === true;
+      var now = performance.now();
+      var curSec = position();
+      var inSec = Math.max(0, Number(data.positionMs) || 0) / 1000;
+      var nextPlaying = data.playing === true;
+      var diffSec = inSec - curSec;
+      var finalSec = inSec;
+      if (nativeClock.playing && nextPlaying && Math.abs(diffSec) <= 0.65) {
+        finalSec = curSec;
+        nativeClockRate = Math.max(0.88, Math.min(1.12, 1 + diffSec * 0.35));
+      } else if (nativeClock.playing && !nextPlaying && Math.abs(diffSec) < 0.55) {
+        finalSec = curSec;
+        nativeClockRate = 1;
+      } else {
+        nativeClockRate = 1;
+      }
+      nativeClock.position = finalSec;
+      nativeClock.at = now;
+      nativeClock.playing = nextPlaying;
       playing = nativeClock.playing;
+      syncAudio();
+    },
+    vocalCancel: function (cfg) {
+      cfg = cfg || {};
+      var nextActive = cfg.active === true;
+      var nextGain = Number(cfg.vocalGain);
+      if (!isFinite(nextGain)) nextGain = 1.0;
+      vocalCancelState.active = nextActive;
+      vocalCancelState.vocalGain = Math.max(0, Math.min(1.5, nextGain));
+      applyVocalCancelGains();
       syncAudio();
     },
     diagnostics: function () { var probe = analyser ? new Uint8Array(analyser.frequencyBinCount) : new Uint8Array(1); if (analyser) analyser.getByteFrequencyData(probe); return { error: lastStageError, build: window.__LXMINE_STAGE_REVISION, visible: presentation.visible, detail: presentation.detail, hidden: document.hidden, deep: isDeepBackgroundMode(), renderedFrames: renderer.info.render.frame, renderPixels: renderer.domElement.width * renderer.domElement.height, capturedAt: Date.now(), prewarmed: prewarmComplete, directPeak: Math.max.apply(null, probe), nativePlaying: nativeClock.playing, sourceMatches: audio.src === sourceUrl, ready: true, preset: fx.preset, playing: playing, position: position(), analyser: !!analyser, audioContext: audioCtx && audioCtx.state, nativeAnalysis: nativeAnalysis.enabled, nativeSpectrumAge: nativeAnalysis.receivedAt ? performance.now() - nativeAnalysis.receivedAt : -1, audioError: audio.error ? audio.error.code : 0, frequencyPeak: Math.max.apply(null, frequencyData), bass: smoothBass, beat: beatPulse, particleLyrics: fx.particleLyrics, lyricGroup: !!stageLyrics.group, lyricText: stageLyrics.currentText, lyricIndex: stageLyrics.currentIdx, lyricMesh: !!stageLyrics.current, camera: camera.position.toArray(), signal: smoothEnergy, audioTime: audio.currentTime, audioPaused: audio.paused, lyrics: lyricsLines.length, width: innerWidth, height: innerHeight, lyricSeek: window.lxmineLyricSeekDiagnostics ? window.lxmineLyricSeekDiagnostics() : null, touch: window.lxmineTouchDiagnostics ? window.lxmineTouchDiagnostics() : null, perf: window.__mineradioRenderPerf }; }
   };
-  // Start asynchronous assets immediately, including when the player opens during startup.
-  var skullWarmup = loadSkullParticleAsset();
-  var workshopWarmup = Promise.resolve().then(function () {
+  // Compile base scene cheaply; on mobile keep heavy optional presets (skull 1MB asset,
+  // sonic-workshop nested WebGL iframe, sonic-topography instanced grid) lazy on demand
+  // to save RAM and startup time, while prewarming them dormant on desktop for <1s switching.
+  var skullWarmup = !isNativeMobileStage ? loadSkullParticleAsset() : null;
+  var workshopWarmup = !isNativeMobileStage ? Promise.resolve().then(function () {
     if (window.MineradioSonicWorkshop) return MineradioSonicWorkshop.prewarm();
-  }).catch(function (error) { console.warn('[LxMineStage] workshop warmup', error.message); });
+  }).catch(function (error) { console.warn('[LxMineStage] workshop warmup', error.message); }) : null;
   var warmTasks = [
-    function () { renderer.compile(scene, camera); },
-    function () { if (window.MineradioSonicTopography) MineradioSonicTopography.prewarm(scene, fx, renderer, camera); },
-    function () { return skullWarmup.then(function (data) {
-      if (!data) return;
-      warmTasks.unshift(function () {
-        var skull = createSkullParticleLayer();
-        if (!skull) return;
-        skull.visible = true;
-        try { renderer.compile(scene, camera); } finally { skull.visible = fx.preset === SKULL_PRESET_INDEX; }
-      });
-    }); },
-    function () { return workshopWarmup; }
+    function () { renderer.compile(scene, camera); }
   ];
+  if (!isNativeMobileStage) {
+    warmTasks.push(function () {
+      if (window.MineradioSonicTopography) MineradioSonicTopography.prewarm(scene, fx, renderer, camera);
+    });
+    warmTasks.push(function () {
+      return skullWarmup.then(function (data) {
+        if (!data) return;
+        warmTasks.unshift(function () {
+          var skull = createSkullParticleLayer();
+          if (!skull) return;
+          skull.visible = true;
+          try { renderer.compile(scene, camera); } finally { skull.visible = fx.preset === SKULL_PRESET_INDEX; }
+        });
+      });
+    });
+    warmTasks.push(function () { return workshopWarmup; });
+  }
   function warmNext() {
     if (!warmTasks.length) { prewarmComplete = true; return; }
-    if (presentation.visible) { setTimeout(warmNext, 1000); return; }
+    if (presentation.visible || presentation.detail) { setTimeout(warmNext, 1600); return; }
     Promise.resolve().then(warmTasks.shift()).catch(function (error) { console.warn('[LxMineStage] warmup', error.message); })
-      .then(function () { setTimeout(warmNext, 100); });
+      .then(function () { setTimeout(warmNext, 120); });
   }
   applyRendererPowerMode();
   setTimeout(warmNext, 0);

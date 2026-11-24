@@ -4,15 +4,18 @@ function normalizeStageLyricText(text) {
 function normalizeStageLyricEntry(entry, fallbackRole) {
   if (typeof entry === 'string') entry = { text: entry };
   entry = entry || {};
-  var text = normalizeStageLyricText(entry.text);
-  if (!text) return null;
   var role = /^(current|prev|next|context|translation)$/.test(String(entry.role || '')) ? entry.role : (fallbackRole || 'context');
+  var isTranslationEntry = !!(entry.translationLine || role === 'translation');
+  var text = isTranslationEntry && typeof normalizeLyricTranslationText === 'function'
+    ? normalizeLyricTranslationText(entry.text)
+    : normalizeStageLyricText(entry.text);
+  if (!text) return null;
   var alpha = entry.alpha == null ? (role === 'current' ? 1 : 0.42) : clampRange(Number(entry.alpha), 0, 1);
-  var scale = entry.scale == null ? (role === 'current' ? 1 : (role === 'translation' ? 0.48 : 0.86)) : clampRange(Number(entry.scale), 0.30, 1.08);
+  var scale = entry.scale == null ? (role === 'current' ? 1 : (role === 'translation' ? 0.54 : 0.86)) : clampRange(Number(entry.scale), 0.30, 1.08);
   var out = { text: text, role: role, alpha: alpha, scale: scale };
   var weightValue = Number(entry.weight);
   var lineOffsetValue = Number(entry.lineOffset);
-  if (entry.weight != null && isFinite(weightValue)) out.weight = clampRange(weightValue, 500, 900);
+  if (entry.weight != null && isFinite(weightValue)) out.weight = clampRange(weightValue, 400, 900);
   if (entry.lineOffset != null && isFinite(lineOffsetValue)) out.lineOffset = clampRange(lineOffsetValue, -0.58, 0.20);
   if (entry.translation) out.translation = normalizeLyricTranslationText(entry.translation);
   if (entry.translationLine) out.translationLine = true;
@@ -24,7 +27,7 @@ function normalizeStageLyricEntry(entry, fallbackRole) {
 }
 function lyricEntryWeight(entry) {
   var weight = entry && entry.weight != null ? Number(entry.weight) : NaN;
-  if (isFinite(weight)) return clampRange(weight, 500, 900);
+  if (isFinite(weight)) return clampRange(weight, 400, 900);
   return lyricFontWeightValue();
 }
 function lyricEntryLineOffset(entry) {
@@ -196,10 +199,9 @@ function contextStageLyricPayload(payload) {
     hasContext = true;
     if (entry.translationLine) {
       entries.push(cloneStageLyricEntryForLayer(entry, {
-        alpha: clampRange(entry.alpha == null ? lyricContextOpacityValue() * 0.58 : entry.alpha, 0, 0.72),
-        scale: clampRange(entry.scale == null ? lyricTranslationScaleValue() * 0.88 : entry.scale, 0.42, 1.12),
-        weight: entry.weight == null ? 650 : entry.weight,
-        lineOffset: entry.lineOffset == null ? -0.20 : entry.lineOffset
+        alpha: clampRange(entry.alpha == null ? lyricContextOpacityValue() : entry.alpha, 0, 1),
+        scale: clampRange(entry.scale == null ? lyricTranslationScaleValue() : entry.scale, 0.38, 0.80),
+        lineOffset: entry.lineOffset == null ? -0.10 : entry.lineOffset
       }));
       continue;
     }

@@ -1,4 +1,4 @@
-param([switch]$ConfigureOnly, [switch]$SkipStage, [string]$SigningConfig)
+﻿param([switch]$ConfigureOnly, [switch]$SkipStage, [string]$SigningConfig)
 $ErrorActionPreference = 'Stop'
 [Console]::OutputEncoding = [System.Text.Encoding]::UTF8
 if ($PSVersionTable.PSVersion.Major -lt 7) { throw '请使用 PowerShell 7。' }
@@ -57,11 +57,39 @@ $studio = 'D:/Program Files/Huawei/DevEco Studio'
 $env:DEVECO_SDK_HOME = Join-Path $studio 'sdk'
 $env:JAVA_HOME = Join-Path $studio 'jbr'
 $env:PATH = "$env:JAVA_HOME\bin;$env:PATH"
+$hicarIconDir = Join-Path $project 'hicar-icon'
+$iconSwaps = @(
+    @{ target = (Join-Path $project 'AppScope/resources/base/media/app_icon.png'); src = (Join-Path $hicarIconDir 'app_icon.png') },
+    @{ target = (Join-Path $project 'AppScope/resources/base/media/foreground.png'); src = (Join-Path $hicarIconDir 'app_icon.png') },
+    @{ target = (Join-Path $project 'entry/src/main/resources/base/media/app_icon.png'); src = (Join-Path $hicarIconDir 'app_icon.png') },
+    @{ target = (Join-Path $project 'entry/src/main/resources/base/media/foreground.png'); src = (Join-Path $hicarIconDir 'entry_foreground.png') }
+)
+$iconBackups = @()
+$bakDir = Join-Path ([System.IO.Path]::GetTempPath()) ("lxmine-hicar-icon-bak-" + [System.Guid]::NewGuid().ToString('N'))
+New-Item -ItemType Directory -Path $bakDir -Force | Out-Null
 Push-Location $project
 try {
+    $idx = 0
+    foreach ($swap in $iconSwaps) {
+        if ((Test-Path -LiteralPath $swap.src) -and (Test-Path -LiteralPath $swap.target)) {
+            $bak = Join-Path $bakDir ("icon_$idx.png")
+            $idx++
+            Copy-Item -LiteralPath $swap.target -Destination $bak -Force
+            $iconBackups += @{ target = $swap.target; bak = $bak }
+            Copy-Item -LiteralPath $swap.src -Destination $swap.target -Force
+        }
+    }
     & (Join-Path $studio 'tools/hvigor/bin/hvigorw.bat') assembleHap --mode module -p product=hicar --no-daemon
     if ($LASTEXITCODE -ne 0) { throw 'HiCar HAP 构建失败。' }
-} finally { Pop-Location }
+} finally {
+    foreach ($entry in $iconBackups) {
+        if (Test-Path -LiteralPath $entry.bak) {
+            Move-Item -LiteralPath $entry.bak -Destination $entry.target -Force
+        }
+    }
+    Remove-Item -LiteralPath $bakDir -Recurse -Force -ErrorAction SilentlyContinue
+    Pop-Location
+}
 $out = Join-Path $project 'entry/build/hicar/outputs/default'
 $signed = Join-Path $out 'entry-default-signed.hap'
 $unsigned = Join-Path $out 'entry-default-unsigned.hap'

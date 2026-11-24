@@ -2,9 +2,9 @@
 var scene = new THREE.Scene();
 scene.background = null;
 var camera = new THREE.PerspectiveCamera(45, innerWidth / innerHeight, 0.1, 100);
-var RENDER_DPR_CAP = window.__LXMINE_NATIVE_STAGE ? 1.15 : 1.35;
-var RENDER_PIXEL_BUDGET = window.__LXMINE_NATIVE_STAGE ? 2200000 : 4800000;
-var RENDER_MIN_DPR = 0.72;
+var RENDER_DPR_CAP = window.__LXMINE_NATIVE_STAGE ? 2.15 : 1.35;
+var RENDER_PIXEL_BUDGET = window.__LXMINE_NATIVE_STAGE ? 1950000 : 2200000;
+var RENDER_MIN_DPR = window.__LXMINE_NATIVE_STAGE ? 1.15 : 0.80;
 // 0 = display vsync. Foreground visible motion must keep VSync cadence.
 var RENDER_VISIBLE_VSYNC = true;
 var RENDER_IDLE_FPS = 72;
@@ -23,7 +23,9 @@ var renderRefreshState = {
   lastRafAt: 0,
   hz: 60,
   stableHz: 60,
-  samples: []
+  samples: [],
+  tickCount: 0,
+  converged: false
 };
 var adaptiveFrameLoadState = {
   avgMs: 0,
@@ -42,17 +44,25 @@ function sampleDisplayRefreshHz(now) {
   now = Number(now) || performance.now();
   var last = renderRefreshState.lastRafAt || 0;
   renderRefreshState.lastRafAt = now;
+  if (renderRefreshState.converged) return renderRefreshState.stableHz || renderRefreshState.hz || 60;
   if (!last) return renderRefreshState.stableHz || renderRefreshState.hz || 60;
   var gap = now - last;
   if (gap < 4 || gap > 40) return renderRefreshState.stableHz || renderRefreshState.hz || 60;
   renderRefreshState.samples.push(gap);
   if (renderRefreshState.samples.length > 36) renderRefreshState.samples.shift();
+  renderRefreshState.tickCount = (renderRefreshState.tickCount || 0) + 1;
+  if (renderRefreshState.samples.length < 12 || (renderRefreshState.tickCount % 30 !== 0 && renderRefreshState.tickCount !== 12)) {
+    return renderRefreshState.stableHz || renderRefreshState.hz || 60;
+  }
   var sorted = renderRefreshState.samples.slice().sort(function (a, b) { return a - b; });
   var median = sorted[Math.floor(sorted.length / 2)] || gap;
   var hz = Math.max(48, Math.min(240, 1000 / Math.max(1, median)));
   renderRefreshState.hz = hz;
   var stable = renderRefreshState.stableHz || hz;
   renderRefreshState.stableHz = Math.abs(stable - hz) > 18 ? hz : stable * 0.90 + hz * 0.10;
+  if (renderRefreshState.tickCount >= 120 && Math.abs(renderRefreshState.stableHz - hz) < 2) {
+    renderRefreshState.converged = true;
+  }
   return renderRefreshState.stableHz;
 }
 function estimatedDisplayRefreshHz() {
@@ -84,7 +94,8 @@ function sampleAdaptiveFrameCost(costMs, targetFps) {
   if (foregroundStage && now > 5000) {
     var scale = adaptiveFrameLoadState.resolutionScale;
     var elapsed = now - adaptiveFrameLoadState.lastResolutionAt;
-    if (adaptiveFrameLoadState.level >= 2 && elapsed > 2000) scale = Math.max(0.6, scale * 0.85);
+    var minResScale = window.__LXMINE_NATIVE_STAGE ? 0.85 : 0.72;
+    if (adaptiveFrameLoadState.level >= 2 && elapsed > 2000) scale = Math.max(minResScale, scale * (window.__LXMINE_NATIVE_STAGE ? 0.92 : 0.88));
     else if (adaptiveFrameLoadState.level === 0 && adaptiveFrameLoadState.avgMs < budget * 0.45 && elapsed > 10000) scale = Math.min(1, scale * 1.05);
     if (Math.abs(scale - adaptiveFrameLoadState.resolutionScale) > 0.001) {
       adaptiveFrameLoadState.resolutionScale = scale;
@@ -143,23 +154,28 @@ function renderQualityProfile() {
   var quality = normalizePerformanceQuality(fx && fx.performanceQuality);
   var profile = (typeof runtimeHardwareProfile !== 'undefined' && runtimeHardwareProfile) ? runtimeHardwareProfile : null;
   var lowSpec = profile && profile.lowSpec;
-  if (typeof window !== 'undefined' && window.__LXMINE_NATIVE_STAGE && quality === 'eco') return { cap: 0.78, min: 0.48, budget: 540000 };
-  if (quality === 'eco') return { cap: lowSpec ? 0.88 : 0.95, min: 0.52, budget: lowSpec ? 1900000 : 2400000 };
-  if (quality === 'balanced') return { cap: lowSpec ? 0.98 : 1.12, min: 0.62, budget: lowSpec ? 2800000 : 3800000 };
-  if (quality === 'ultra') return { cap: 1.75, min: 0.85, budget: 7800000 };
-  return { cap: lowSpec ? 1.12 : RENDER_DPR_CAP, min: lowSpec ? 0.66 : RENDER_MIN_DPR, budget: lowSpec ? 3600000 : RENDER_PIXEL_BUDGET };
+  if (typeof window !== 'undefined' && window.__LXMINE_NATIVE_STAGE && quality === 'eco') return { cap: 1.40, min: 0.90, budget: 1100000 };
+  if (typeof window !== 'undefined' && window.__LXMINE_NATIVE_STAGE && quality === 'balanced') return { cap: 1.65, min: 1.00, budget: 1500000 };
+  if (quality === 'eco') return { cap: lowSpec ? 0.95 : 1.05, min: 0.65, budget: lowSpec ? 1500000 : 1850000 };
+  if (quality === 'balanced') return { cap: lowSpec ? 1.05 : 1.25, min: 0.75, budget: lowSpec ? 1900000 : 2400000 };
+  if (quality === 'ultra') return { cap: 2.50, min: 1.45, budget: 4800000 };
+  return { cap: lowSpec ? 1.50 : RENDER_DPR_CAP, min: lowSpec ? 1.00 : RENDER_MIN_DPR, budget: lowSpec ? 1850000 : RENDER_PIXEL_BUDGET };
 }
 function getRenderPixelRatio() {
   var device = window.devicePixelRatio || 1;
   if (isDeepBackgroundMode()) return Math.min(device, 0.30);
   var cssPixels = Math.max(1, innerWidth * innerHeight);
   if (window.__lxmineStagePresentation && !window.__lxmineStagePresentation.detail) {
-    return Math.min(device, 0.65, Math.sqrt(420000 / cssPixels));
+    return Math.min(device, 0.48, Math.sqrt(260000 / cssPixels));
+  }
+  if (typeof isWallpaperHostDocument === 'function' && isWallpaperHostDocument()) {
+    return Math.max(0.75, Math.min(device, 1.25, Math.sqrt(2100000 / cssPixels)));
   }
   var quality = renderQualityProfile();
   var budgetCap = Math.sqrt(quality.budget / cssPixels);
   var cap = Math.min(quality.cap, budgetCap);
-  return Math.max(0.4, Math.max(quality.min, Math.min(device, cap)) * adaptiveFrameLoadState.resolutionScale);
+  var floor = Math.min(quality.min, budgetCap);
+  return Math.max(0.4, Math.max(floor, Math.min(device, cap)) * adaptiveFrameLoadState.resolutionScale);
 }
 function getRenderPixelLoad() {
   var ratio = getRenderPixelRatio();

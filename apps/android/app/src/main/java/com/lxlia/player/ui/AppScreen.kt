@@ -3,6 +3,14 @@ package com.lxlia.player.ui
 import androidx.activity.compose.BackHandler
 import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.result.contract.ActivityResultContracts
+import androidx.compose.animation.AnimatedContent
+import androidx.compose.animation.core.spring
+import androidx.compose.animation.core.tween
+import androidx.compose.animation.fadeIn
+import androidx.compose.animation.fadeOut
+import androidx.compose.animation.slideInVertically
+import androidx.compose.animation.slideOutVertically
+import androidx.compose.animation.togetherWith
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
@@ -13,6 +21,7 @@ import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.WindowInsets
 import androidx.compose.foundation.layout.asPaddingValues
+import androidx.compose.foundation.layout.displayCutout
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
@@ -88,9 +97,18 @@ fun AppScreen(
     LaunchedEffect(viewModel.foreground) {
         if (viewModel.foreground) {
             kotlinx.coroutines.delay(350)
+            val eff = viewModel.effectiveStyleName()
+            if (eff != "off") {
+                if (eff.startsWith("folia-")) viewModel.lastFoliaStyle = eff
+                else viewModel.lastMineStyle = eff
+            }
             viewModel.stageMounted = true
-            viewModel.dynamicStageMounted = !viewModel.dynamicStageFailed
-            viewModel.plainStageMounted = true
+            when {
+                eff == "off" || viewModel.dynamicStageFailed -> viewModel.plainStageMounted = true
+                eff.startsWith("folia-") -> viewModel.foliaStageMounted = true
+                else -> viewModel.mineStageMounted = true
+            }
+            viewModel.syncDynamicStageReady()
         }
     }
     // 音源脚本 / 歌单文件 / 本地音频：系统文件选择器（对应鸿蒙 Document/Audio Picker）。
@@ -114,12 +132,72 @@ fun AppScreen(
         if (uris.isNotEmpty()) viewModel.importLocalAudio(uris)
     }
     val downloadExportPicker = rememberLauncherForActivityResult(ActivityResultContracts.CreateDocument("audio/*")) { uri ->
-        if (uri != null) viewModel.exportDownload(uri)
+        if (uri != null) {
+            runCatching {
+                context.contentResolver.takePersistableUriPermission(
+                    uri,
+                    android.content.Intent.FLAG_GRANT_READ_URI_PERMISSION or android.content.Intent.FLAG_GRANT_WRITE_URI_PERMISSION,
+                )
+            }
+            viewModel.exportDownload(uri)
+        }
+    }
+    val batchFolderPicker = rememberLauncherForActivityResult(ActivityResultContracts.OpenDocumentTree()) { uri ->
+        if (uri != null) {
+            runCatching {
+                context.contentResolver.takePersistableUriPermission(
+                    uri,
+                    android.content.Intent.FLAG_GRANT_READ_URI_PERMISSION or android.content.Intent.FLAG_GRANT_WRITE_URI_PERMISSION,
+                )
+            }
+            viewModel.executeBatchDownloadToTree(uri)
+        } else {
+            viewModel.pendingBatchDownloadSongs = emptyList()
+        }
+    }
+    val batchExportFolderPicker = rememberLauncherForActivityResult(ActivityResultContracts.OpenDocumentTree()) { uri ->
+        if (uri != null) {
+            runCatching {
+                context.contentResolver.takePersistableUriPermission(
+                    uri,
+                    android.content.Intent.FLAG_GRANT_READ_URI_PERMISSION or android.content.Intent.FLAG_GRANT_WRITE_URI_PERMISSION,
+                )
+            }
+            viewModel.exportDownloadsBatchToTree(uri)
+        } else {
+            viewModel.pendingBatchExportDownloadIds = emptyList()
+        }
+    }
+    val playlistCoverPicker = rememberLauncherForActivityResult(ActivityResultContracts.GetContent()) { uri ->
+        if (uri != null) viewModel.importPlaylistCoverImage(uri) else viewModel.pendingCoverPickPlaylistId = ""
+    }
+    val earMonitorPermissionLauncher = rememberLauncherForActivityResult(ActivityResultContracts.RequestPermission()) { granted ->
+        viewModel.onEarMonitorPermissionResult(granted)
+    }
+    LaunchedEffect(viewModel.playlistCoverPickRequest) {
+        if (viewModel.playlistCoverPickRequest == 0L) return@LaunchedEffect
+        runCatching { playlistCoverPicker.launch("image/*") }
+            .onFailure { viewModel.notify("无法打开系统相册", 2000) }
+    }
+    LaunchedEffect(viewModel.earMonitorPermissionRequest) {
+        if (viewModel.earMonitorPermissionRequest == 0L) return@LaunchedEffect
+        runCatching { earMonitorPermissionLauncher.launch(android.Manifest.permission.RECORD_AUDIO) }
+            .onFailure { viewModel.notify("无法申请麦克风权限", 2000) }
     }
     LaunchedEffect(viewModel.downloadExportRequest) {
         if (viewModel.downloadExportRequest == 0L) return@LaunchedEffect
         val item = viewModel.downloadItems.firstOrNull { it.id == viewModel.pendingDownloadExportId } ?: return@LaunchedEffect
         downloadExportPicker.launch(viewModel.app.downloads.exportName(item))
+    }
+    LaunchedEffect(viewModel.batchFolderPickRequest) {
+        if (viewModel.batchFolderPickRequest == 0L) return@LaunchedEffect
+        runCatching { batchFolderPicker.launch(null) }
+            .onFailure { viewModel.error = "无法打开系统目录选择器：${it.message}" }
+    }
+    LaunchedEffect(viewModel.batchExportFolderPickRequest) {
+        if (viewModel.batchExportFolderPickRequest == 0L) return@LaunchedEffect
+        runCatching { batchExportFolderPicker.launch(null) }
+            .onFailure { viewModel.error = "无法打开系统目录选择器：${it.message}" }
     }
     LaunchedEffect(viewModel.filePickRequest) {
         if (viewModel.filePickRequest == 0L) return@LaunchedEffect
@@ -157,11 +235,18 @@ fun AppScreen(
         "dark" -> false
         else -> !systemDark
     }
-    SideEffect {
+    val effectiveStyle = viewModel.effectiveStyleName()
+    LaunchedEffect(viewModel.foreground, viewModel.showPlayer, effectiveStyle, viewModel.dynamicStageFailed) {
         if (viewModel.foreground && viewModel.showPlayer) {
             viewModel.stageMounted = true
-            if (viewModel.styleName == "off") viewModel.plainStageMounted = true else if (!viewModel.dynamicStageFailed) viewModel.dynamicStageMounted = true
+            when {
+                effectiveStyle == "off" || viewModel.dynamicStageFailed -> viewModel.plainStageMounted = true
+                effectiveStyle.startsWith("folia-") -> viewModel.foliaStageMounted = true
+                else -> viewModel.mineStageMounted = true
+            }
         }
+    }
+    LaunchedEffect(light, view) {
         AppAppearance.light = light
         (view.context as? android.app.Activity)?.window?.let { window ->
             WindowCompat.getInsetsController(window, view).apply {
@@ -177,8 +262,19 @@ fun AppScreen(
     }
 
     val density = LocalDensity.current
+    val layoutDirection = androidx.compose.ui.platform.LocalLayoutDirection.current
     val statusInset = WindowInsets.statusBars.asPaddingValues().calculateTopPadding()
-    val navInset = WindowInsets.navigationBars.asPaddingValues().calculateBottomPadding()
+    val navPadding = WindowInsets.navigationBars.asPaddingValues()
+    val cutoutPadding = WindowInsets.displayCutout.asPaddingValues()
+    val navInset = navPadding.calculateBottomPadding()
+    val leftInsetDp = maxOf(
+        navPadding.calculateLeftPadding(layoutDirection).value,
+        cutoutPadding.calculateLeftPadding(layoutDirection).value,
+    )
+    val rightInsetDp = maxOf(
+        navPadding.calculateRightPadding(layoutDirection).value,
+        cutoutPadding.calculateRightPadding(layoutDirection).value,
+    )
     // 背景与页面内容分别录制，内容内的控件只采样背景，底栏同时采样页面。
     val levelBackdrop = rememberLayerBackdrop()
     // 内容层内部的玻璃只采样背景（不采样内容自身），避免递归，同时保留 lens/高光。
@@ -192,7 +288,7 @@ fun AppScreen(
     val glassOverlay = remember { GlassOverlayState() }
     val pageStates = rememberSaveableStateHolder()
     // 传给状态层的全部是 dp（与鸿蒙 vp 同一语义），界面直接用 .dp 落位。
-    val statusInsetDp = statusInset.value
+    val statusInsetDp = maxOf(statusInset.value, cutoutPadding.calculateTopPadding().value)
     val bottomInsetDp = navInset.value
 
     BackHandler {
@@ -204,19 +300,14 @@ fun AppScreen(
     BoxWithConstraints(modifier = Modifier.fillMaxSize().background(INK)) {
         val widthDp = maxWidth.value
         val heightDp = maxHeight.value
-        LaunchedEffect(widthDp, heightDp, statusInsetDp, bottomInsetDp) {
-            viewModel.configureViewport(widthDp.toInt(), heightDp.toInt(), statusInsetDp, bottomInsetDp)
+        val liveWidth = widthDp.toInt().coerceAtLeast(1)
+        val liveHeight = heightDp.toInt().coerceAtLeast(1)
+        val liveLandscape = liveWidth > liveHeight
+        LaunchedEffect(liveWidth, liveHeight, statusInsetDp, bottomInsetDp, leftInsetDp, rightInsetDp) {
+            viewModel.configureViewport(liveWidth, liveHeight, statusInsetDp, bottomInsetDp, leftInsetDp, rightInsetDp)
         }
         val colorFirst = parseColor(viewModel.coverColors.first)
         val colorLast = parseColor(viewModel.coverColors.last)
-        val playerReveal by androidx.compose.animation.core.animateFloatAsState(
-            targetValue = if (viewModel.showPlayer) 1f else 0f,
-            animationSpec = androidx.compose.animation.core.spring(
-                dampingRatio = 0.74f,
-                stiffness = androidx.compose.animation.core.Spring.StiffnessMediumLow,
-            ),
-            label = "player-reveal-content",
-        )
         // 详情页使用同一舞台，主页面保留状态并隐藏。
         val chromeVisible = !viewModel.showPlayer
         val playerControlsVisible = !showPlayer || viewModel.stageControlsVisible
@@ -230,6 +321,7 @@ fun AppScreen(
             CompositionLocalProvider(
                 LocalBackdrop provides backdrop,
                 LocalGlassOverlay provides glassOverlay,
+                LocalRootGlassOverlay provides glassOverlay,
                 LocalGlassInk provides TEXT,
             ) {
                 MaterialTheme(
@@ -271,61 +363,115 @@ fun AppScreen(
                               // Capture the native cover/background once and draw
                               // the two cached WebViews as ordinary siblings.
                               Box(Modifier.fillMaxSize().layerBackdrop(innerBackdrop)) {
-                                if (showPlayer && !viewModel.commentsOpen) AmbientBackdrop(
+                                val needPlayerAmbient = showPlayer && !viewModel.commentsOpen && (
+                                    !((effectiveStyle == "sonic-workshop" || effectiveStyle.startsWith("folia-")) && viewModel.dynamicStageReady) ||
+                                        glassOverlay.modals.isNotEmpty() || glassOverlay.menu != null
+                                )
+                                if (needPlayerAmbient) AmbientBackdrop(
                                     playing = viewModel.playing,
-                                    styleName = if (viewModel.dynamicStageFailed) "off" else viewModel.styleName,
+                                    styleName = if (viewModel.dynamicStageFailed) "off" else effectiveStyle,
                                     coverUrl = viewModel.selected?.coverUrl.orEmpty(),
                                     colorFirst = colorFirst,
                                     colorLast = colorLast,
                                     bgImage = viewModel.stageBgImagePath,
                                     bgOpacity = viewModel.stageBgOpacity,
-                                )
+                                ) else if (!showPlayer && viewModel.pageBgImagePath.isNotEmpty()) {
+                                    val cleanPath = viewModel.pageBgImagePath.substringBefore('?')
+                                    Box(Modifier.fillMaxSize().background(INK)) {
+                                        coil.compose.AsyncImage(
+                                            model = remember(context, viewModel.pageBgImagePath) {
+                                                coil.request.ImageRequest.Builder(context)
+                                                    .data(java.io.File(cleanPath))
+                                                    .size(1080, 1920)
+                                                    .memoryCacheKey(viewModel.pageBgImagePath)
+                                                    .crossfade(false)
+                                                    .build()
+                                            },
+                                            contentDescription = null,
+                                            contentScale = androidx.compose.ui.layout.ContentScale.Crop,
+                                            modifier = Modifier.fillMaxSize().graphicsLayer { alpha = viewModel.pageBgOpacity.coerceIn(0.10f, 0.85f) },
+                                        )
+                                        Box(
+                                            Modifier.fillMaxSize().background(
+                                                if (light) Color(0xB8F4F6FA) else Color(0x96090B10),
+                                            ),
+                                        )
+                                    }
+                                }
                               }
                                 val selected = viewModel.selected ?: stagePlaceholder
                                 if (viewModel.stageMounted) {
-                                    for (plain in listOf(false, true)) {
-                                        val mounted = if (plain) viewModel.plainStageMounted else viewModel.dynamicStageMounted
-                                        val visible = viewModel.foreground && showPlayer && !viewModel.commentsOpen &&
-                                            (if (plain) viewModel.styleName == "off" || !viewModel.dynamicStageReady else viewModel.styleName != "off" && !viewModel.dynamicStageFailed)
-                                        if (mounted) key(plain) {
+                                    val isFoliaActive = effectiveStyle.startsWith("folia-")
+                                    val stageTopInset = minOf(statusInsetDp + 72f, heightDp * 0.22f)
+                                    val stageBottomInset = minOf(bottomInsetDp + 164f, heightDp * 0.34f)
+                                    for (slot in listOf("mine", "folia", "plain")) {
+                                        val mounted = when (slot) {
+                                            "plain" -> viewModel.plainStageMounted
+                                            "folia" -> viewModel.foliaStageMounted
+                                            else -> viewModel.mineStageMounted
+                                        }
+                                        val visible = viewModel.foreground && showPlayer && !viewModel.commentsOpen && when (slot) {
+                                            "plain" -> effectiveStyle == "off" || viewModel.dynamicStageFailed || (!viewModel.dynamicStageReady && viewModel.plainStageMounted)
+                                            "folia" -> effectiveStyle != "off" && !viewModel.dynamicStageFailed && isFoliaActive
+                                            else -> effectiveStyle != "off" && !viewModel.dynamicStageFailed && !isFoliaActive
+                                        }
+                                        val slotMode = when (slot) {
+                                            "plain" -> "off"
+                                            "folia" -> viewModel.lastFoliaStyle
+                                            else -> viewModel.lastMineStyle
+                                        }
+                                        val slotReady = when (slot) {
+                                            "plain" -> true
+                                            "folia" -> viewModel.foliaStageReady
+                                            else -> viewModel.mineStageReady
+                                        }
+                                        if (mounted) key(slot) {
                                             MineRadioStage(
                                                 song = selected,
                                                 audioUrl = viewModel.playbackUrl,
-                                                lines = viewModel.lyrics,
-                                                translationLines = viewModel.stageTranslations,
+                                                lines = if (viewModel.lyricsSongKey == selected.key) viewModel.lyrics else emptyList(),
+                                                translationLines = if (viewModel.lyricsSongKey == selected.key) viewModel.stageTranslations else emptyList(),
                                                 lyricColorMode = if (viewModel.lyricPrefs.colorMode.endsWith("gradient")) "custom-gradient" else "custom-solid",
                                                 lyricPrimary = viewModel.previewPrimary(),
                                                 lyricSecondary = viewModel.previewSecondary(),
                                                 lyricScale = viewModel.lyricPrefs.lyricScale,
-                                                mode = if (plain) "off" else viewModel.dynamicStyle,
+                                                lyricLineSpacing = viewModel.lyricPrefs.lyricLineSpacing,
+                                                lyricMaxLines = viewModel.lyricPrefs.lyricMaxLines,
+                                                resetCameraOnSong = viewModel.stageResetCameraOnSong,
+                                                mode = slotMode,
                                                 light = light,
                                                 bgImage = viewModel.stageBgDataUrl,
                                                 bgOpacity = viewModel.stageBgOpacity,
                                                 duration = viewModel.duration,
                                                 lyricOffset = viewModel.lyricOffset,
-                                                playing = viewModel.playing && viewModel.foreground,
-                                                positionMs = viewModel.positionMs,
-                                                topInset = statusInsetDp + 72,
-                                                bottomInset = bottomInsetDp + 164,
+                                                playing = (viewModel.playing || viewModel.stageFadingOut) && viewModel.foreground,
+                                                positionMsProvider = { viewModel.positionMs },
+                                                topInset = stageTopInset,
+                                                bottomInset = stageBottomInset,
                                                 visible = visible,
                                                 seekable = viewModel.showPlayer,
-                                                interactive = if (plain) viewModel.styleName == "off" || viewModel.dynamicStageFailed
-                                                    else viewModel.styleName != "off" && !viewModel.dynamicStageFailed,
+                                                interactive = visible,
                                                 onSeek = { viewModel.seek(it) },
                                                 onDegraded = {
+                                                    viewModel.mineStageReady = false
+                                                    viewModel.foliaStageReady = false
                                                     viewModel.dynamicStageReady = false
                                                     viewModel.dynamicStageFailed = true
-                                                    viewModel.dynamicStageMounted = false
+                                                    viewModel.mineStageMounted = false
+                                                    viewModel.foliaStageMounted = false
                                                     viewModel.plainStageMounted = true
                                                     viewModel.notify("图形资源暂不可用，已临时使用纯文字歌词")
                                                 },
-                                                onVisualReady = { if (!plain && viewModel.foreground && viewModel.styleName != "off") viewModel.dynamicStageReady = true },
+                                                onVisualReady = {
+                                                    if (slot == "mine") viewModel.mineStageReady = true
+                                                    else if (slot == "folia") viewModel.foliaStageReady = true
+                                                    viewModel.syncDynamicStageReady()
+                                                },
                                                 onImmersiveToggle = { show -> viewModel.toggleStageControls(show) },
                                                 modifier = Modifier.fillMaxSize().graphicsLayer {
                                                     alpha = when {
                                                         !visible -> 0f
-                                                        plain -> 1f
-                                                        viewModel.dynamicStageReady -> 1f
+                                                        slotReady -> 1f
                                                         else -> 0.001f
                                                     }
                                                 },
@@ -333,17 +479,25 @@ fun AppScreen(
                                         }
                                     }
                                 }
-                                if (!showPlayer) Box(Modifier.fillMaxSize().background(INK))
+                                if (!showPlayer && viewModel.pageBgImagePath.isEmpty()) Box(Modifier.fillMaxSize().background(INK))
                             }
+                            val hasHomeChips = chromeVisible && viewModel.tab == "发现" && !viewModel.showPlayer && !viewModel.searchOpen &&
+                                (viewModel.feedSection.isEmpty() || viewModel.feedClosing) && viewModel.openedPlaylist == null && viewModel.homeFeed != null
+                            val topBlurHeight = viewModel.headerHeight() + if (hasHomeChips) 60f else 20f
                             // 鸿蒙在播放详情展开时保留页面树，返回后恢复同一滚动位置、输入和排列状态。
-                            // 隐藏期间不放置页面，WebView 仍能接收播放页手势。
+                            // 隐藏期间跳过离线测量与放置，旋转时零主界面重排且 WebView 可接收手势。
                             Box(Modifier.fillMaxSize().zIndex(if (showPlayer) -1f else 0f)
                                     .layout { measurable, constraints ->
-                                    val placeable = measurable.measure(constraints)
-                                    layout(placeable.width, placeable.height) {
-                                        if (!showPlayer) placeable.place(0, 0)
+                                    if (showPlayer) {
+                                        layout(0, 0) {}
+                                    } else {
+                                        val placeable = measurable.measure(constraints)
+                                        layout(placeable.width, placeable.height) {
+                                            placeable.place(0, 0)
+                                        }
                                     }
                                 }
+                                    .then(if (!showPlayer && viewModel.feedSection.isEmpty()) Modifier.topProgressiveFade(topBlurHeight) else Modifier)
                                     .layerBackdrop(levelBackdrop)) {
                                 // 内容里的玻璃采样 innerBackdrop（只有背景），不会采到自己。
                                 CompositionLocalProvider(LocalBackdrop provides innerBackdrop) {
@@ -355,18 +509,32 @@ fun AppScreen(
                                             layout(placeable.width, placeable.height) {
                                                 if (viewModel.feedSection.isEmpty()) placeable.place(0, 0)
                                             }
-                                        }
-                                            .padding(
-                                            start = if (viewModel.tab == "发现") (if (viewModel.searchOpen) 20.dp else 0.dp) else (if (viewModel.wide) 32.dp else 20.dp),
-                                            end = if (viewModel.tab == "发现") (if (viewModel.searchOpen) 20.dp else 0.dp) else (if (viewModel.wide) 32.dp else 20.dp),
-                                        ),
+                                        },
                                     ) {
-                                        // Save scroll/form state while composing only the active tab.
-                                        pageStates.SaveableStateProvider(viewModel.tab) {
-                                            when (viewModel.tab) {
-                                                "发现" -> DiscoverTab(viewModel)
-                                                "资料库" -> LibraryTab(viewModel)
-                                                else -> SettingsTab(viewModel)
+                                        // Save scroll/form state while composing only the active tab with unified spring transitions.
+                                        AnimatedContent(
+                                            targetState = viewModel.tab,
+                                            transitionSpec = {
+                                                val offsetPx = with(density) { 18.dp.roundToPx() }
+                                                val slideSpec = spring<androidx.compose.ui.unit.IntOffset>(dampingRatio = 0.84f, stiffness = 420f)
+                                                (slideInVertically(slideSpec) { offsetPx } + fadeIn(tween(220)))
+                                                    .togetherWith(slideOutVertically(slideSpec) { offsetPx / 2 } + fadeOut(tween(150)))
+                                            },
+                                            label = "root-tab",
+                                        ) { currentTab ->
+                                            val sidePad = if (currentTab == "发现") {
+                                                if (viewModel.searchOpen) 20.dp else 0.dp
+                                            } else {
+                                                if (viewModel.wide) 32.dp else 20.dp
+                                            }
+                                            Box(Modifier.fillMaxSize().padding(horizontal = sidePad)) {
+                                                pageStates.SaveableStateProvider(currentTab) {
+                                                    when (currentTab) {
+                                                        "发现" -> DiscoverTab(viewModel)
+                                                        "资料库" -> LibraryTab(viewModel)
+                                                        else -> SettingsTab(viewModel)
+                                                    }
+                                                }
                                             }
                                         }
                                     }
@@ -375,15 +543,16 @@ fun AppScreen(
                                     }
                                 }
                             }
+                            // 严格对齐鸿蒙「上模糊、下穿透」：仅在顶部绘制渐进模糊，底部完全不做遮罩。
                             if (!showPlayer && viewModel.feedSection.isEmpty()) {
-                                PageEdgeBlur(pageBackdrop, viewModel.headerHeight() + 24f, viewModel.viewportHeight * 0.06f)
+                                Box(Modifier.align(Alignment.TopCenter).fillMaxWidth()) {
+                                    TopProgressiveBlur(pageBackdrop, topBlurHeight)
+                                }
                             }
                             // 顶栏
                             if (chromeVisible && viewModel.feedSection.isEmpty()) AppHeader(viewModel)
                             // 快捷胶囊（首页、非搜索、非播放页）
-                            if (chromeVisible && viewModel.tab == "发现" && !viewModel.showPlayer && !viewModel.searchOpen &&
-                                (viewModel.feedSection.isEmpty() || viewModel.feedClosing) && viewModel.openedPlaylist == null && viewModel.homeFeed != null
-                            ) {
+                            if (hasHomeChips) {
                                 Box(
                                     Modifier
                                         .fillMaxWidth()
@@ -427,17 +596,18 @@ fun AppScreen(
                                     tab = viewModel.tab,
                                     playing = viewModel.playing,
                                     busy = viewModel.resolving,
-                                    availableWidth = viewModel.viewportWidth,
-                                    landscape = viewModel.landscape,
+                                    availableWidth = liveWidth,
+                                    landscape = liveLandscape,
                                     searchOpen = viewModel.searchOpen,
                                     secondary = viewModel.secondaryDock(),
                                     detail = viewModel.showPlayer,
-                                    compact = viewModel.dockCollapsed || viewModel.viewportHeight < 500,
+                                    compact = viewModel.dockCollapsed || liveHeight < 500,
                                     mode = viewModel.mode,
-                                    positionMs = viewModel.positionMs,
+                                    positionMsProvider = { viewModel.positionMs },
                                     duration = viewModel.duration,
                                     colorFirst = colorFirst,
                                     colorLast = colorLast,
+                                    stageDark = !light || (effectiveStyle != "off" && !effectiveStyle.startsWith("folia-") && !viewModel.dynamicStageFailed),
                                     liked = viewModel.selected?.let { it.key in likedSet } == true,
                                     onTab = { viewModel.navigateTab(it) },
                                     onPlayer = {
@@ -452,8 +622,7 @@ fun AppScreen(
                                     onNext = { step -> viewModel.advance(step) },
                                     onQueue = { viewModel.openSheet("播放队列") },
                                     onMode = { viewModel.cycleField("mode") },
-                                    onDownload = { viewModel.selected?.let { viewModel.downloadSong(it) } },
-                                    onLike = { viewModel.selected?.let { viewModel.like(it) } },
+                                    onMore = { viewModel.openSheet("更多") },
                                     onExpand = { viewModel.expandDock() },
                                     onSeek = { viewModel.seek(it) },
                                 )
@@ -481,6 +650,20 @@ fun AppScreen(
                                     onDone = { viewModel.applyManualOrder(it) },
                                 )
                             }
+                            if (viewModel.queueOrderOpen) {
+                                SongOrderDialog(
+                                    songs = viewModel.queue,
+                                    wide = viewModel.wide,
+                                    statusInset = statusInsetDp,
+                                    bottomInset = bottomInsetDp,
+                                    title = "播放队列排序",
+                                    onCancel = {
+                                        viewModel.queueOrderOpen = false
+                                        viewModel.maybeReturnToParentSheet()
+                                    },
+                                    onDone = { viewModel.applyQueueOrder(it) },
+                                )
+                            }
                             viewModel.editPlaylistTarget?.let { target ->
                                 PlaylistEditDialog(
                                     playlist = target,
@@ -488,11 +671,60 @@ fun AppScreen(
                                     statusInset = statusInsetDp,
                                     bottomInset = bottomInsetDp,
                                     onCancel = { viewModel.editPlaylistTarget = null },
+                                    onCollectSelected = { viewModel.collectSongsBatch(it) },
                                     onDownloadSelected = { viewModel.downloadBatch(it) },
                                     onSave = { newName, newSongs ->
                                         viewModel.saveEditedPlaylist(target.id, newName, newSongs)
                                     },
                                 )
+                            }
+                            viewModel.batchDownloadPickerSongs?.let { songsToPick ->
+                                val qualityLabel = when (viewModel.quality) {
+                                    "flac" -> "无损 FLAC"
+                                    "320k" -> "高品质 320k"
+                                    else -> "标准 128k"
+                                }
+                                BatchDownloadDialog(
+                                    title = viewModel.batchDownloadPickerTitle,
+                                    songs = songsToPick,
+                                    qualityLabel = qualityLabel,
+                                    wide = viewModel.wide,
+                                    statusInset = statusInsetDp,
+                                    bottomInset = bottomInsetDp,
+                                    onDismiss = { viewModel.batchDownloadPickerSongs = null },
+                                    onConfirm = { chosen ->
+                                        viewModel.batchDownloadPickerSongs = null
+                                        viewModel.downloadBatch(chosen)
+                                    },
+                                )
+                            }
+                            viewModel.coverPickerPlaylist?.let { targetPl ->
+                                PlaylistCoverDialog(
+                                    playlist = targetPl,
+                                    wide = viewModel.wide,
+                                    statusInset = statusInsetDp,
+                                    bottomInset = bottomInsetDp,
+                                    onDismiss = { viewModel.coverPickerPlaylist = null },
+                                    onPickLocalImage = { viewModel.requestPickLocalPlaylistCover(targetPl.id) },
+                                    onSelectCover = { cover -> viewModel.applyPlaylistCover(targetPl.id, cover) },
+                                )
+                            }
+                            if (viewModel.colorPickerTarget.isNotEmpty()) {
+                                val isPrimary = viewModel.colorPickerTarget == "primary"
+                                ColorPickerDialog(
+                                    title = if (isPrimary) "选择歌词主色" else "选择歌词辅色",
+                                    initialHex = if (isPrimary) viewModel.lyricPrefs.primary else viewModel.lyricPrefs.secondary,
+                                    wide = viewModel.wide,
+                                    onDismiss = { viewModel.colorPickerTarget = "" },
+                                    onConfirm = { hex ->
+                                        if (isPrimary) viewModel.setLyricPrimary(hex) else viewModel.setLyricSecondary(hex)
+                                        viewModel.colorPickerTarget = ""
+                                    },
+                                )
+                            }
+                            if (viewModel.earMonitorOpen) {
+                                viewModel.earMonitorOpen = false
+                                viewModel.openSheet("耳返监听")
                             }
                             viewModel.switchPlatformTarget?.let { target ->
                                 SwitchPlatformDialog(
@@ -501,15 +733,19 @@ fun AppScreen(
                                     wide = viewModel.wide,
                                     statusInset = statusInsetDp,
                                     bottomInset = bottomInsetDp,
-                                    onDismiss = { viewModel.switchPlatformTarget = null },
+                                    onDismiss = {
+                                        viewModel.switchPlatformTarget = null
+                                        viewModel.maybeReturnToParentSheet()
+                                    },
                                     onSelect = { candidate -> viewModel.confirmSwitchPlatform(candidate) },
                                 )
                             }
                             AppSheets(viewModel)
-                            // 菜单宿主绘制在页面浮层之上，同步确认置于菜单之上。
-                            GlassOverlayHost(glassOverlay)
                             IncomingSyncDialog(viewModel)
                             AppUpdateDialog(vm = viewModel, wide = viewModel.wide)
+                            // 固定玻璃独立页 / 对话框宿主置于主页面、底栏与评论层之上，锚点菜单宿主置于最顶层。
+                            GlassModalHost(glassOverlay)
+                            GlassOverlayHost(glassOverlay)
                             LaunchedEffect(Unit) {
                                 kotlinx.coroutines.delay(5500)
                                 viewModel.checkAppUpdate(silent = true)
@@ -529,32 +765,6 @@ fun AppScreen(
                     }
                 }
             }
-        }
-    }
-}
-
-@Composable
-private fun PageEdgeBlur(backdrop: Backdrop, topHeight: Float, bottomHeight: Float) {
-    Box(Modifier.fillMaxSize()) {
-        listOf(true, false).forEach { top ->
-            Box(
-                Modifier.align(if (top) Alignment.TopCenter else Alignment.BottomCenter)
-                    .fillMaxWidth().height((if (top) topHeight else bottomHeight).dp)
-                    .graphicsLayer { compositingStrategy = CompositingStrategy.Offscreen }
-                    .drawWithContent {
-                        drawContent()
-                        val colors = if (top) listOf(Color.White, Color.Transparent)
-                            else listOf(Color.Transparent, Color.White.copy(alpha = 0.7f))
-                        drawRect(Brush.verticalGradient(colors), blendMode = BlendMode.DstIn)
-                    }
-                    .drawBackdrop(
-                        backdrop = backdrop,
-                        shape = { RectangleShape },
-                        effects = { blur(10.dp.toPx()) },
-                        highlight = null,
-                        shadow = null,
-                    ),
-            )
         }
     }
 }

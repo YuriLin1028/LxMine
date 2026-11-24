@@ -36,15 +36,15 @@ internal class PcmSpectrum {
     private var sampleCount = 0
     private var sinceTransform = 0
     private var expectedPositionUs = Long.MIN_VALUE
-    private val samples = DoubleArray(FFT_SIZE)
-    private val real = DoubleArray(FFT_SIZE)
-    private val imaginary = DoubleArray(FFT_SIZE)
-    private val window = DoubleArray(FFT_SIZE) { index ->
-        0.42 - 0.5 * cos(2 * PI * index / FFT_SIZE) + 0.08 * cos(4 * PI * index / FFT_SIZE)
+    private val samples = FloatArray(FFT_SIZE)
+    private val real = FloatArray(FFT_SIZE)
+    private val imaginary = FloatArray(FFT_SIZE)
+    private val window = FloatArray(FFT_SIZE) { index ->
+        (0.42 - 0.5 * cos(2 * PI * index / FFT_SIZE) + 0.08 * cos(4 * PI * index / FFT_SIZE)).toFloat()
     }
     private val bitReversed = IntArray(FFT_SIZE) { Integer.reverse(it) ushr (32 - 11) }
-    private val cosine = DoubleArray(FFT_SIZE / 2) { cos(2 * PI * it / FFT_SIZE) }
-    private val sine = DoubleArray(FFT_SIZE / 2) { -sin(2 * PI * it / FFT_SIZE) }
+    private val cosine = FloatArray(FFT_SIZE / 2) { cos(2 * PI * it / FFT_SIZE).toFloat() }
+    private val sine = FloatArray(FFT_SIZE / 2) { (-sin(2 * PI * it / FFT_SIZE)).toFloat() }
 
     fun setEnabled(value: Boolean) {
         synchronized(history) {
@@ -96,11 +96,12 @@ internal class PcmSpectrum {
         }
         val frameBytes = sampleBytes * channels
         val frameCount = buffer.remaining() / frameBytes
-        val transformInterval = (sampleRate / 25).coerceAtLeast(1)
+        // Stage WebView consumes spectrum at 10Hz (100ms); computing ~12Hz halves CPU FFT cost cleanly.
+        val transformInterval = (sampleRate / 12).coerceAtLeast(1)
         for (frameIndex in 0 until frameCount) {
-            var mono = 0.0
+            var mono = 0f
             repeat(channels) { mono += readSample(buffer) }
-            samples[writeIndex] = (mono / channels).coerceIn(-1.0, 1.0)
+            samples[writeIndex] = (mono / channels).coerceIn(-1f, 1f)
             writeIndex = (writeIndex + 1) and (FFT_SIZE - 1)
             sampleCount = (sampleCount + 1).coerceAtMost(FFT_SIZE)
             sinceTransform++
@@ -113,8 +114,8 @@ internal class PcmSpectrum {
         expectedPositionUs = positionUs + frameCount.toLong() * 1_000_000 / sampleRate
     }
 
-    private fun readSample(buffer: ByteBuffer): Double {
-        if (encoding == C.ENCODING_PCM_8BIT) return ((buffer.get().toInt() and 255) - 128) / 128.0
+    private fun readSample(buffer: ByteBuffer): Float {
+        if (encoding == C.ENCODING_PCM_8BIT) return ((buffer.get().toInt() and 255) - 128) / 128f
         val bigEndian = encoding == C.ENCODING_PCM_16BIT_BIG_ENDIAN ||
             encoding == C.ENCODING_PCM_24BIT_BIG_ENDIAN || encoding == C.ENCODING_PCM_32BIT_BIG_ENDIAN
         var raw = 0
@@ -123,21 +124,21 @@ internal class PcmSpectrum {
             raw = raw or ((buffer.get().toInt() and 255) shl shift)
         }
         if (encoding == C.ENCODING_PCM_FLOAT) {
-            val value = Float.fromBits(raw).toDouble()
-            return if (value.isFinite()) value else 0.0
+            val value = Float.fromBits(raw)
+            return if (value.isFinite()) value else 0f
         }
         val signed = (raw shl (32 - sampleBytes * 8)) shr (32 - sampleBytes * 8)
-        return signed / (1L shl (sampleBytes * 8 - 1)).toDouble()
+        return signed / (1L shl (sampleBytes * 8 - 1)).toFloat()
     }
 
     private fun publish(positionUs: Long, currentGeneration: Int) {
         val waveform = ByteArray(FFT_SIZE)
         for (index in 0 until FFT_SIZE) {
             val value = samples[(writeIndex + index) and (FFT_SIZE - 1)]
-            waveform[index] = ((value + 1) * 128).roundToInt().coerceIn(0, 255).toByte()
+            waveform[index] = ((value + 1f) * 128f).roundToInt().coerceIn(0, 255).toByte()
             real[bitReversed[index]] = value * window[index]
         }
-        imaginary.fill(0.0)
+        imaginary.fill(0f)
         var size = 2
         while (size <= FFT_SIZE) {
             val half = size / 2
@@ -158,14 +159,14 @@ internal class PcmSpectrum {
             size *= 2
         }
         val frequency = ByteArray(FFT_SIZE / 2) { index ->
-            val magnitude = hypot(real[index], imaginary[index]) / FFT_SIZE
+            val magnitude = hypot(real[index].toDouble(), imaginary[index].toDouble()) / FFT_SIZE
             val decibels = 20 * log10(magnitude.coerceAtLeast(1e-8))
             ((decibels + 100) * 255 / 70).roundToInt().coerceIn(0, 255).toByte()
         }
         synchronized(history) {
             if (!enabled || generation != currentGeneration) return
             history.addLast(Frame(++sequence, positionUs, sampleRate, frequency, waveform))
-            while (history.size > 32) history.removeFirst()
+            while (history.size > 16) history.removeFirst()
         }
     }
 

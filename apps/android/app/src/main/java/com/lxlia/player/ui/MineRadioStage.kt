@@ -12,6 +12,7 @@ import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.key
 import androidx.compose.runtime.mutableIntStateOf
+import androidx.compose.runtime.mutableLongStateOf
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.rememberUpdatedState
@@ -50,6 +51,9 @@ fun MineRadioStage(
     lyricPrimary: String,
     lyricSecondary: String,
     lyricScale: Float = 1f,
+    lyricLineSpacing: Float = 1.2f,
+    lyricMaxLines: Int = 0,
+    resetCameraOnSong: Boolean = true,
     mode: String,
     light: Boolean,
     bgImage: String = "",
@@ -57,7 +61,7 @@ fun MineRadioStage(
     duration: Long,
     lyricOffset: Long,
     playing: Boolean,
-    positionMs: Long,
+    positionMsProvider: () -> Long,
     topInset: Float,
     bottomInset: Float,
     visible: Boolean,
@@ -83,8 +87,14 @@ fun MineRadioStage(
     var rendererFailures by remember { mutableIntStateOf(0) }
     var emergencyPlain by remember(mode) { mutableStateOf(false) }
     val plain = mode == "off" || emergencyPlain
+    val stageKind = when {
+        plain -> "plain"
+        mode.startsWith("folia-") -> "folia"
+        else -> "mine"
+    }
     var webView by remember { mutableStateOf<WebView?>(null) }
     var lastPushKey by remember { mutableStateOf("") }
+    var lastSongKey by remember { mutableStateOf("") }
     var lastPlaying by remember { mutableStateOf(false) }
     var lastPosition by remember { mutableStateOf(0L) }
 
@@ -102,7 +112,12 @@ fun MineRadioStage(
     val host = remember {
         object {
             @JavascriptInterface
-            fun ready() { mainHandler.post { ready = true } }
+            fun ready() {
+                mainHandler.post {
+                    ready = true
+                    onVisualReadyState.value()
+                }
+            }
             @JavascriptInterface
             fun visualReady() { mainHandler.post { onVisualReadyState.value() } }
             @JavascriptInterface
@@ -127,43 +142,82 @@ fun MineRadioStage(
         }
     }
 
-    fun push(target: WebView?, metadata: Boolean, clock: Boolean) {
+    val cachedLinesPair = remember(lines, translationLines) {
+        val trArray = org.json.JSONArray().apply { translationLines.forEach { put(it.toJson()) } }
+        val linesArray = org.json.JSONArray()
+        val trLen = translationLines.size
+        var trCursor = 0
+        for (line in lines) {
+            val obj = line.toJson()
+            if (trLen > 0) {
+                while (trCursor + 1 < trLen && translationLines[trCursor + 1].timeMs <= line.timeMs) {
+                    trCursor++
+                }
+                var bestText = ""
+                var bestDiff = 681L
+                val from = (trCursor - 2).coerceAtLeast(0)
+                val to = (trCursor + 3).coerceAtMost(trLen - 1)
+                for (j in from..to) {
+                    val tr = translationLines[j]
+                    val diff = kotlin.math.abs(tr.timeMs - line.timeMs)
+                    if (diff < bestDiff) {
+                        bestDiff = diff
+                        bestText = tr.text
+                    }
+                }
+                if (bestText.isNotEmpty()) {
+                    obj.put("translation", bestText)
+                }
+            }
+            linesArray.put(obj)
+        }
+        trArray to linesArray
+    }
+
+    fun push(target: WebView?, metadata: Boolean, clock: Boolean, clockPosMs: Long = positionMsProvider()) {
         if (target == null || !ready) return
         if (clock) {
-            val clockJson = JSONObject().put("positionMs", positionMs).put("playing", playing)
+            val clockJson = JSONObject().put("positionMs", clockPosMs).put("playing", playing)
             target.evaluateJavascript(stageBridgeCall("clock", clockJson), null)
         }
         if (metadata) {
-            val data = JSONObject()
-            data.put("translationLines", org.json.JSONArray().apply { translationLines.forEach { put(it.toJson()) } })
-            data.put("lyricColorMode", lyricColorMode)
-            data.put(
-                "lyricColors",
-                JSONObject()
-                    .put("primary", lyricPrimary)
-                    .put("secondary", lyricSecondary)
-                    .put("highlight", lyricSecondary)
-                    .put("glow", lyricSecondary),
-            )
-            data.put("id", song.key)
-            data.put("nativeSpectrum", true)
-            data.put("mode", mode)
-            data.put("appearance", if (light) "light" else "dark")
-            data.put("lines", org.json.JSONArray().apply { lines.forEach { put(it.toJson()) } })
-            data.put("name", song.name)
-            data.put("singer", song.singer)
-            data.put("cover", app.server.coverProxy(song.coverUrl))
-            data.put("bgImage", bgImage)
-            data.put("bgOpacity", bgOpacity.coerceIn(0f, 1f).toDouble())
-            data.put("duration", duration)
-            data.put("lyricOffset", lyricOffset)
-            data.put("lyricScale", lyricScale.coerceIn(0.75f, 1.40f).toDouble())
-            data.put("topInset", topInset)
-            data.put("bottomInset", bottomInset)
-            val pushKey = data.toString()
-            if (lastPushKey != pushKey) {
-                lastPushKey = pushKey
-                target.evaluateJavascript(stageBridgeCall("metadata", data), null)
+            if (lastSongKey != song.key) {
+                lastSongKey = song.key
+                lastPushKey = ""
+            }
+            val metaSig = "${song.key}|$mode|$light|$lyricColorMode|$lyricPrimary|$lyricSecondary|$lyricScale|$lyricLineSpacing|$lyricMaxLines|$resetCameraOnSong|$bgImage|$bgOpacity|$duration|$lyricOffset|${lines.size}|${translationLines.size}|${lines.firstOrNull()?.text.orEmpty().take(12)}|${song.coverUrl}"
+            if (lastPushKey != metaSig) {
+                val data = JSONObject()
+                data.put("translationLines", cachedLinesPair.first)
+                data.put("lyricColorMode", lyricColorMode)
+                data.put(
+                    "lyricColors",
+                    JSONObject()
+                        .put("primary", lyricPrimary)
+                        .put("secondary", lyricSecondary)
+                        .put("highlight", lyricSecondary)
+                        .put("glow", lyricSecondary),
+                )
+                data.put("id", song.key)
+                data.put("nativeSpectrum", true)
+                data.put("mode", mode)
+                data.put("appearance", if (light) "light" else "dark")
+                data.put("lines", cachedLinesPair.second)
+                data.put("name", song.name)
+                data.put("singer", song.singer)
+                data.put("cover", app.server.coverProxy(song.coverUrl))
+                data.put("bgImage", bgImage)
+                data.put("bgOpacity", bgOpacity.coerceIn(0f, 1f).toDouble())
+                data.put("duration", duration)
+                data.put("lyricOffset", lyricOffset)
+                data.put("lyricScale", lyricScale.coerceIn(0.55f, 1.50f).toDouble())
+                data.put("lyricLineSpacing", lyricLineSpacing.coerceIn(0.85f, 1.80f).toDouble())
+                data.put("lyricMaxLines", lyricMaxLines.coerceIn(0, 10))
+                data.put("resetCameraOnSong", resetCameraOnSong)
+                data.put("topInset", topInset)
+                data.put("bottomInset", bottomInset)
+                lastPushKey = metaSig
+                target.evaluateJavascript("window.lxmineStage?.metadata(${data})", null)
             }
         }
         target.evaluateJavascript(stageBridgeCall("presentation", JSONObject().put("visible", visible).put("detail", visible && seekable)), null)
@@ -172,22 +226,38 @@ fun MineRadioStage(
     // current presentation/metadata when a cached page finishes loading late.
     val latestPush = rememberUpdatedState<(WebView?, Boolean, Boolean) -> Unit> { target, metadata, clock -> push(target, metadata, clock) }
 
-    // 元数据变化（换歌/换词/换配色/字号）时整体下发；时钟按播放状态与进度跳变下发。
-    LaunchedEffect(ready, song.key, audioUrl, lines, translationLines, lyricColorMode, lyricPrimary, lyricSecondary, lyricScale, mode, light, bgImage, bgOpacity, duration, lyricOffset, topInset, bottomInset) {
-        if (!ready) return@LaunchedEffect
+    // 元数据变化（换歌/换词/换配色/字号）时仅在当前舞台可见时下发；隐藏槽位零开销休眠，唤醒时立即同步。
+    LaunchedEffect(ready, visible, song.key, audioUrl, lines, translationLines, lyricColorMode, lyricPrimary, lyricSecondary, lyricScale, lyricLineSpacing, lyricMaxLines, resetCameraOnSong, mode, light, bgImage, bgOpacity, duration, lyricOffset) {
+        if (!ready || !visible) return@LaunchedEffect
         push(webView, metadata = true, clock = true)
     }
-    LaunchedEffect(ready, playing, positionMs) {
-        if (!ready) return@LaunchedEffect
-        val changed = lastPlaying != playing || kotlin.math.abs(positionMs - lastPosition) > 1500
-        lastPlaying = playing
-        lastPosition = positionMs
-        // 进度每 200ms 变化时也只在跳变或播放状态变化时下发，舞台自己的时钟负责插值。
-        if (changed || !playing) push(webView, metadata = false, clock = true)
+    // 横竖屏/沉浸切换只轻量同步安全区边距，不重新序列化整首歌词数组。
+    LaunchedEffect(ready, visible, topInset, bottomInset) {
+        val view = webView ?: return@LaunchedEffect
+        if (!ready || !visible) return@LaunchedEffect
+        val insetsJson = JSONObject().put("topInset", topInset).put("bottomInset", bottomInset)
+        view.evaluateJavascript("window.lxmineStage?.setInsets?.($insetsJson)", null)
+    }
+    var lastClockAt by remember { mutableLongStateOf(0L) }
+    LaunchedEffect(ready, visible, playing) {
+        if (!ready || !visible) return@LaunchedEffect
+        androidx.compose.runtime.snapshotFlow { positionMsProvider() }.collect { posMs ->
+            val now = android.os.SystemClock.elapsedRealtime()
+            val expected = lastPosition + if (lastPlaying && lastClockAt > 0L) (now - lastClockAt) else 0L
+            val drift = kotlin.math.abs(posMs - expected)
+            val changed = lastClockAt == 0L || lastPlaying != playing || drift > 240L || (playing && now - lastClockAt >= 4500L)
+            val pausedSeek = !playing && kotlin.math.abs(posMs - lastPosition) > 40L
+            if (changed || pausedSeek) {
+                lastPlaying = playing
+                lastPosition = posMs
+                lastClockAt = now
+                push(webView, metadata = false, clock = true, clockPosMs = posMs)
+            }
+        }
     }
     LaunchedEffect(visible, seekable, webView) {
         val view = webView ?: return@LaunchedEffect
-        // 前后台状态控制舞台运行，一级页通过原生模糊保留背景动效。
+        // 前后台状态控制舞台运行，隐藏后 180ms 暂停 Chromium 合成线程节省功耗。
         val visibility = if (visible) android.view.View.VISIBLE else android.view.View.INVISIBLE
         if (view.visibility != visibility) view.visibility = visibility
         if (visible) {
@@ -195,12 +265,15 @@ fun MineRadioStage(
             push(view, metadata = true, clock = true)
         } else {
             view.evaluateJavascript("window.lxmineStage?.presentation({visible:false,detail:false})", null)
+            delay(180)
+            if (!visibleState.value) runCatching { view.onPause() }
         }
     }
     LaunchedEffect(visible, seekable, playing, plain, webView) {
         val view = webView ?: return@LaunchedEffect
         if (android.os.Build.VERSION.SDK_INT >= 35) {
-            view.requestedFrameRate = if (visible && seekable && playing && !plain) android.view.View.REQUESTED_FRAME_RATE_CATEGORY_HIGH else 0f
+            // 播放态维持高帧率，暂停或隐藏态交还系统 VRR 节能降频。
+            view.requestedFrameRate = if (visible && seekable && playing && !plain) android.view.View.REQUESTED_FRAME_RATE_CATEGORY_NORMAL else 0f
         }
     }
     LaunchedEffect(backgroundBlur, webView) {
@@ -222,12 +295,12 @@ fun MineRadioStage(
                     .put("waveform", android.util.Base64.encodeToString(frame.waveform, flags))
                 view.evaluateJavascript(stageBridgeCall("spectrum", data), null)
             }
-            delay(40)
+            delay(100)
         }
     }
 
     Box(modifier.zIndex(if (visible && interactive) 1f else 0f)) {
-      key(rendererGeneration, plain) {
+      key(rendererGeneration, stageKind) {
         AndroidView(
             modifier = Modifier.fillMaxSize().layout { measurable, constraints ->
                 val placeable = measurable.measure(constraints)
@@ -259,7 +332,12 @@ fun MineRadioStage(
                             super.onPageFinished(view, url)
                             if (view !== webView) return
                             ready = true
-                            latestPush.value(view, true, true)
+                            onVisualReadyState.value()
+                            if (visibleState.value) {
+                                latestPush.value(view, true, true)
+                            } else {
+                                view?.evaluateJavascript("window.lxmineStage?.presentation({visible:false,detail:false})", null)
+                            }
                             // 诊断只在播放状态/进度跳变时采集，避免首页滚动时持续写盘。
                             view?.evaluateJavascript(
                                 "JSON.stringify(window.lxmineStage ? window.lxmineStage.diagnostics() : {ready:false})",
@@ -282,7 +360,12 @@ fun MineRadioStage(
                         }
                     }
                     ready = false
-                    loadUrl(app.server.stageUrl().replace("harmony-stage.html", if (plain) "plain-stage.html" else "harmony-stage.html") + "?revision=$MINE_STAGE_REVISION")
+                    val entryFile = when (stageKind) {
+                        "plain" -> "plain-stage.html"
+                        "folia" -> "folia-stage/index.html"
+                        else -> "harmony-stage.html"
+                    }
+                    loadUrl(app.server.stageUrl().replace("harmony-stage.html", entryFile) + "?revision=$MINE_STAGE_REVISION")
                     webView = this
                 }
             },
