@@ -1,45 +1,45 @@
 {
-  "tag_name": "v1.3.0",
-  "html_url": "https://github.com/YuriLin1028/LxMine/releases/tag/v1.3.0",
-  "published_at": "2026-11-24T05:58:04Z",
-  "body": "## LxMine v1.3.0 更新日志\n\n### 全端新增与核心升级\n- **全新 Folia 实时 3D 舞台动效与智能切场**：三端同步新增 Folia 舞台动效与智能场景推荐，全面优化 120Hz 渲染性能与移动端 DPR 像素预算。\n- **专业音频与聆听能力**：新增多段均衡器与空间音效预设（AudioFX）、无缝交叉淡化（AutoMix）、低延迟耳返实时监听（移动端）、蓝牙车机歌词同步与批量下载。\n- **交互与自定义增强**：新增自定义歌单封面、播放详情「更多」独立面板、完整颜色选择器与深浅色全域自适应优化。\n\n### 平台专属对齐与重点修复\n- **HarmonyOS（手机 / 平板 / PC 2in1 / HiCar）**：鸿蒙 PC（`2in1`）全面对齐 Windows 桌面歌词、壁纸沉浸舞台、右键上下文菜单、宽屏行内操作与快捷键；优化横竖屏丝滑切换与滚动零掉帧。\n- **Android**：全面重构为固定式半透毛玻璃独立页（主窗口 `GlassModalHost`），彻底消除列表上滑撞顶抽搐与实心遮罩；全页统一「上模糊、下穿透」、滚动 `px → dp` 坐标换算、子独立页返回闭环与首页融合板块对齐鸿蒙。\n- **Windows**：深化壁纸模式与 Wallpaper Engine 共存宿主稳定性，强化独立更新通道与静默安装校验。\n\n### 华为应用市场邀请测试（HarmonyOS 手机 / 平板 / PC 2in1 推荐）\n- 邀测链接：https://appgallery.huawei.com/link/invite-test-wap?taskId=4bce68afbce8009046507ba1485a6273&invitationCode=1Klp9jEJXOp\n- 本轮测试至：**2027-02-22 10:45（北京时间）**（邀请码有效至 2026-12-16 12:46）\n- 所有公开安装包均不含任何内置音源（`BadSources = 0`），音源由用户自行导入。\n",
+  "tag_name": "v1.3.1",
+  "html_url": "https://github.com/YuriLin1028/LxMine/releases/tag/v1.3.1",
+  "published_at": "2026-11-25T04:09:21Z",
+  "body": "## LxMine v1.3.1 更新日志\n\n### 全端新增与核心升级\n- **局域网同步新增「设备信任圈」与「信任圈成员互通」开关**：仅已信任设备可收发手动与自动同步，支持 6 位验证码配对、双向撤销确认与独立 128 位配对令牌；开启「信任圈成员互通」后，新设备配对加入时可安全自动互通原圈内其余设备（离线设备进入 7 天待补发队列），关闭时仅单点配对；同步发送入口统一收敛至信任设备板块，并修正设备数量统计。\n- **修复导入 `.lxmc` 收藏歌单文件不显示的问题（#3 / #4）**：三端通过「曲库 → 导入歌单」导入名为「我的收藏 / 我喜欢的」的 `.lxmc` 或 JSON 歌单时，不再被强制吞并或隐藏，恢复与 `v1.2.1` 一致的独立歌单卡片显示；同时启动自动恢复 `v1.3.0` 阶段已导入但被隐藏的历史歌单。\n- **批量收藏与播控打磨**：三端新增批量收藏到指定歌单 / 新建歌单、「下一首播放」图标对齐、Android 桌面悬浮歌词及 Folia 3D 舞台稳定性优化。\n\n### 平台重点修复\n- **Windows**：彻底修复应用内在线静默更新覆盖自定义安装目录失败及中文用户名路径乱码的恶性 Bug（修复 NSIS `installer.nsh` 寄存器覆盖与 `/D=` 解析、为 `apply-update.ps1` 写入 UTF-8 BOM、增加进程退出轮询与版本回执核验，静默失败自动回退可视化安装向导）。\n- **Android**：全量同步设备信任圈、成员互通（含拉取通道担保补发）、`.lxmc` 收藏歌单导入修复与桌面悬浮歌词。\n- **HarmonyOS（手机 / 平板 / PC 2in1 / HiCar）**：全量同步设备信任圈、成员互通与 `.lxmc` 导入修复；Store 邀测版（`com.lxmine.player`，`versionCode 1310001`）仅走华为应用市场邀请测试分发。\n\n### 华为应用市场邀请测试（HarmonyOS 手机 / 平板 / PC 2in1 推荐）\n- 邀测链接：https://appgallery.huawei.com/link/invite-test-wap?taskId=cb0477c12f7f41de8b3af93a13bb9483&invitationCode=1Klp9jEJXOp\n- 本轮测试至：**2027-02-22 23:02（北京时间）**（邀请码有效至 2026-12-16 12:46）\n- 所有公开安装包均不含任何内置音源（`BadSources = 0`），音源由用户自行导入。\n",
   "draft": false,
   "prerelease": false,
   "assets": [
     {
-      "name": "LxMine-1.3.0-Android.apk",
-      "size": 35772237,
-      "browser_download_url": "https://github.com/YuriLin1028/LxMine/releases/download/v1.3.0/LxMine-1.3.0-Android.apk",
-      "digest": "sha256:92369ce728366e88a6b259b5a920a2d7095ef5241f50549ba68b5fdc9b59689d",
-      "updated_at": "2026-11-24T05:57:27Z"
+      "name": "LxMine-1.3.1-Android.apk",
+      "size": 33453170,
+      "browser_download_url": "https://github.com/YuriLin1028/LxMine/releases/download/v1.3.1/LxMine-1.3.1-Android.apk",
+      "digest": "sha256:210bd933a1604154d064c89ae70214709c8cb0c129dee2eac1dff6a7d084e0d5",
+      "updated_at": "2026-11-25T04:08:27Z"
     },
     {
-      "name": "LxMine-1.3.0-HiCar-unsigned.hap",
-      "size": 28107742,
-      "browser_download_url": "https://github.com/YuriLin1028/LxMine/releases/download/v1.3.0/LxMine-1.3.0-HiCar-unsigned.hap",
-      "digest": "sha256:ba9a8bea57306de2478d89b80fd6db3e2511ee5723dd7d387fded68e2249310e",
-      "updated_at": "2026-11-24T05:57:25Z"
+      "name": "LxMine-1.3.1-HiCar-unsigned.hap",
+      "size": 26051063,
+      "browser_download_url": "https://github.com/YuriLin1028/LxMine/releases/download/v1.3.1/LxMine-1.3.1-HiCar-unsigned.hap",
+      "digest": "sha256:a3375a631bdc55b6ad4ff0073d4e47f63915f77d5269fefecad1f9166681eef0",
+      "updated_at": "2026-11-25T04:08:22Z"
     },
     {
-      "name": "LxMine-1.3.0-Portable.exe",
-      "size": 124832512,
-      "browser_download_url": "https://github.com/YuriLin1028/LxMine/releases/download/v1.3.0/LxMine-1.3.0-Portable.exe",
-      "digest": "sha256:e527a3061e8db8bf338c1416a94adf9a1ca1316b6e910cfd07855461db3afa45",
-      "updated_at": "2026-11-24T05:57:57Z"
+      "name": "LxMine-1.3.1-Portable.exe",
+      "size": 110227280,
+      "browser_download_url": "https://github.com/YuriLin1028/LxMine/releases/download/v1.3.1/LxMine-1.3.1-Portable.exe",
+      "digest": "sha256:c8d56399fd43ddd78503bde7b51dcbad1df00ed859bfcd4b94fa7a2e537f91f6",
+      "updated_at": "2026-11-25T04:09:13Z"
     },
     {
-      "name": "LxMine-1.3.0-Setup.exe",
-      "size": 125375677,
-      "browser_download_url": "https://github.com/YuriLin1028/LxMine/releases/download/v1.3.0/LxMine-1.3.0-Setup.exe",
-      "digest": "sha256:34250cef9657693f20fca121bb3e692f97d4e0d6bafaa6c59fc5da74bf7680af",
-      "updated_at": "2026-11-24T05:58:02Z"
+      "name": "LxMine-1.3.1-Setup.exe",
+      "size": 124691743,
+      "browser_download_url": "https://github.com/YuriLin1028/LxMine/releases/download/v1.3.1/LxMine-1.3.1-Setup.exe",
+      "digest": "sha256:a862d94058f66a6e999e33fd012bc52dbc3398a7a617a8edf69330401e970936",
+      "updated_at": "2026-11-25T04:09:19Z"
     },
     {
       "name": "SHA256SUMS.txt",
       "size": 370,
-      "browser_download_url": "https://github.com/YuriLin1028/LxMine/releases/download/v1.3.0/SHA256SUMS.txt",
-      "digest": "sha256:20e73f385882a0754f46a6176428fa95aba1e2da439649db4afedc42f889096b",
-      "updated_at": "2026-11-24T05:56:55Z"
+      "browser_download_url": "https://github.com/YuriLin1028/LxMine/releases/download/v1.3.1/SHA256SUMS.txt",
+      "digest": "sha256:6e71d0fde846f20cb3eb3e9ebc66586183f353828d7428e4dd542a88d34b0a0e",
+      "updated_at": "2026-11-25T04:07:57Z"
     }
   ]
 }
