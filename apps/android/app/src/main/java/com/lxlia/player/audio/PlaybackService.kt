@@ -138,11 +138,11 @@ class PlaybackService : MediaSessionService() {
             override fun hasPreviousMediaItem(): Boolean = PlaybackController.queue.isNotEmpty() || PlaybackController.current != null
             override fun getNextMediaItemIndex(): Int = if (PlaybackController.queue.isNotEmpty()) 0 else C.INDEX_UNSET
             override fun getPreviousMediaItemIndex(): Int = if (PlaybackController.queue.isNotEmpty()) 0 else C.INDEX_UNSET
-            override fun play() { runOnMain { PlaybackController.resume() } }
+            override fun play() { runOnMain { PlaybackController.resume(fromSession = true) } }
             override fun pause() { runOnMain { PlaybackController.pause(fromSession = true) } }
             override fun setPlayWhenReady(playWhenReady: Boolean) {
                 runOnMain {
-                    if (playWhenReady) PlaybackController.resume() else PlaybackController.pause(fromSession = true)
+                    if (playWhenReady) PlaybackController.resume(fromSession = true) else PlaybackController.pause(fromSession = true)
                 }
             }
             override fun seekToNext() { runOnMain { PlaybackController.advance(1) } }
@@ -182,7 +182,7 @@ class PlaybackService : MediaSessionService() {
         val activeSession = session ?: return
         val exoPlayer = player ?: return
         if (exoPlayer.mediaItemCount == 0) return
-        val playing = exoPlayer.isPlaying
+        val playing = PlaybackController.playing && exoPlayer.isPlaying
         val metadata = exoPlayer.mediaMetadata
         val song = PlaybackController.current
         val displayTitle = song?.name?.takeIf { it.isNotBlank() } ?: metadata.title?.toString() ?: "LxMine"
@@ -210,6 +210,7 @@ class PlaybackService : MediaSessionService() {
     }
 
     override fun onDestroy() {
+        DesktopLyricsOverlay.detach()
         PlaybackController.onSessionStateRefresh = null
         PlaybackController.stopCallAudioMonitor()
         PlaybackController.stopBluetoothMonitor()

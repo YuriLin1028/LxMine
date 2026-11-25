@@ -6,7 +6,7 @@ import { songKey } from '../services/MusicLibrary';
 @Component
 export struct BatchDownloadSheet {
   @Prop title: string = '选择要下载的歌曲';
-  @Prop songs: Song[] = [];
+  @Prop @Watch('resetCandidates') songs: Song[] = [];
   @Prop qualityLabel: string = '标准 128k';
   @Prop wide: boolean = false;
   @Prop statusInset: number = 28;
@@ -18,6 +18,10 @@ export struct BatchDownloadSheet {
   @State private selectedKeys: string[] = [];
 
   aboutToAppear(): void {
+    this.resetCandidates();
+  }
+
+  private resetCandidates(): void {
     const seen = new Set<string>();
     const list: Song[] = [];
     for (const s of this.songs) {
@@ -85,11 +89,11 @@ export struct BatchDownloadSheet {
           .onClick(() => this.toggleAll())
         Button(this.selectedKeys.length === this.candidates.length ? '取消全选' : '全选')
           .attributeModifier(musicButtonPress).height(30).padding({ left: 11, right: 11 })
-          .fontSize(12).fontColor(TEXT).backgroundColor('#16FFFFFF').borderRadius(15)
+          .fontSize(12).fontColor(TEXT).backgroundColor($r('app.color.card_surface')).borderRadius(15)
           .onClick(() => this.toggleAll())
         Button('反选')
           .attributeModifier(musicButtonPress).height(30).padding({ left: 11, right: 11 })
-          .fontSize(12).fontColor(TEXT).backgroundColor('#16FFFFFF').borderRadius(15)
+          .fontSize(12).fontColor(TEXT).backgroundColor($r('app.color.card_surface')).borderRadius(15)
           .onClick(() => this.invertSelection())
       }.width('100%')
 
@@ -127,7 +131,7 @@ export struct BatchDownloadSheet {
       Row({ space: 12 }) {
         Blank()
         Button('取消').attributeModifier(musicButtonPress).height(40).padding({ left: 18, right: 18 })
-          .fontSize(13).fontColor(TEXT).backgroundColor('#14FFFFFF').borderRadius(20)
+          .fontSize(13).fontColor(TEXT).backgroundColor($r('app.color.card_surface')).borderRadius(20)
           .onClick(() => this.onCancel())
         Button(`开始下载（${this.selectedKeys.length} 首）`)
           .attributeModifier(musicButtonPress).height(40).padding({ left: 20, right: 20 })

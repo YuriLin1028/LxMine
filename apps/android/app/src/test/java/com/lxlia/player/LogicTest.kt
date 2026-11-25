@@ -18,6 +18,7 @@ import com.lxlia.player.ui.supportsFullLiquidGlass
 import org.json.JSONArray
 import org.json.JSONObject
 import org.junit.Assert.assertEquals
+import org.junit.Assert.assertFalse
 import org.junit.Assert.assertNotNull
 import org.junit.Assert.assertNull
 import org.junit.Assert.assertTrue
@@ -254,5 +255,33 @@ class LogicTest {
         assertTrue("ic_style_wand.svg" in MULTICOLOR_ASSET_ICONS)
         assertTrue("ic_sparkle.svg" in MULTICOLOR_ASSET_ICONS)
         assertTrue("chip_music_on.svg" !in MULTICOLOR_ASSET_ICONS)
+    }
+
+    @Test
+    fun importedFavoriteNamedPlaylistsStayIndependentAndHealDuplicateFavorites() {
+        val songJson = JSONObject().put("id", "101").put("source", "wy").put("name", "晴天").put("singer", "周杰伦")
+        val importedRaw = JSONArray()
+            .put(JSONObject().put("id", "lx-imp-1").put("name", "我的收藏").put("kind", "lx").put("songs", JSONArray().put(songJson)))
+            .put(JSONObject().put("id", "lx-imp-2").put("name", "我喜欢的").put("kind", "lx").put("isFavorite", true).put("songs", JSONArray().put(songJson)))
+            .toString()
+        val imported = parsePlaylists(importedRaw, imported = true)
+        assertEquals(2, imported.size)
+        assertFalse(imported[0].isFavorite)
+        assertEquals("我的收藏", imported[0].name)
+        assertFalse(imported[1].isFavorite)
+        assertEquals("我喜欢的", imported[1].name)
+
+        // v1.3.0 auto-heal: keep index 0 as the single built-in favorite and demote trapped duplicate
+        val damagedRaw = JSONArray()
+            .put(JSONObject().put("id", "builtin-fav").put("name", "我的收藏").put("kind", "lx").put("isFavorite", true))
+            .put(JSONObject().put("id", "lx-trapped").put("name", "我的收藏").put("kind", "lx").put("isFavorite", true).put("songs", JSONArray().put(songJson)))
+            .toString()
+        val healed = parsePlaylists(damagedRaw)
+        assertEquals(2, healed.size)
+        assertTrue(healed[0].isFavorite)
+        assertEquals("builtin-fav", healed[0].id)
+        assertFalse(healed[1].isFavorite)
+        assertEquals("lx-trapped", healed[1].id)
+        assertEquals(1, healed[1].songs.size)
     }
 }

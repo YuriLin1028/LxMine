@@ -106,6 +106,16 @@ fun AppSheets(vm: AppViewModel) {
         )
         return
     }
+    vm.pendingRemoveTrusted?.let { item ->
+        ConfirmRemovalDialog(
+            title = "移出信任圈",
+            message = "确定将「${item.name}」移出设备信任圈吗？移出后双方将无法手动发送或自动同步数据。",
+            confirmLabel = "确认移出",
+            onDismiss = { vm.pendingRemoveTrusted = null },
+            onConfirm = { vm.confirmRemoveTrustedDevice() },
+        )
+        return
+    }
     if (vm.pendingClearRecent) {
         ConfirmRemovalDialog(
             title = "清空最近播放",
@@ -414,6 +424,7 @@ private fun SongListInputQueue(
                 onLike = { vm.like(song) },
                 onMore = { vm.addToPlaylist(song) },
                 onDownload = { vm.downloadSong(song) },
+                onPlayNext = if (vm.selected?.key != song.key) ({ vm.playNext(song) }) else null,
                 onSwitchPlatform = if (song.source != "local") ({ vm.openSwitchPlatformFromQueue(index, song) }) else null,
                 onRemove = { vm.removeFromQueue(song) },
                 removeLabel = "从队列移除",
@@ -450,22 +461,78 @@ private fun AddToPlaylistDialog(vm: AppViewModel) {
     }
 }
 
-/** 接收同步确认：与鸿蒙 askIncoming 同一段文案与按钮语义。 */
+/** 接收同步或信任圈配对确认：通过主窗口 GlassDialog 呈现，严格对齐鸿蒙与桌面端文案语义。 */
 @Composable
 internal fun IncomingSyncDialog(vm: AppViewModel) {
     val request = vm.incoming ?: return
+    val isPair = request.kind == "pair"
+    val platformLabel = when (request.platform) {
+        "harmony" -> "HarmonyOS"
+        "android" -> "Android"
+        "win32", "windows" -> "Windows"
+        "darwin", "macos" -> "macOS"
+        "linux" -> "Linux"
+        else -> request.platform.ifEmpty { "设备" }
+    }
     GlassDialog(onDismiss = { }, dismissible = false) {
-        Text("接收同步", fontSize = 22.sp, fontWeight = FontWeight.SemiBold, color = TEXT, textAlign = TextAlign.Center, modifier = Modifier.fillMaxWidth())
         Text(
-            "「${request.peerName}」将发送 ${request.summary.playlists} 个歌单、${request.summary.sources} 个音源及 ${request.summary.settings} 项设置。接收后覆盖本机对应数据。",
-            color = MUTED,
-            fontSize = 15.sp,
+            if (isPair) "信任圈加入请求" else "接收同步",
+            fontSize = 22.sp,
+            fontWeight = FontWeight.SemiBold,
+            color = TEXT,
             textAlign = TextAlign.Center,
             modifier = Modifier.fillMaxWidth(),
         )
+        if (isPair) {
+            Text(
+                "「${request.peerName}」（$platformLabel）请求加入您的设备信任圈。请核对对方屏幕上的验证码，确认后可与本机互相发送及自动同步歌单：",
+                color = MUTED,
+                fontSize = 14.sp,
+                textAlign = TextAlign.Center,
+                modifier = Modifier.fillMaxWidth(),
+            )
+            Box(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .clip(RoundedCornerShape(14.dp))
+                    .background(if (AppAppearance.light) Color(0x140A66C2) else Color(0x1F64D2FF))
+                    .padding(vertical = 12.dp, horizontal = 16.dp),
+                contentAlignment = Alignment.Center,
+            ) {
+                Text(
+                    text = com.lxlia.player.lx.formatPairCode(request.pairCode),
+                    fontSize = 26.sp,
+                    fontWeight = FontWeight.Bold,
+                    letterSpacing = 4.sp,
+                    color = ACCENT,
+                    fontFamily = androidx.compose.ui.text.font.FontFamily.Monospace,
+                )
+            }
+            if (request.transitive) {
+                Text(
+                    "对方已开启「信任圈成员互通」：若本机也开启此开关，确认后双方信任圈内已有设备将自动互相加入。",
+                    color = MUTED,
+                    fontSize = 12.sp,
+                    textAlign = TextAlign.Center,
+                    modifier = Modifier.fillMaxWidth(),
+                )
+            }
+        } else {
+            Text(
+                "已信任设备「${request.peerName}」将发送 ${request.summary.playlists} 个歌单、${request.summary.sources} 个音源及 ${request.summary.settings} 项设置。接收后覆盖本机对应数据。",
+                color = MUTED,
+                fontSize = 15.sp,
+                textAlign = TextAlign.Center,
+                modifier = Modifier.fillMaxWidth(),
+            )
+        }
         Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(12.dp, Alignment.End)) {
             SheetHeaderTextAction("拒绝", color = MUTED, enabled = !vm.applying) { vm.respondSync(false) }
-            SheetHeaderTextAction("接收并覆盖", color = ACCENT, enabled = !vm.applying) { vm.respondSync(true) }
+            SheetHeaderTextAction(
+                if (isPair) "信任此设备" else "接收并覆盖",
+                color = ACCENT,
+                enabled = !vm.applying,
+            ) { vm.respondSync(true) }
         }
     }
 }

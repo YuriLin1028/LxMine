@@ -17,10 +17,12 @@ export struct SongRow {
   @Prop hideDownload: boolean = false;
   @Prop showRemove: boolean = false;
   @Prop showSwitchPlatform: boolean = false;
+  @Prop showPlayNext: boolean = false;
   @Prop removeLabel: string = '从歌单移除';
   @StorageProp('lxmine_liked_keys') private likedKeysBlob: string = '';
   @State private expanded: boolean = false;
   onPlay: () => void = () => {};
+  onPlayNext: () => void = () => {};
   onLike: () => void = () => {};
   onMore: () => void = () => {};
   onDownload: () => void = () => {};
@@ -47,6 +49,9 @@ export struct SongRow {
 
   @Builder private actions() {
     Menu() {
+      if (this.showPlayNext) {
+        MenuItem({ content: '下一首播放' }).onClick(() => this.onPlayNext())
+      }
       MenuItem({ content: this.isRowLiked() ? '取消收藏' : '收藏' }).onClick(() => this.onLike())
       MenuItem({ content: '添加到歌单' }).onClick(() => this.onMore())
       if (this.showDownload && !this.hideDownload && this.song.source !== 'local') {
@@ -87,6 +92,9 @@ export struct SongRow {
         if (this.wide) {
           Text(formatTime(this.song.durationMs)).fontSize(11).fontColor(MUTED)
           MaterialIcon({ icon: this.isRowLiked() ? $r('app.media.ic_heart_fill') : $r('app.media.ic_heart'), tint: !this.isRowLiked(), label: this.isRowLiked() ? '取消收藏' : '收藏', selected: this.isRowLiked(), grouped: true, action: () => this.onLike() })
+          if (this.showPlayNext) {
+            MaterialIcon({ icon: $r('app.media.ic_play_next'), label: '下一首播放', grouped: true, action: () => this.onPlayNext() })
+          }
           if (this.showSwitchPlatform && this.song.source !== 'local') {
             MaterialIcon({ icon: $r('app.media.ic_switch_platform'), label: '切换歌曲平台', grouped: true, action: () => this.onSwitchPlatform() })
           }
@@ -94,22 +102,29 @@ export struct SongRow {
           if (this.showRemove) {
             MaterialIcon({ icon: $r('app.media.ic_trash'), label: this.removeLabel, grouped: true, action: () => this.onRemove() })
           }
-        }
-        if (this.showDownload && !this.hideDownload && this.song.source !== 'local') {
-          MaterialIcon({ icon: $r('app.media.ic_download'), diameter: this.wide ? 44 : 36, label: '下载歌曲', grouped: true, action: () => this.onDownload() })
-        }
-        if (!this.wide) {
-          Button({ type: ButtonType.Circle }) {
-            Image($r('app.media.ic_down')).width(18).height(18).fillColor(MUTED).rotate({ angle: this.expanded ? 180 : 0 })
-          }.attributeModifier(musicButtonPress)
-            .width(34).height(44).padding(0).stateEffect(false).backgroundColor(Color.Transparent).accessibilityText('展开歌曲操作')
-            .onClick(() => { this.getUIContext().animateTo({ duration: 220, curve: Curve.Friction }, () => { this.expanded = !this.expanded; }); })
+          if (this.showDownload && !this.hideDownload && this.song.source !== 'local') {
+            MaterialIcon({ icon: $r('app.media.ic_download'), diameter: 44, label: '下载歌曲', grouped: true, action: () => this.onDownload() })
+          }
+        } else {
+          Row({ space: 2 }) {
+            MaterialIcon({ icon: this.isRowLiked() ? $r('app.media.ic_heart_fill') : $r('app.media.ic_heart'), diameter: 34, tint: !this.isRowLiked(), label: this.isRowLiked() ? '取消收藏' : '收藏', selected: this.isRowLiked(), grouped: true, action: () => this.onLike() })
+            if (this.showPlayNext) {
+              MaterialIcon({ icon: $r('app.media.ic_play_next'), diameter: 34, label: '下一首播放', grouped: true, action: () => this.onPlayNext() })
+            }
+            if (this.showDownload && !this.hideDownload && this.song.source !== 'local') {
+              MaterialIcon({ icon: $r('app.media.ic_download'), diameter: 34, label: '下载歌曲', grouped: true, action: () => this.onDownload() })
+            }
+            Button({ type: ButtonType.Circle }) {
+              Image($r('app.media.ic_down')).width(18).height(18).fillColor(MUTED).rotate({ angle: this.expanded ? 180 : 0 })
+            }.attributeModifier(musicButtonPress)
+              .width(30).height(40).padding(0).stateEffect(false).backgroundColor(Color.Transparent).accessibilityText('展开歌曲操作')
+              .onClick(() => { this.getUIContext().animateTo({ duration: 220, curve: Curve.Friction }, () => { this.expanded = !this.expanded; }); })
+          }.alignItems(VerticalAlign.Center)
         }
       }.width('100%').padding({ top: 9, bottom: 9, left: 8, right: 4 })
       if (this.expanded && !this.wide) {
         Row({ space: 12 }) {
           Blank()
-          MaterialIcon({ icon: this.isRowLiked() ? $r('app.media.ic_heart_fill') : $r('app.media.ic_heart'), tint: !this.isRowLiked(), label: this.isRowLiked() ? '取消收藏' : '收藏', selected: this.isRowLiked(), grouped: true, action: () => this.onLike() })
           if (this.showSwitchPlatform && this.song.source !== 'local') {
             MaterialIcon({ icon: $r('app.media.ic_switch_platform'), label: '切换歌曲平台', grouped: true, action: () => this.onSwitchPlatform() })
           }

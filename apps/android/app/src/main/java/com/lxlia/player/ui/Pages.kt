@@ -94,7 +94,7 @@ private data class MosaicSlot(val tile: LibraryTile, val x: Float, val y: Float,
 
 private fun libraryTiles(vm: AppViewModel): List<LibraryTile> {
     val out = mutableListOf<LibraryTile>()
-    val favorite = vm.playlists.firstOrNull { it.isFavorite || it.name == "我喜欢的" || it.name == "我的收藏" }
+    val favorite = vm.playlists.firstOrNull { it.isFavorite }
     if (favorite != null) {
         out.add(
             LibraryTile(
@@ -519,6 +519,7 @@ private fun LazySongsPage(
                 onLike = { vm.like(song) },
                 onMore = { vm.addToPlaylist(song) },
                 onDownload = { vm.downloadSong(song) },
+                onPlayNext = { vm.playNext(song) },
                 onSwitchPlatform = onSwitchPlatform?.let { handler -> ({ handler(song) }) },
                 onRemove = onRemoveSong?.let { handler -> ({ handler(song) }) },
                 removeLabel = removeLabel,
@@ -570,7 +571,9 @@ fun PlaylistDetailPage(vm: AppViewModel, playlist: MusicPlaylist) {
                     collected = vm.isCollectionSavedToLibrary(playlist.name, playlist.songs),
                     onCollect = if (canCollect) ({ vm.collectToLibrary(playlist.name, playlist.songs, playlist.customCover) }) else null,
                     onPlayAll = { if (fullSongs.isNotEmpty()) vm.playSong(fullSongs.first(), fullSongs) },
+                    onBatchCollect = if (songs.isNotEmpty()) ({ vm.openBatchCollectPicker(songs, "批量收藏 · ${playlist.name}") }) else null,
                     onBatchDownload = if (songs.isNotEmpty() && playlist.kind != "local") ({ vm.openBatchDownloadPicker(songs, "批量下载 · ${playlist.name}") }) else null,
+                    wide = vm.wide,
                     onCustomCover = if (vm.canEditPlaylistSongs(playlist)) ({ vm.openPlaylistCoverPicker(playlist) }) else null,
                     onSort = { vm.setListSort(it) },
                     onManual = { vm.openManualOrder() },
@@ -653,6 +656,8 @@ private fun LocalMusicPage(vm: AppViewModel) {
     LazySongsPage(vm, songs, playQueue = fullSongs, showDownload = false, autoScrollKey = "local-android", header = {
         SongListTools(countText = "${songs.size} 首本地歌曲", disabled = songs.isEmpty(),
             onPlayAll = { if (fullSongs.isNotEmpty()) vm.playSong(fullSongs.first(), fullSongs) },
+            onBatchCollect = if (songs.isNotEmpty()) ({ vm.openBatchCollectPicker(songs, "批量收藏 · 本地音乐") }) else null,
+            wide = vm.wide,
             onSort = { vm.setListSort(it) }, onManual = { vm.openManualOrder() })
         if (vm.listSearchOpen) SearchInListBar(vm)
     }, empty = {
@@ -1031,6 +1036,8 @@ fun FeedOverlay(vm: AppViewModel) {
                         SongListTools(
                             countText = "${ordered.size} 首歌曲",
                             onPlayAll = { vm.playSong(ordered.first(), ordered) },
+                            onBatchCollect = { vm.openBatchCollectPicker(ordered, "批量收藏 · ${vm.feedSectionTitle()}") },
+                            wide = vm.wide,
                             onSort = { sortMode = it },
                             onManual = {
                                 orderSongs = ordered
@@ -1049,6 +1056,7 @@ fun FeedOverlay(vm: AppViewModel) {
                         onLike = { vm.like(song) },
                         onMore = { vm.addToPlaylist(song) },
                         onDownload = { vm.downloadSong(song) },
+                        onPlayNext = { vm.playNext(song) },
                     )
                 }
             }
@@ -1234,7 +1242,9 @@ internal fun SearchSongList(vm: AppViewModel) {
         Text("${platformName(vm.platform.id)} · ${songs.size} 首", fontSize = 12.sp, color = MUTED, modifier = Modifier.padding(top = 12.dp, bottom = 6.dp))
         SongListTools(countText = "${songs.size} 首歌曲", disabled = songs.isEmpty(),
             onPlayAll = { if (songs.isNotEmpty()) vm.playSong(songs.first(), songs, fromSearch = true, playAllSearch = true) },
+            onBatchCollect = if (songs.isNotEmpty()) ({ vm.openBatchCollectPicker(songs, "批量收藏 · 搜索结果") }) else null,
             onBatchDownload = { vm.openBatchDownloadPicker(songs) },
+            wide = vm.wide,
             onSort = { vm.setListSort(it) }, onManual = { vm.openManualOrderFor(vm.results) })
     })
 }
@@ -1256,7 +1266,9 @@ internal fun EntitySongList(vm: AppViewModel) {
             collected = entity != null && vm.isCollectionSavedToLibrary(entity.name, vm.entitySongs),
             onCollect = if (entity != null && vm.entitySongs.isNotEmpty()) ({ vm.collectToLibrary(entity.name, vm.entitySongs, entity.cover) }) else null,
             onPlayAll = { if (fullSongs.isNotEmpty()) vm.playSong(fullSongs.first(), fullSongs) },
+            onBatchCollect = if (songs.isNotEmpty()) ({ vm.openBatchCollectPicker(songs, "批量收藏 · ${entity?.name ?: "歌曲列表"}") }) else null,
             onBatchDownload = { vm.openBatchDownloadPicker(songs, "批量下载 · ${entity?.name ?: "歌曲列表"}") },
+            wide = vm.wide,
             onSort = { vm.setListSort(it) }, onManual = { vm.openManualOrderFor(vm.entitySongs) })
     })
 }

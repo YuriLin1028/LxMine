@@ -2,8 +2,26 @@
 
 产品显示名已改为 LxMine。为兼容已有数据与设备，v1 协议标识和路径保留旧内部名称。
 
-目标：同一局域网内的 Windows、HarmonyOS 与 Android 设备互相发现，一键把**软件设置 + 歌单 + 音源**推送给对方；
-对方确认接收后**整体覆盖**。不经过云端，不需要配对或信任关系。
+目标：同一局域网内的 Windows、HarmonyOS 与 Android 设备互相发现，通过**设备信任圈（6 位验证码配对）**建立双向信任后，一键把**软件设置 + 歌单 + 音源**推送给对方，或在信任圈内自动双向合并歌单与收藏。不经过云端，无账号，未信任设备无法向本机推送或自动同步任何数据。
+
+## 设备信任圈（Trusted Device Circle）
+
+为防止校园网、办公室等公共 Wi-Fi 下陌生 LxMine 设备误同步或弹窗骚扰，所有同步操作（**手动推送、IP 直连、Android pull 接收、以及自动同步歌单**）均严格执行 fail-closed 信任校验：
+
+1. **配对加入（`POST /lxlia-sync/pair`）**：
+   - 发起端生成 6 位数字验证码（`code`）与 128-bit 随机共享密钥（`token`，32 位十六进制），发送 `{protocol, version: 1, type: "pair", code, token, device}`；
+   - 若目标为 Android 容器（`receiveMode: "pull"`），发起端通过 `pullRequests: [{id, receiverId, kind: "pair"}]` 广播通知，Android 主动 `GET /lxlia-sync/pull/<id>/<ownId>` 拉取请求，用户确认后经 `POST /lxlia-sync/receipt/<id>` 返回 `{receiverId, accepted: true, device}`；
+   - 接收端弹窗展示发起设备名、平台与 6 位验证码，用户核对无误点击「信任此设备」后，双方各自把 `{id, name, platform, token, trustedAt}` 持久化到本地独立存储（Windows `lansync-trusted.json`、Android/HarmonyOS `prefs["trustedDevices"]`），**独立于 `appData` / 同步设置，覆盖同步绝不清空信任圈**；
+   - 防骚扰：同一设备被拒后 10 秒冷却（`429`），同设备不重复排队（`409`）。
+2. **严格验权（`/push` 与 `/auto-playlists`）**：
+   - 发送端只在目标设备处于信任圈时携带对应 `trustToken`；自动同步直接跳过所有非信任设备；
+   - 接收端对 `POST /lxlia-sync/push`、`POST /lxlia-sync/auto-playlists` 及 Android pull 拉取的 bundle 均以常量时间比对 `device.id + trustToken`；未信任或伪造令牌一律直接返回 **`HTTP 403 {"accepted":false,"code":"UNTRUSTED"}`**，**不弹窗、不合并、不落盘**。
+3. **信任圈成员互通（可开关，默认开启，本地独立持久化）**：
+   - 全端在「局域网同步」中提供独立开关 **「信任圈成员互通」**（`trustCircleTransitive`，默认 `true`，独立于同步设置保存，绝不被全量同步覆盖）。
+   - **开启时**：假设设备 `A` 的信任圈里已有 `B`、`C`，新设备 `D` 与 `A` 完成配对且双方均开启此开关时，`A` 会为 `B↔D`、`C↔D` 各自生成独立 128-bit 密钥（不泄露 `A↔B` / `A↔C` 原密钥），将 `B`、`C` 随 `pair` 响应同步写入 `D` 的信任圈，并通过鉴权引荐接口 **`POST /lxlia-sync/vouch`**（Android 容器走 `kind: "vouch"` pull 通道）将 `D` 引荐给 `B`、`C`；若 `B` 或 `C` 当时离线，引荐项保存在本地 `pendingVouches` 队列（7 天有效），待其下次上线自动投递。
+   - **关闭时**：只要 `A` 或 `D` 任意一方关闭此开关，`D` 只会拉入当前配对的 `A`，不会同步 `B`、`C`，也不会向任何其他设备引荐；若 `B` 关闭此开关，`B` 也会直接以 `403 TRANSITIVE_DISABLED` 拒绝来自 `A` 的引荐。
+4. **移除信任（`POST /lxlia-sync/unpair`）**：
+   - 任意一端移除信任设备后，本机立即拒绝其一切后续同步；若对端在线且支持直连，会携带原 `trustToken` 发送已鉴权的 `/lxlia-sync/unpair` 通知对端同步移除。
 
 > 2026-10-18 真机验收：鸿蒙手机与平板连接同一个 Wi-Fi 名称后已能双向发现。
 > 若同一路由器下仍发现不了，先确认两台设备连接的是同一个 SSID（而不是同品牌路由器的

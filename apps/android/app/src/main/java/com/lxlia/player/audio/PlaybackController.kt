@@ -46,7 +46,17 @@ object PlaybackController {
     @Volatile private var callSceneCurrentlyActive: Boolean = false
     @Volatile private var lastCallSceneExitAt: Long = 0L
     @Volatile private var lastInterruptResumeAt: Long = 0L
+    @Volatile private var lastRemotePauseAt: Long = 0L
+    @Volatile private var lastRemotePlayPauseToggleAt: Long = 0L
     private var callResumeJob: Job? = null
+
+    private fun isTelephonyAudioMode(): Boolean {
+        val am = audioManagerRef ?: return false
+        val mode = runCatching { am.mode }.getOrDefault(android.media.AudioManager.MODE_NORMAL)
+        return mode == android.media.AudioManager.MODE_RINGTONE ||
+            mode == android.media.AudioManager.MODE_IN_CALL ||
+            (android.os.Build.VERSION.SDK_INT >= 30 && mode == android.media.AudioManager.MODE_CALL_SCREENING)
+    }
 
     private fun queryCallSceneActive(): Boolean {
         val am = audioManagerRef ?: return false
@@ -62,7 +72,6 @@ object PlaybackController {
         return configs.any { cfg ->
             val usage = runCatching { cfg.audioAttributes.usage }.getOrDefault(0)
             usage == android.media.AudioAttributes.USAGE_VOICE_COMMUNICATION ||
-                usage == android.media.AudioAttributes.USAGE_VOICE_COMMUNICATION_SIGNALLING ||
                 usage == android.media.AudioAttributes.USAGE_NOTIFICATION_RINGTONE
         }
     }
@@ -253,6 +262,7 @@ object PlaybackController {
         if (nextQueue.isEmpty()) return
         queue = nextQueue.toList()
         nextShuffleSongKey = ""
+        upNextKeys.clear()
         cancelAutoMix()
         val curKey = current?.key
         currentIndex = if (curKey != null) queue.indexOfFirst { it.key == curKey }.coerceAtLeast(0) else 0
@@ -263,6 +273,42 @@ object PlaybackController {
     @Volatile private var seekGuardTarget: Long = -1L
     @Volatile private var seekGuardUntil: Long = 0L
     private var nextShuffleSongKey: String = ""
+    private val upNextKeys = ArrayDeque<String>()
+
+    private fun resolveUpNextIndex(): Int {
+        if (upNextKeys.isEmpty() || queue.isEmpty()) return -1
+        val curKey = current?.key
+        val cleaned = ArrayDeque<String>()
+        var foundIdx = -1
+        for (key in upNextKeys) {
+            if (key.isEmpty() || key == curKey) continue
+            val idx = queue.indexOfFirst { it.key == key }
+            if (idx >= 0) {
+                if (foundIdx < 0) foundIdx = idx
+                cleaned.addLast(key)
+            }
+        }
+        upNextKeys.clear()
+        upNextKeys.addAll(cleaned)
+        return foundIdx
+    }
+
+    /** 将歌曲插播到当前播放曲目之后，并优先于随机队列生效。 */
+    fun enqueueNext(song: Song): List<Song> {
+        val cur = current ?: return queue
+        if (queue.isEmpty() || cur.key == song.key) return queue
+        val filtered = queue.filter { it.key != song.key }.toMutableList()
+        val curIdx = filtered.indexOfFirst { it.key == cur.key }.let { if (it >= 0) it else currentIndex.coerceIn(0, (filtered.size - 1).coerceAtLeast(0)) }
+        filtered.add((curIdx + 1).coerceIn(0, filtered.size), song)
+        queue = filtered
+        currentIndex = curIdx
+        upNextKeys.removeAll { it == song.key }
+        upNextKeys.addFirst(song.key)
+        nextShuffleSongKey = song.key
+        cancelAutoMix()
+        onSessionStateRefresh?.invoke()
+        return queue
+    }
 
     fun setAudioFx(config: AudioFxConfig) {
         val spatialChanged = audioFxConfig.spatialMode != config.spatialMode
@@ -327,6 +373,18 @@ object PlaybackController {
         private set
     var positionMs: Long = 0
         private set
+
+    /** 主线程读取 ExoPlayer 实时播放时刻，避免 200ms–1000ms UI 节流导致 Folia/MineRadio 歌词落后于人声。 */
+    fun livePositionMs(): Long {
+        if (isResolvingTrack) return positionMs
+        val now = System.currentTimeMillis()
+        if (seekGuardUntil > 0L && now < seekGuardUntil && seekGuardTarget >= 0L) {
+            val raw = if (Looper.myLooper() == Looper.getMainLooper()) (player?.currentPosition ?: positionMs) else positionMs
+            return if (kotlin.math.abs(raw - seekGuardTarget) > 2500L) seekGuardTarget else raw.coerceAtLeast(0L)
+        }
+        val live = if (Looper.myLooper() == Looper.getMainLooper()) player?.currentPosition else null
+        return if (live != null && live >= 0L) live else positionMs.coerceAtLeast(0L)
+    }
     var durationMs: Long = 0
         private set
     /** 当前实际播放的地址（远程 URL 或 file:// 路径）。 */
@@ -411,6 +469,7 @@ object PlaybackController {
         val nextList = queue.filterIndexed { i, _ -> i != idx }
         queue = nextList
         nextShuffleSongKey = ""
+        upNextKeys.removeAll { it == targetKey }
         cancelAutoMix()
         if (nextList.isEmpty()) {
             pause()
@@ -548,6 +607,7 @@ object PlaybackController {
 
             override fun onIsPlayingChanged(isPlaying: Boolean) {
                 if (isResolvingTrack) return
+                if (isPlaying && ppFadeDirection == "out") return
                 playing = isPlaying
                 if (isPlaying) consecutiveAutoSkipCount = 0
                 emitState(if (isPlaying) "playing" else "paused")
@@ -665,6 +725,14 @@ object PlaybackController {
     fun peekNextSong(): Song? {
         val cur = current ?: return null
         if (queue.size <= 1 || mode == "单曲循环") return null
+        val upIdx = resolveUpNextIndex()
+        if (upIdx in queue.indices) {
+            val cand = queue[upIdx]
+            if (cand.key != cur.key) {
+                nextShuffleSongKey = cand.key
+                return cand
+            }
+        }
         val idx = queue.indexOfFirst { it.key == cur.key }
         if (idx < 0) return null
         if (mode == "顺序播放" && idx >= queue.lastIndex) return null
@@ -923,12 +991,16 @@ object PlaybackController {
     fun playFromList(songs: List<Song>, index: Int, startMs: Long = 0, autoPlay: Boolean = true, fromAutoAdvance: Boolean = false) {
         if (songs.isEmpty()) return
         val safeIndex = index.coerceIn(0, songs.lastIndex)
+        val sameQueue = songs.size == queue.size && songs.indices.all { songs[it].key == queue[it].key }
+        if (!fromAutoAdvance && !sameQueue) upNextKeys.clear()
         queue = songs.toList()
         currentIndex = safeIndex
+        upNextKeys.removeAll { it == queue[safeIndex].key }
         internalPlay(queue[safeIndex], startMs, autoPlay, fromAutoAdvance)
     }
 
     fun playSingle(song: Song, startMs: Long = 0, autoPlay: Boolean = true) {
+        upNextKeys.clear()
         queue = listOf(song)
         currentIndex = 0
         internalPlay(song, startMs, autoPlay, false)
@@ -1096,7 +1168,8 @@ object PlaybackController {
         pendingDurationGatePlay = false
         cancelActiveCrossfade()
         cancelFade()
-        val callPauseFromHeadunit = fromSession && (queryCallSceneActive() || callSceneCurrentlyActive) && (playing || autoPlay)
+        // 仅在系统明确处于来电/通话音频模式时将车机/系统暂停识别为通话中断，避免车机导航/HFP 提示音误触发自动续播。
+        val callPauseFromHeadunit = fromSession && isTelephonyAudioMode() && (playing || autoPlay)
         if (callPauseFromHeadunit) {
             callSceneCurrentlyActive = true
             interruptedByCall = true
@@ -1107,8 +1180,23 @@ object PlaybackController {
             autoPlay = false
         }
         val active = player
+        if (fromSession) {
+            // 车机/蓝牙/系统播控暂停必须立即暂停 ExoPlayer，让 MediaSession/AVRCP 零延迟切入 STATE_PAUSED，
+            // 避免 620ms 淡出期间仍上报 STATE_PLAYING 导致车机重发播控命令把音乐重新拉起。
+            lastRemotePauseAt = android.os.SystemClock.elapsedRealtime()
+            stopTicker()
+            cancelPlayPauseFade(false)
+            active?.volume = 1f
+            active?.playWhenReady = false
+            active?.pause()
+            playing = false
+            emitState("paused")
+            syncBluetoothCarLyric(force = true)
+            return
+        }
         if (playPauseFadeEnabled && active != null && active.isPlaying) {
             val startVol = if (ppFadeDirection.isNotEmpty()) ppFadeVolume.coerceIn(0.02f, 1f) else 1f
+            stopTicker()
             cancelPlayPauseFade(false)
             ppFadeDirection = "out"
             ppFadeVolume = startVol
@@ -1129,23 +1217,32 @@ object PlaybackController {
                 }
                 if (ppFadeDirection == "out") {
                     ppFadeDirection = ""
+                    active.playWhenReady = false
                     active.pause()
                     active.volume = 1f
                     ppFadeVolume = 1f
                     emitTime(active.currentPosition.coerceAtLeast(0L))
+                    syncBluetoothCarLyric(force = true)
                     onFadeOutChanged?.invoke(false)
                 }
             }
             return
         }
+        stopTicker()
         cancelPlayPauseFade(true)
         active?.volume = 1f
+        active?.playWhenReady = false
         active?.pause()
         playing = false
         emitState("paused")
+        syncBluetoothCarLyric(force = true)
     }
 
-    fun resume(): Boolean {
+    fun resume(fromSession: Boolean = false): Boolean {
+        if (fromSession && bluetoothAudioConnected) {
+            val sincePause = android.os.SystemClock.elapsedRealtime() - lastRemotePauseAt
+            if (sincePause in 0L..320L) return false
+        }
         cancelFade()
         val exoPlayer = player ?: return false
         if (current == null || currentUrl.isEmpty()) return false
@@ -1154,15 +1251,17 @@ object PlaybackController {
             val from = ppFadeVolume.coerceIn(0.02f, 1f)
             playing = true
             emitState("playing")
+            startTicker()
             if (playPauseFadeEnabled) startFadeIn(exoPlayer, 540L, from) else cancelPlayPauseFade(true)
             return true
         }
-        if (playPauseFadeEnabled) {
+        if (playPauseFadeEnabled && !fromSession) {
             startFadeIn(exoPlayer, 680L, 0.01f)
         } else {
             cancelPlayPauseFade(false)
             exoPlayer.volume = 1f
         }
+        exoPlayer.playWhenReady = true
         exoPlayer.play()
         return true
     }
@@ -1194,7 +1293,12 @@ object PlaybackController {
             return
         }
         var next = ((index + step) % queue.size + queue.size) % queue.size
-        if (mode == "随机播放" && queue.size > 1) {
+        val upIdx = if (step > 0) resolveUpNextIndex() else -1
+        if (upIdx in queue.indices) {
+            next = upIdx
+            val chosenKey = queue[next].key
+            upNextKeys.removeAll { it == chosenKey }
+        } else if (mode == "随机播放" && queue.size > 1) {
             val cachedIdx = if (step > 0 && nextShuffleSongKey.isNotEmpty()) {
                 queue.indexOfFirst { it.key == nextShuffleSongKey && it.key != current?.key }
             } else -1
@@ -1357,7 +1461,7 @@ object PlaybackController {
                 delay(if (foregroundActive) 200L else 850L)
                 if (isResolvingTrack) continue
                 val exoPlayer = player ?: break
-                if (!exoPlayer.isPlaying) continue
+                if (!exoPlayer.isPlaying || !playing || ppFadeDirection == "out") continue
                 val pos = exoPlayer.currentPosition
                 val now = System.currentTimeMillis()
                 if (seekGuardUntil > 0L) {
@@ -1382,11 +1486,13 @@ object PlaybackController {
     private fun emitTime(value: Long) {
         positionMs = value
         onTime?.invoke(value)
+        DesktopLyricsOverlay.updatePlayback(current, playing, value)
         syncBluetoothCarLyric(force = false)
     }
 
     private fun emitState(state: String) {
         onState?.invoke(state)
+        DesktopLyricsOverlay.updatePlayback(current, state == "playing", livePositionMs())
     }
 
     val sessionCallback = object : MediaSession.Callback {
@@ -1421,34 +1527,44 @@ object PlaybackController {
                 intent.getParcelableExtra(android.content.Intent.EXTRA_KEY_EVENT)
             }
             if (event != null) {
+                fun runNowOrMain(block: () -> Unit) {
+                    if (Looper.myLooper() == Looper.getMainLooper()) block() else main.post(block)
+                }
                 when (event.keyCode) {
                     android.view.KeyEvent.KEYCODE_MEDIA_NEXT -> {
                         if (event.action == android.view.KeyEvent.ACTION_DOWN && event.repeatCount == 0) {
-                            main.post { advance(1) }
+                            runNowOrMain { advance(1) }
                         }
                         return true
                     }
                     android.view.KeyEvent.KEYCODE_MEDIA_PREVIOUS -> {
                         if (event.action == android.view.KeyEvent.ACTION_DOWN && event.repeatCount == 0) {
-                            main.post { advance(-1) }
+                            runNowOrMain { advance(-1) }
                         }
                         return true
                     }
                     android.view.KeyEvent.KEYCODE_MEDIA_PLAY -> {
                         if (event.action == android.view.KeyEvent.ACTION_DOWN && event.repeatCount == 0) {
-                            main.post { resume() }
+                            runNowOrMain { resume(fromSession = true) }
                         }
                         return true
                     }
                     android.view.KeyEvent.KEYCODE_MEDIA_PAUSE -> {
                         if (event.action == android.view.KeyEvent.ACTION_DOWN && event.repeatCount == 0) {
-                            main.post { pause(fromSession = true) }
+                            runNowOrMain { pause(fromSession = true) }
                         }
                         return true
                     }
-                    android.view.KeyEvent.KEYCODE_MEDIA_PLAY_PAUSE -> {
+                    android.view.KeyEvent.KEYCODE_MEDIA_PLAY_PAUSE,
+                    android.view.KeyEvent.KEYCODE_HEADSETHOOK -> {
                         if (event.action == android.view.KeyEvent.ACTION_DOWN && event.repeatCount == 0) {
-                            main.post { if (playing) pause(fromSession = true) else resume() }
+                            runNowOrMain {
+                                val now = android.os.SystemClock.elapsedRealtime()
+                                if (now - lastRemotePlayPauseToggleAt < 380L) return@runNowOrMain
+                                lastRemotePlayPauseToggleAt = now
+                                val isActive = playing || ppFadeDirection == "out" || (player?.isPlaying == true)
+                                if (isActive) pause(fromSession = true) else resume(fromSession = true)
+                            }
                         }
                         return true
                     }
@@ -1461,21 +1577,30 @@ object PlaybackController {
     /** 系统播控的进度条拖动。 */
     fun onSessionSeek(timeMs: Long) = seek(timeMs)
 
-    /** 歌词同步：供舞台/详情页及 Android 蓝牙车载歌词（AVRCP MediaMetadata）实时推送使用。 */
+    /** 歌词同步：供舞台/详情页、手机桌面歌词及 Android 蓝牙车载歌词（AVRCP MediaMetadata）实时推送使用。 */
     fun setLyrics(lines: List<LyricLine>, offset: Long) {
         lyricLines = lines
         lyricOffset = offset
         lastCarLyricText = ""
+        DesktopLyricsOverlay.updateLyrics(lines, translationLines, offset)
         main.post { syncBluetoothCarLyric(force = true) }
     }
 
+    fun setTranslationLines(lines: List<LyricLine>) {
+        translationLines = lines
+        DesktopLyricsOverlay.updateTranslations(lines)
+    }
+
     var lyricLines: List<LyricLine> = emptyList()
+        private set
+    var translationLines: List<LyricLine> = emptyList()
         private set
     var lyricOffset: Long = 0
         private set
 
     fun setLyricOffset(offset: Long) {
         lyricOffset = offset
+        DesktopLyricsOverlay.updateOffset(offset)
         main.post { syncBluetoothCarLyric(force = true) }
     }
 
@@ -1505,6 +1630,7 @@ object PlaybackController {
     }
 
     private fun syncBluetoothCarLyric(force: Boolean) {
+        if (ppFadeDirection == "out") return
         val song = current ?: return
         val shouldPush = bluetoothCarLyricsEnabled && bluetoothAudioConnected && playing && lyricLines.isNotEmpty()
         if (!shouldPush) {

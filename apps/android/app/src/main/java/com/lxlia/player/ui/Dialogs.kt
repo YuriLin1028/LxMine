@@ -5,6 +5,7 @@ import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.gestures.detectDragGesturesAfterLongPress
 import androidx.compose.foundation.horizontalScroll
+import androidx.compose.foundation.interaction.MutableInteractionSource
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
@@ -221,25 +222,36 @@ fun PillButton(
         filled -> ON_ACCENT
         else -> TEXT
     }
+    val interaction = remember { MutableInteractionSource() }
     GlassSurface(
         modifier = modifier
             .height(40.dp)
-            .defaultMinSize(minWidth = 64.dp)
-            .then(if (enabled) Modifier.tapNoRipple(onClick) else Modifier),
+            .defaultMinSize(minWidth = 64.dp),
         shape = RoundedCornerShape(20.dp),
         tone = GlassTone.UltraThin,
         tintOverride = if (filled && !textual) ACCENT else null,
         interactive = enabled,
     ) {
-        Text(
-            label,
-            fontSize = if (textual) 16.sp else 13.sp,
-            maxLines = 1,
-            overflow = TextOverflow.Ellipsis,
-            color = textColor.copy(alpha = if (enabled) 1f else 0.4f),
-            modifier = Modifier.align(Alignment.Center)
+        Box(
+            modifier = Modifier
+                .fillMaxHeight()
+                .clickable(
+                    interactionSource = interaction,
+                    indication = null,
+                    enabled = enabled,
+                    onClick = onClick,
+                )
                 .padding(horizontal = if (textual) 16.dp else 18.dp),
-        )
+            contentAlignment = Alignment.Center,
+        ) {
+            Text(
+                label,
+                fontSize = if (textual) 16.sp else 13.sp,
+                maxLines = 1,
+                overflow = TextOverflow.Ellipsis,
+                color = textColor.copy(alpha = if (enabled) 1f else 0.4f),
+            )
+        }
     }
 }
 

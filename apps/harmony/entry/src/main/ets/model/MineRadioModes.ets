@@ -1,5 +1,5 @@
 // Generated from MineRadio & Folia stage preset registry.
-export const MINE_STAGE_REVISION: string = '0b0fbbf3b6a20173';
+export const MINE_STAGE_REVISION: string = 'eda03b36831b7ed9';
 export interface MineRadioMode { id: string; label: string; }
 export const MINE_RADIO_MODES: MineRadioMode[] = [
   {

@@ -5348,6 +5348,11 @@ ipcMain.handle('mineradio-built-in-playlist-add-track', async (event, id, track)
   try { return await builtInPlaylistLibrary.addTrack(id, track); } catch (error) { return builtInPlaylistMutationError(error); }
 });
 
+ipcMain.handle('mineradio-built-in-playlist-add-tracks', async (event, id, tracks) => {
+  if (!isTrustedMainWindowIpc(event)) return { ok: false, error: 'UNTRUSTED_SENDER' };
+  try { return await builtInPlaylistLibrary.addTracks(id, tracks); } catch (error) { return builtInPlaylistMutationError(error); }
+});
+
 ipcMain.handle('mineradio-built-in-playlist-remove-track', async (event, id, index) => {
   if (!isTrustedMainWindowIpc(event)) return { ok: false, error: 'UNTRUSTED_SENDER' };
   try { return await builtInPlaylistLibrary.removeTrack(id, index); } catch (error) { return builtInPlaylistMutationError(error); }

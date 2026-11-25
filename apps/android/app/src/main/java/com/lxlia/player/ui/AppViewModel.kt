@@ -179,7 +179,7 @@ class AppViewModel(internal val app: LxMineApp) : ViewModel() {
     /** 响应式红心集合：任何列表项直接读取此状态即可在点击喜欢当帧立即重组变红。 */
     val likedKeys: Set<String> by derivedStateOf {
         playlists.asSequence()
-            .filter { it.isFavorite || it.name == "我喜欢的" || it.name == "我的收藏" }
+            .filter { it.isFavorite }
             .flatMap { it.songs.asSequence() }
             .map { it.key }
             .toSet()
@@ -205,6 +205,8 @@ class AppViewModel(internal val app: LxMineApp) : ViewModel() {
     var pendingBatchExportDownloadIds: List<String> = emptyList()
     var batchDownloadPickerSongs by mutableStateOf<List<Song>?>(null)
     var batchDownloadPickerTitle by mutableStateOf("选择要下载的歌曲")
+    var batchCollectPickerSongs by mutableStateOf<List<Song>?>(null)
+    var batchCollectPickerTitle by mutableStateOf("选择要收藏的歌曲")
     var pendingBatchDownloadSongs: List<Song> = emptyList()
     var queueOrderOpen by mutableStateOf(false)
     var moreSubSheet by mutableStateOf("")
@@ -272,6 +274,7 @@ class AppViewModel(internal val app: LxMineApp) : ViewModel() {
             // inherit a hidden dock from the previous immersive player.
             stageControlsVisible = true
             playerShown = value
+            com.lxlia.player.audio.DesktopLyricsOverlay.updateAppVisibility(foreground, value)
         }
     var playerReveal by mutableStateOf(0f)
     var stageControlsVisible by mutableStateOf(true)
@@ -476,6 +479,18 @@ class AppViewModel(internal val app: LxMineApp) : ViewModel() {
     var bluetoothCarLyricsEnabled by mutableStateOf(false)
     var bluetoothCarLyricsMode by mutableStateOf(com.lxlia.player.audio.BluetoothCarLyrics.MODE_TITLE)
     var bluetoothAudioConnected by mutableStateOf(false)
+    var mobileDesktopLyricsEnabled by mutableStateOf(false)
+    var mobileDesktopLyricsLocked by mutableStateOf(false)
+    var mobileDesktopLyricScale by mutableStateOf(1.0f)
+    var mobileDesktopLyricLines by mutableStateOf(1)
+    var mobileDesktopLyricColorMode by mutableStateOf("cover-gradient")
+    var mobileDesktopLyricColor by mutableStateOf("#7DD3FC")
+    var mobileDesktopLyricColor2 by mutableStateOf("#A5B4FC")
+    var mobileDesktopLyricX by mutableStateOf(0.07f)
+    var mobileDesktopLyricY by mutableStateOf(0.045f)
+    var mobileDesktopLyricWidth by mutableStateOf(0.86f)
+    var overlayPermissionPromptOpen by mutableStateOf(false)
+    internal var pendingEnableDesktopLyrics: Boolean = false
     var earMonitorOpen by mutableStateOf(false)
     var earMonitorState by mutableStateOf(com.lxlia.player.audio.EarMonitorState())
     var earMonitorPermissionRequest by mutableStateOf(0L)
@@ -557,10 +572,17 @@ class AppViewModel(internal val app: LxMineApp) : ViewModel() {
     var deviceName = "Android"
     var lanSsid by mutableStateOf("")
     var devices by mutableStateOf<List<com.lxlia.player.lx.LanDevice>>(emptyList())
+    var trustedDevices by mutableStateOf<List<com.lxlia.player.lx.TrustedDevice>>(emptyList())
+    var trustCircleTransitive by mutableStateOf(true)
+    internal val trustedMap = java.util.concurrent.ConcurrentHashMap<String, com.lxlia.player.lx.TrustedDevice>()
+    internal val pendingVouches = java.util.Collections.synchronizedList(mutableListOf<com.lxlia.player.lx.PendingVouch>())
+    internal val vouchInFlight = java.util.concurrent.ConcurrentHashMap.newKeySet<String>()
+    internal val vouchBackoff = java.util.concurrent.ConcurrentHashMap<String, Long>()
     var incoming by mutableStateOf<com.lxlia.player.lx.SyncIncoming?>(null)
     var applying by mutableStateOf(false)
     var pendingDeletePlaylist by mutableStateOf<MusicPlaylist?>(null)
     var pendingRemoveSource by mutableStateOf<SyncSourcePayload?>(null)
+    var pendingRemoveTrusted by mutableStateOf<com.lxlia.player.lx.TrustedDevice?>(null)
     var carAvailable = false
     var carConnected = false
     var carDetail = ""
@@ -573,6 +595,11 @@ class AppViewModel(internal val app: LxMineApp) : ViewModel() {
     internal var lanDiscovery: com.lxlia.player.lx.LanDiscovery? = null
     internal var lanSyncServer: com.lxlia.player.lx.LanSyncServer? = null
     internal var autoSyncJob: Job? = null
+    internal var autoSyncReconcileJob: Job? = null
+    internal val autoSyncInFlight = java.util.concurrent.ConcurrentHashMap.newKeySet<String>()
+    internal val autoSyncExchanged = java.util.concurrent.ConcurrentHashMap<String, String>()
+    internal val autoSyncBackoff = java.util.concurrent.ConcurrentHashMap<String, Long>()
+    internal var lastAutoSyncToastAt: Long = 0L
     internal var batchDownloadJob: Job? = null
     private var pollJob: Job? = null
     private var messageJob: Job? = null
@@ -644,6 +671,44 @@ class AppViewModel(internal val app: LxMineApp) : ViewModel() {
         }
         PlaybackController.startBluetoothMonitor(app)
         bluetoothAudioConnected = PlaybackController.bluetoothAudioConnected
+        com.lxlia.player.audio.DesktopLyricsOverlay.init(app)
+        com.lxlia.player.audio.DesktopLyricsOverlay.onLockChanged = { locked ->
+            viewModelScope.launch(Dispatchers.Main.immediate) {
+                mobileDesktopLyricsLocked = locked
+                save()
+                notify(if (locked) "已锁定桌面歌词（触摸穿透）" else "已解锁桌面歌词", 1600)
+            }
+        }
+        com.lxlia.player.audio.DesktopLyricsOverlay.onCloseRequested = {
+            viewModelScope.launch(Dispatchers.Main.immediate) {
+                mobileDesktopLyricsEnabled = false
+                save()
+                notify("桌面歌词已关闭", 1600)
+            }
+        }
+        com.lxlia.player.audio.DesktopLyricsOverlay.onGeometryChanged = { xFrac, yFrac, wFrac, scale ->
+            viewModelScope.launch(Dispatchers.Main.immediate) {
+                val cleanW = wFrac.coerceIn(
+                    com.lxlia.player.audio.DesktopLyricsOverlay.MIN_WIDTH_FRACTION,
+                    com.lxlia.player.audio.DesktopLyricsOverlay.MAX_WIDTH_FRACTION,
+                )
+                mobileDesktopLyricWidth = cleanW
+                val maxXFrac = (1f - cleanW + 0.08f).coerceAtLeast(0.08f)
+                mobileDesktopLyricX = xFrac.coerceIn(
+                    com.lxlia.player.audio.DesktopLyricsOverlay.MIN_X_FRACTION,
+                    maxXFrac,
+                )
+                mobileDesktopLyricY = yFrac.coerceIn(
+                    com.lxlia.player.audio.DesktopLyricsOverlay.MIN_Y_FRACTION,
+                    com.lxlia.player.audio.DesktopLyricsOverlay.MAX_Y_FRACTION,
+                )
+                mobileDesktopLyricScale = scale.coerceIn(
+                    com.lxlia.player.audio.DesktopLyricsOverlay.MIN_FONT_SCALE,
+                    com.lxlia.player.audio.DesktopLyricsOverlay.MAX_FONT_SCALE,
+                )
+                scheduleSave()
+            }
+        }
         PlaybackController.onBeforeCompleted = {
             if (sleepMode == "song" || sleepPendingStop) {
                 clearSleepTimer(silent = true)
@@ -789,17 +854,33 @@ class AppViewModel(internal val app: LxMineApp) : ViewModel() {
     private suspend fun initialize() {
         deviceId = store.loadDeviceId()
         deviceName = android.os.Build.MODEL ?: "Android"
+        loadTrustedCircle()
         val server = com.lxlia.player.lx.LanSyncServer()
         lanSyncServer = server
         server.setIdentity(deviceId, deviceName)
         server.autoSyncEnabled = { lanAutoSync }
-        server.onAutoPlaylists = { _, peerName, incomingLists -> applyIncomingAutoPlaylists(peerName, incomingLists) }
+        server.verifyTrust = { peerId, token -> verifyTrustedPeer(peerId, token) }
+        server.onAcceptVouch = { _, introduced -> handleIncomingVouch(introduced) }
+        server.onUnpair = { peerId ->
+            viewModelScope.launch { removeTrustedLocal(peerId) }
+        }
+        server.onAutoPlaylists = { peerId, peerName, peerDigest, incomingLists ->
+            applyIncomingAutoPlaylists(peerId, peerName, peerDigest, incomingLists)
+        }
         val pullReceiver = com.lxlia.player.lx.LanPullReceiver(deviceId, server)
         lanDiscovery = com.lxlia.player.lx.LanDiscovery(deviceId, deviceName)
         lanDiscovery?.pullRequests = { lanSyncServer?.pullRequests() ?: org.json.JSONArray() }
         lanDiscovery?.autoSyncProvider = { lanAutoSync }
+        lanDiscovery?.syncDigestProvider = { com.lxlia.player.lx.computeSyncDigest(playlists) }
         lanDiscovery?.onDevices = { list ->
-            viewModelScope.launch { devices = list }
+            viewModelScope.launch {
+                devices = list
+                syncTrustedDisplayNames(list)
+                flushPendingVouches()
+                if (lanAutoSync && storeReady) {
+                    scheduleAutoSyncReconcile(delayMs = 300L, forceLocalPush = false)
+                }
+            }
             list.forEach { device -> device.pullRequests.forEach { requestId ->
                 viewModelScope.launch(Dispatchers.IO) {
                     runCatching { pullReceiver.receive(device, requestId) }
@@ -863,7 +944,12 @@ class AppViewModel(internal val app: LxMineApp) : ViewModel() {
             val parsed = HomeFeed.fromJson(cached)
             if (parsed != null && parsed.charts.firstOrNull()?.parts?.isNotEmpty() == true) homeFeed = parsed
         }
-        playlists = parsePlaylists(data.playlistsJson).ifEmpty { listOf(createPlaylist("我的收藏", true)) }
+        val loadedPlaylists = parsePlaylists(data.playlistsJson)
+        playlists = if (loadedPlaylists.none { it.isFavorite }) {
+            listOf(createPlaylist("我的收藏", true)) + loadedPlaylists
+        } else {
+            loadedPlaylists
+        }
         sources = uniqueSyncSources(SyncSourcePayload.listFromJson(data.sourcesJson))
         recentSongs = Song.listFromJson(store.loadRecentSongs())
         if (sources.isEmpty() && data.sourceScript.isNotEmpty()) {
@@ -896,6 +982,10 @@ class AppViewModel(internal val app: LxMineApp) : ViewModel() {
         activeId = engine.activeId
         storeReady = true
         save()
+        if (lanAutoSync) {
+            viewModelScope.launch(Dispatchers.IO) { runCatching { lanDiscovery?.announceNow() } }
+            scheduleAutoSyncReconcile(delayMs = 500L, forceLocalPush = true)
+        }
         restorePlaybackIfReady()
     }
 
@@ -972,6 +1062,51 @@ class AppViewModel(internal val app: LxMineApp) : ViewModel() {
             settings["lxmine_bt_car_lyrics_mode"] as? String
         )
         PlaybackController.setBluetoothCarLyrics(bluetoothCarLyricsEnabled, bluetoothCarLyricsMode)
+        mobileDesktopLyricsEnabled = settings["lxmine_mobile_desktop_lyrics"] == true
+        mobileDesktopLyricsLocked = settings["lxmine_mobile_desktop_lyrics_locked"] == true
+        (settings["lxmine_mobile_desktop_lyric_size"] as? Number)?.toFloat()?.takeIf { it.isFinite() }?.let {
+            mobileDesktopLyricScale = it.coerceIn(
+                com.lxlia.player.audio.DesktopLyricsOverlay.MIN_FONT_SCALE,
+                com.lxlia.player.audio.DesktopLyricsOverlay.MAX_FONT_SCALE,
+            )
+        }
+        (settings["lxmine_mobile_desktop_lyric_lines"] as? Number)?.toInt()?.let {
+            mobileDesktopLyricLines = if (it >= 2) 2 else 1
+        }
+        val validDesktopModes = setOf("cover-solid", "cover-gradient", "custom-solid", "custom-gradient")
+        val savedDesktopMode = (settings["lxmine_mobile_desktop_lyric_color_mode"] as? String)?.takeIf { it in validDesktopModes }
+        mobileDesktopLyricColorMode = savedDesktopMode ?: "cover-gradient"
+        (settings["lxmine_mobile_desktop_lyric_color"] as? String)?.takeIf { Regex("^#[0-9a-fA-F]{6}$").matches(it) }?.let {
+            if (savedDesktopMode != null || !it.equals("#22C55E", ignoreCase = true)) {
+                mobileDesktopLyricColor = it
+            }
+        }
+        (settings["lxmine_mobile_desktop_lyric_color2"] as? String)?.takeIf { Regex("^#[0-9a-fA-F]{6}$").matches(it) }?.let {
+            mobileDesktopLyricColor2 = it
+        }
+        (settings["lxmine_mobile_desktop_lyric_w"] as? Number)?.toFloat()?.takeIf { it.isFinite() }?.let {
+            mobileDesktopLyricWidth = it.coerceIn(
+                com.lxlia.player.audio.DesktopLyricsOverlay.MIN_WIDTH_FRACTION,
+                com.lxlia.player.audio.DesktopLyricsOverlay.MAX_WIDTH_FRACTION,
+            )
+        }
+        (settings["lxmine_mobile_desktop_lyric_x"] as? Number)?.toFloat()?.takeIf { it.isFinite() }?.let {
+            val maxXFrac = (1f - mobileDesktopLyricWidth + 0.08f).coerceAtLeast(0.08f)
+            mobileDesktopLyricX = it.coerceIn(
+                com.lxlia.player.audio.DesktopLyricsOverlay.MIN_X_FRACTION,
+                maxXFrac,
+            )
+        }
+        (settings["lxmine_mobile_desktop_lyric_y"] as? Number)?.toFloat()?.takeIf { it.isFinite() }?.let {
+            mobileDesktopLyricY = it.coerceIn(
+                com.lxlia.player.audio.DesktopLyricsOverlay.MIN_Y_FRACTION,
+                com.lxlia.player.audio.DesktopLyricsOverlay.MAX_Y_FRACTION,
+            )
+        }
+        if (mobileDesktopLyricsEnabled && !com.lxlia.player.audio.DesktopLyricsOverlay.canDrawOverlays(app)) {
+            mobileDesktopLyricsEnabled = false
+        }
+        syncDesktopLyricsOverlay()
         sleepFinishSong = settings["lxmine_sleep_finish_song"] == true
         (settings["lxmine_disliked_keys"] as? JSONArray)?.let { arr ->
             val list = mutableListOf<String>()
@@ -1190,6 +1325,16 @@ class AppViewModel(internal val app: LxMineApp) : ViewModel() {
         settings["lxmine_stage_reset_camera"] = stageResetCameraOnSong
         settings["lxmine_bt_car_lyrics"] = bluetoothCarLyricsEnabled
         settings["lxmine_bt_car_lyrics_mode"] = bluetoothCarLyricsMode
+        settings["lxmine_mobile_desktop_lyrics"] = mobileDesktopLyricsEnabled
+        settings["lxmine_mobile_desktop_lyrics_locked"] = mobileDesktopLyricsLocked
+        settings["lxmine_mobile_desktop_lyric_size"] = Math.round(mobileDesktopLyricScale * 100.0) / 100.0
+        settings["lxmine_mobile_desktop_lyric_lines"] = mobileDesktopLyricLines
+        settings["lxmine_mobile_desktop_lyric_color_mode"] = mobileDesktopLyricColorMode
+        settings["lxmine_mobile_desktop_lyric_color"] = mobileDesktopLyricColor
+        settings["lxmine_mobile_desktop_lyric_color2"] = mobileDesktopLyricColor2
+        settings["lxmine_mobile_desktop_lyric_x"] = Math.round(mobileDesktopLyricX * 1000.0) / 1000.0
+        settings["lxmine_mobile_desktop_lyric_y"] = Math.round(mobileDesktopLyricY * 1000.0) / 1000.0
+        settings["lxmine_mobile_desktop_lyric_w"] = Math.round(mobileDesktopLyricWidth * 1000.0) / 1000.0
         settings["lxmine_sleep_finish_song"] = sleepFinishSong
         settings["lxmine_disliked_keys"] = JSONArray(dislikedKeys)
         settings["lxmine_audio_fx"] = JSONObject()
@@ -1605,18 +1750,13 @@ fun playlistWithSong(playlist: MusicPlaylist, song: Song, remove: Boolean = fals
     )
 }
 
-fun parsePlaylists(json: String): List<MusicPlaylist> {
+fun parsePlaylists(json: String, imported: Boolean = false): List<MusicPlaylist> {
     val parsed = MusicPlaylist.listFromJson(json)
     if (parsed.isEmpty()) return parsed
-    return parsed.map { item ->
-        val fav = item.isFavorite || item.name == "我喜欢的" || item.name == "我的收藏"
-        if (fav) {
-            item.copy(
-                isFavorite = true,
-                name = if (item.name.isEmpty() || item.name == "我喜欢的") "我的收藏" else item.name,
-            )
-        } else item
+    if (imported) {
+        return parsed.map { item -> if (item.isFavorite) item.copy(isFavorite = false) else item }
     }
+    return MusicPlaylist.normalizeList(parsed)
 }
 
 fun uniqueSyncSources(sources: List<SyncSourcePayload>): List<SyncSourcePayload> {

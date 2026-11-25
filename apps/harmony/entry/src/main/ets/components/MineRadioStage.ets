@@ -10,7 +10,7 @@ import { displaySync } from '@kit.ArkGraphics2D';
 
 interface StageLyricColors { primary: string; secondary: string; highlight: string; glow: string; }
 interface StageLyricItem { timeMs: number; text: string; words: Object[]; translation?: string; }
-interface MineRadioMetadata { translationLines: LyricLine[]; lyricColorMode: string; lyricColors: StageLyricColors; id: string; audioUrl: string; mode: string; appearance: string; lines: StageLyricItem[]; name: string; singer: string; cover: string; bgImage: string; bgOpacity: number; wallpaperBgOpacity: number; wallpaperOverallOpacity: number; duration: number; lyricOffset: number; lyricScale: number; lyricLineSpacing: number; lyricMaxLines: number; resetCameraOnSong: boolean; topInset: number; bottomInset: number; }
+interface MineRadioMetadata { translationLines: LyricLine[]; lyricColorMode: string; lyricColors: StageLyricColors; id: string; audioUrl: string; mode: string; appearance: string; lines: StageLyricItem[]; name: string; singer: string; cover: string; bgImage: string; bgOpacity: number; wallpaperBgOpacity: number; wallpaperOverallOpacity: number; duration: number; lyricOffset: number; lyricScale: number; lyricLineSpacing: number; lyricMaxLines: number; resetCameraOnSong: boolean; topInset: number; bottomInset: number; positionMs: number; playing: boolean; }
 class StageInputHost {
   onSeek: (time: number) => void = () => {};
   onReady: () => void = () => {};
@@ -91,6 +91,7 @@ export struct MineRadioStage {
   onDegraded: () => void = () => {};
   onVisualReady: () => void = () => {};
   onImmersiveToggle: (show: boolean) => void = () => {};
+  getLivePositionMs: () => number = () => this.positionMs;
   private stageKindForMode(mode: string): string {
     if (mode === 'off') return 'plain';
     if (mode.startsWith('folia-')) return 'folia';
@@ -259,6 +260,7 @@ export struct MineRadioStage {
     if (!this.ready) return;
     if (!forceImmediate && !this.visible && !this.vocalCancelActive) return;
     const enrichedLines = this.getEnrichedLines();
+    const livePos = Math.max(0, this.getLivePositionMs());
     const data: MineRadioMetadata = {
       translationLines: this.translationLines,
       lyricColorMode: this.lyricColorMode,
@@ -282,23 +284,41 @@ export struct MineRadioStage {
       lyricMaxLines: this.lyricMaxLines,
       resetCameraOnSong: this.resetCameraOnSong,
       topInset: this.topInset,
-      bottomInset: this.bottomInset
+      bottomInset: this.bottomInset,
+      positionMs: livePos,
+      playing: this.playing
     };
-    const metadataJson = JSON.stringify(data);
-    const metadataCall = metadataJson !== this.lastMetadataJson ? `window.lxmineStage?.metadata(${metadataJson});` : '';
-    this.lastMetadataJson = metadataJson;
-    this.controller.runJavaScript(`window.lxmineStage?.clock(${JSON.stringify({ positionMs: this.positionMs, playing: this.playing })});${metadataCall}window.lxmineStage?.vocalCancel(${JSON.stringify({ active: this.vocalCancelActive, vocalGain: this.vocalGain })});window.lxmineStage?.presentation(${JSON.stringify({ visible: this.visible, detail: this.detail })})`).catch((error: Error) => console.error(`[MineRadioStage] ${error.message}`));
+    // Compare structural signature excluding volatile positionMs so non-metadata clock ticks don't re-send metadata.
+    const metaSigObj: MineRadioMetadata = {
+      translationLines: data.translationLines, lyricColorMode: data.lyricColorMode, lyricColors: data.lyricColors,
+      id: data.id, audioUrl: data.audioUrl, mode: data.mode, appearance: data.appearance, lines: data.lines,
+      name: data.name, singer: data.singer, cover: data.cover, bgImage: data.bgImage, bgOpacity: data.bgOpacity,
+      wallpaperBgOpacity: data.wallpaperBgOpacity, wallpaperOverallOpacity: data.wallpaperOverallOpacity,
+      duration: data.duration, lyricOffset: data.lyricOffset, lyricScale: data.lyricScale,
+      lyricLineSpacing: data.lyricLineSpacing, lyricMaxLines: data.lyricMaxLines,
+      resetCameraOnSong: data.resetCameraOnSong, topInset: data.topInset, bottomInset: data.bottomInset,
+      positionMs: 0, playing: false
+    };
+    const metaSig = JSON.stringify(metaSigObj);
+    const metadataCall = metaSig !== this.lastMetadataJson ? `window.lxmineStage?.metadata(${JSON.stringify(data)});` : '';
+    this.lastMetadataJson = metaSig;
+    const now = Date.now();
+    this.lastPlaying = this.playing;
+    this.lastPosition = livePos;
+    this.lastClockAt = now;
+    this.controller.runJavaScript(`${metadataCall}window.lxmineStage?.clock(${JSON.stringify({ positionMs: livePos, playing: this.playing })});window.lxmineStage?.vocalCancel(${JSON.stringify({ active: this.vocalCancelActive, vocalGain: this.vocalGain })});window.lxmineStage?.presentation(${JSON.stringify({ visible: this.visible, detail: this.detail })})`).catch((error: Error) => console.error(`[MineRadioStage] ${error.message}`));
   }
   private clockChanged(): void {
     this.updateFrameRate();
     if (!this.ready || (!this.visible && !this.vocalCancelActive)) return;
+    const livePos = Math.max(0, this.getLivePositionMs());
     const now = Date.now();
     const expected = this.lastPosition + (this.lastPlaying ? now - this.lastClockAt : 0);
-    const important = !this.lastClockAt || this.lastPlaying !== this.playing || Math.abs(this.positionMs - expected) > 250;
-    const changed = important || now - this.lastClockAt >= 5000;
+    const important = !this.lastClockAt || this.lastPlaying !== this.playing || Math.abs(livePos - expected) > 90;
+    const changed = important || (this.playing && now - this.lastClockAt >= 1000);
     if (!changed) return;
-    this.controller.runJavaScript(`window.lxmineStage?.clock(${JSON.stringify({ positionMs: this.positionMs, playing: this.playing })})`).catch(() => {});
-    this.lastPlaying = this.playing; this.lastPosition = this.positionMs; this.lastClockAt = now;
+    this.controller.runJavaScript(`window.lxmineStage?.clock(${JSON.stringify({ positionMs: livePos, playing: this.playing })})`).catch(() => {});
+    this.lastPlaying = this.playing; this.lastPosition = livePos; this.lastClockAt = now;
   }
   private captureDiagnostics(): void {
     if (this.ready) {

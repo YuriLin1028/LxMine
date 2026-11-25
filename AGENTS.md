@@ -21,7 +21,7 @@
 
 当用户明确批准对外发布时，各端更新链路必须物理隔离、互不污染：
 
-1. **鸿蒙 Store 邀测版（`com.lxmine.player`）**：仅走 `store-release.json`（只分发华为应用市场邀请测试链接，绝不接 GitHub 安装包或其他端补丁）。
+1. **鸿蒙 Store 邀测版（`com.lxmine.player`）**：应用内**移除「检查更新」入口与静默检测逻辑**，版本更新统一由华为应用市场 / AGC 邀请测试分发（外部官网与邀测清单仍独立维护 `store-release.json`，绝不接 GitHub 安装包或其他端补丁）。
 2. **鸿蒙 HiCar 版（`cn.migu.music`）**：仅走 `harmony-hap-release.json`（仅校验 `.hap` 资产）。
 3. **Android 端（`com.lxlia.player`）**：仅走 `android-release.json`（仅校验 `.apk` 资产）。
 4. **Windows 端（`com.lxlia.player`）**：仅走 `windows-release.json`（仅校验 `.exe` 资产）；安装及静默更新必须写入已安装资产 SHA-256 回执并预填 NSIS `/S` `InstallLocation`，严禁出现重复弹窗的更新死循环。

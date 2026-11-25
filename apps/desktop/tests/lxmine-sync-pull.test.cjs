@@ -42,6 +42,22 @@ test('a container retrieves its addressed bundle and the sender waits for the re
     assert.equal((await confirmation).accepted, accepted);
     assert.equal((await fetch(base + 'pull/' + offer.id + '/container')).status, 404);
   }
+  // Pull-mode pairing request propagates kind='pair' and resolves responder device identity.
+  const pairPayload = { protocol: PROTOCOL, version: 1, type: 'pair', code: '654321', token: '0123456789abcdef0123456789abcdef', device: { id: 'sender', name: 'Windows', platform: 'win32' } };
+  const pairing = sender.sendPair('container', pairPayload);
+  const pairOffer = messages.at(-1).pullRequests[0];
+  assert.equal(pairOffer.receiverId, 'container');
+  assert.equal(pairOffer.kind, 'pair');
+  const pulledPair = await (await fetch(base + 'pull/' + pairOffer.id + '/container')).json();
+  assert.equal(pulledPair.bundle.type, 'pair');
+  assert.equal(pulledPair.bundle.code, '654321');
+  await fetch(base + 'receipt/' + pairOffer.id, {
+    method: 'POST',
+    body: JSON.stringify({ receiverId: 'container', accepted: true, device: { id: 'container', name: 'Android container', platform: 'android' } }),
+  });
+  const pairDone = await pairing;
+  assert.equal(pairDone.accepted, true);
+  assert.equal(pairDone.device.id, 'container');
   const pending = sender.send('container', bundle);
   const stopped = assert.rejects(pending, /server stopped/);
   sender.stop();

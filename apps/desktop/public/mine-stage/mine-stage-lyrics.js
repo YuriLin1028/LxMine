@@ -38,7 +38,6 @@
     lineProgress(line, next, now, duration, ranges) {
       if (!line) return 0;
       if (line.words?.length && line.charCount > 0) {
-        now = Math.max(0, Number(now) || 0);
         let previous = 0;
         for (let i = 0; i < line.words.length; i++) {
           const word = line.words[i], end = word.t + Math.max(.08, word.d || .24);
@@ -50,7 +49,7 @@
         }
         return 1;
       }
-      now += .020;
+      now += .02;
       const end = next && next.t > line.t ? next.t : Math.min(duration || now + 4, line.t + (line.duration || 4.8));
       const progress = Math.max(0, Math.min(1, (now - line.t) / Math.max(.75, end - line.t)));
       return progress * progress * (3 - 2 * progress);

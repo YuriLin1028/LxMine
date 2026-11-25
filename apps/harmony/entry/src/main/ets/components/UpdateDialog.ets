@@ -1,6 +1,6 @@
 import { musicButtonPress } from './MaterialControls';
 import { TEXT, MUTED, ACCENT, ON_ACCENT } from './Theme';
-import { AppUpdateInfo, UpdateProgress, isStoreEdition } from '../services/AppUpdater';
+import { AppUpdateInfo, UpdateProgress } from '../services/AppUpdater';
 
 @CustomDialog
 export struct UpdateDialog {
@@ -35,9 +35,6 @@ export struct UpdateDialog {
   }
 
   private defaultNotes(): string {
-    if (isStoreEdition()) {
-      return '包含最新功能优化与问题修复，点击下方按钮将直接跳转华为应用市场邀请测试页面进行更新。';
-    }
     return '包含最新功能优化与问题修复，点击下方按钮将通过国内加速镜像下载 HAP 安装包并保存到您指定的位置。';
   }
 
@@ -90,22 +87,14 @@ export struct UpdateDialog {
             .backgroundColor(ACCENT).borderRadius(20)
             .onClick(() => this.onRetryCheck())
         } else if (this.info.hasUpdate && !this.downloading) {
-          if (isStoreEdition()) {
-            Button('前往应用市场更新')
-              .attributeModifier(musicButtonPress).buttonStyle(ButtonStyleMode.NORMAL)
-              .height(40).padding({ left: 18, right: 18 }).fontSize(14).fontColor(ON_ACCENT)
-              .backgroundColor(ACCENT).borderRadius(20)
-              .onClick(() => this.onOpenInvite())
-          } else {
-            Button(this.downloadedPath ? '保存到指定位置' : '下载 HAP 到指定位置')
-              .attributeModifier(musicButtonPress).buttonStyle(ButtonStyleMode.NORMAL)
-              .height(40).padding({ left: 18, right: 18 }).fontSize(14).fontColor(ON_ACCENT)
-              .backgroundColor(ACCENT).borderRadius(20)
-              .onClick(() => {
-                if (this.downloadedPath) this.onSaveToLocation();
-                else this.onStartDownload();
-              })
-          }
+          Button(this.downloadedPath ? '保存到指定位置' : '下载 HAP 到指定位置')
+            .attributeModifier(musicButtonPress).buttonStyle(ButtonStyleMode.NORMAL)
+            .height(40).padding({ left: 18, right: 18 }).fontSize(14).fontColor(ON_ACCENT)
+            .backgroundColor(ACCENT).borderRadius(20)
+            .onClick(() => {
+              if (this.downloadedPath) this.onSaveToLocation();
+              else this.onStartDownload();
+            })
         }
       }.width('100%').padding({ top: 4 })
     }

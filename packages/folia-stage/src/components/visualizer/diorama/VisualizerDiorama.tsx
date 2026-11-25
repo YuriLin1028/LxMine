@@ -392,8 +392,8 @@ const VisualizerDiorama: React.FC<VisualizerDioramaProps> = (props) => {
             <div className="absolute inset-0 z-0">
                 <Canvas
                     camera={{ position: [0, 0.6, 9], fov: 55 }}
-                    dpr={[1, typeof window !== 'undefined' ? Math.min(2.5, Math.max(1.5, window.devicePixelRatio || 2)) : 2]}
-                    gl={{ alpha: true, antialias: true }}
+                    dpr={[1, typeof window !== 'undefined' ? Math.min(window.matchMedia?.('(pointer: coarse)')?.matches ? 1.5 : 2.0, Math.max(1.25, window.devicePixelRatio || 1.5)) : 1.5]}
+                    gl={{ alpha: true, antialias: typeof window === 'undefined' ? true : !window.matchMedia?.('(pointer: coarse)')?.matches }}
                     style={{ background: 'transparent' }}
                 >
                     <CameraRig

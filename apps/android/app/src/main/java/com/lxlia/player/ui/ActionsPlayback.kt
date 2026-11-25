@@ -127,6 +127,25 @@ fun AppViewModel.removeFromQueue(song: Song) {
     notify("已从播放队列移除「${song.name}」", 1600)
 }
 
+fun AppViewModel.playNext(song: Song) {
+    if (queue.isEmpty() || selected == null) {
+        playSong(song, listOf(song))
+        return
+    }
+    if (selected?.key == song.key) {
+        notify("当前正在播放「${song.name}」", 1600)
+        return
+    }
+    val next = PlaybackController.enqueueNext(song)
+    queue = next
+    autoMixPreloadKey = ""
+    autoMixPreloadRetryAt = 0L
+    autoMixTriggeredKey = ""
+    refreshAutoMixPlan()
+    savePlayback(true)
+    notify("已设为下一首播放「${song.name}」", 1600)
+}
+
 fun AppViewModel.applyQueueOrder(keys: List<String>) {
     queueOrderOpen = false
     val next = PlaybackController.reorderQueue(keys)
@@ -203,7 +222,7 @@ private fun AppViewModel.switchSearchQueueToPlaylist(song: Song, target: MusicPl
 }
 
 fun AppViewModel.like(song: Song) {
-    val existingFav = playlists.firstOrNull { it.isFavorite || it.name == "我喜欢的" || it.name == "我的收藏" }
+    val existingFav = playlists.firstOrNull { it.isFavorite }
     val favorite = (existingFav ?: createPlaylist("我的收藏", true)).copy(
         isFavorite = true,
         name = existingFav?.name?.takeIf { it.isNotEmpty() && it != "我喜欢的" } ?: "我的收藏",
@@ -223,7 +242,7 @@ fun AppViewModel.like(song: Song) {
 
 fun AppViewModel.collectSongsBatch(songs: List<Song>) {
     if (songs.isEmpty()) return
-    val existingFav = playlists.firstOrNull { it.isFavorite || it.name == "我喜欢的" || it.name == "我的收藏" }
+    val existingFav = playlists.firstOrNull { it.isFavorite }
     val favorite = (existingFav ?: createPlaylist("我的收藏", true)).copy(
         isFavorite = true,
         name = existingFav?.name?.takeIf { it.isNotEmpty() && it != "我喜欢的" } ?: "我的收藏",
@@ -250,6 +269,95 @@ fun AppViewModel.collectSongsBatch(songs: List<Song>) {
     scheduleAutoPlaylistSync()
     refreshPersonalizationIfNeeded()
     notify("已批量收藏 ${toAdd.size} 首歌曲", 2000)
+}
+
+fun AppViewModel.openBatchCollectPicker(songs: List<Song>, title: String = "选择要收藏的歌曲") {
+    val distinct = songs.distinctBy { it.key }
+    if (distinct.isEmpty()) {
+        notify("当前列表没有可收藏的歌曲", 2000)
+        return
+    }
+    batchCollectPickerTitle = title
+    batchCollectPickerSongs = distinct
+}
+
+fun AppViewModel.collectSongsToPlaylist(
+    songs: List<Song>,
+    targetPlaylistId: String?,
+    newPlaylistName: String? = null,
+) {
+    val clean = songs.distinctBy { it.key }
+    if (clean.isEmpty()) return
+    val cleanNew = newPlaylistName?.trim().orEmpty()
+    if (cleanNew.isNotEmpty()) {
+        val created = createPlaylist(cleanNew, false).copy(
+            songs = clean,
+            songIds = clean.map { it.key },
+            updatedAt = System.currentTimeMillis(),
+        )
+        playlists = playlists + created
+        save()
+        scheduleAutoPlaylistSync()
+        refreshPersonalizationIfNeeded()
+        notify("已新建「$cleanNew」并收藏 ${clean.size} 首歌曲", 2200)
+        return
+    }
+    if (targetPlaylistId.isNullOrBlank()) {
+        val existingFav = playlists.firstOrNull { it.isFavorite }
+        val favorite = (existingFav ?: createPlaylist("我的收藏", true)).copy(
+            isFavorite = true,
+            name = existingFav?.name?.takeIf { it.isNotEmpty() && it != "我喜欢的" } ?: "我的收藏",
+        )
+        val baseLists = if (existingFav == null) listOf(favorite) + playlists else playlists
+        val existingKeys = favorite.songs.mapTo(HashSet()) { it.key }
+        val toAdd = clean.filter { existingKeys.add(it.key) }
+        val skipped = clean.size - toAdd.size
+        if (toAdd.isEmpty()) {
+            notify("所选歌曲均已在「我的收藏」中", 1800)
+            return
+        }
+        val nextSongs = toAdd + favorite.songs
+        val next = favorite.copy(
+            songs = nextSongs,
+            songIds = nextSongs.map { it.key },
+            updatedAt = System.currentTimeMillis(),
+        )
+        playlists = baseLists.map { if (it.id == next.id) next else it }
+        if (openedPlaylist?.id == next.id) openedPlaylist = next
+        save()
+        scheduleAutoPlaylistSync()
+        refreshPersonalizationIfNeeded()
+        notify(
+            if (skipped > 0) "已收藏 ${toAdd.size} 首到「我的收藏」（跳过 $skipped 首重复）"
+            else "已收藏 ${toAdd.size} 首到「我的收藏」",
+            2200,
+        )
+        return
+    }
+    val target = playlists.firstOrNull { it.id == targetPlaylistId } ?: return
+    val existingKeys = target.songs.mapTo(HashSet()) { it.key }
+    val toAdd = clean.filter { existingKeys.add(it.key) }
+    val skipped = clean.size - toAdd.size
+    if (toAdd.isEmpty()) {
+        notify("所选歌曲均已在「${target.name}」中", 1800)
+        return
+    }
+    val nextSongs = toAdd + target.songs
+    val next = target.copy(
+        songs = nextSongs,
+        songIds = nextSongs.map { it.key },
+        updatedAt = System.currentTimeMillis(),
+    )
+    playlists = playlists.map { if (it.id == next.id) next else it }
+    if (openedPlaylist?.id == next.id) openedPlaylist = next
+    save()
+    scheduleAutoPlaylistSync()
+    refreshPersonalizationIfNeeded()
+    notify(
+        if (skipped > 0) "已收藏 ${toAdd.size} 首到「${target.name}」（跳过 $skipped 首重复）"
+        else "已收藏 ${toAdd.size} 首到「${target.name}」",
+        2200,
+    )
 }
 
 /** 与鸿蒙相同，居中对话框列出全部 LX 歌单，包含「我喜欢的」。 */
@@ -720,6 +828,7 @@ fun AppViewModel.loadCoverColors(song: Song) {
             if (selected?.key == song.key) {
                 coverColors = initialColors
                 updateSmartStage(false)
+                syncDesktopLyricsOverlay()
             }
         }
         val assets = if (song.source == "local" && song.coverUrl.isNotEmpty()) null
@@ -747,6 +856,7 @@ fun AppViewModel.loadCoverColors(song: Song) {
             if (selected?.key == song.key) {
                 coverColors = colors
                 updateSmartStage(false)
+                syncDesktopLyricsOverlay()
             }
         }
     }
@@ -796,7 +906,10 @@ fun AppViewModel.loadLyricsFor(song: Song, retryCount: Int = 0) {
             if (media.coverUrl.isNotEmpty() && media.coverUrl != song.coverUrl) {
                 applyHydratedCovers(mapOf(song.key to media.coverUrl))
                 val colors = app.coverPalette.colors(media.coverUrl)
-                if (selected?.key == song.key) coverColors = colors
+                if (selected?.key == song.key) {
+                    coverColors = colors
+                    syncDesktopLyricsOverlay()
+                }
             }
             updateSmartStage(true)
             refreshAutoMixPlan()
@@ -833,6 +946,7 @@ fun AppViewModel.updateStageTranslations() {
     stageTranslations = grouped.entries.sortedBy { it.key }.map { (time, values) ->
         LyricLine(time, values.joinToString("\n"))
     }
+    PlaybackController.setTranslationLines(stageTranslations)
 }
 
 fun AppViewModel.setLyricColorMode(value: String) {
@@ -1141,8 +1255,8 @@ fun AppViewModel.refreshAutoMixPlan() {
     )
     currentAutoMixPlan = if (plan.enabled) plan else null
     autoMixPreview = if (plan.enabled && next != null) "${plan.summary} → ${next.name}" else plan.summary
-    // 主动式提前预载：规划就绪后立即后台预热副轨，不再等到最后 40 秒
-    if (plan.enabled && next != null && playing && !resolving && !PlaybackController.autoMixActive) {
+    // 延迟至起播 4.5s 后再预热副轨，避免切歌瞬间与舞台/歌词渲染争抢网络与解码器
+    if (plan.enabled && next != null && playing && !resolving && !PlaybackController.autoMixActive && PlaybackController.livePositionMs() >= 4500L) {
         ensureAutoMixPreload(false)
     }
 }
@@ -1161,8 +1275,8 @@ fun AppViewModel.tickAutoMix(posMs: Long, durMs: Long) {
     }
     if (plan == null || !plan.enabled) return
     val pairKey = "${cur.key}->${next.key}"
-    // 播放满 2 秒起即主动维持副轨已预加载（换歌单/拖进度/网络抖动均自动补齐）
-    if (posMs >= 2000L) {
+    // 播放满 4.5 秒后再后台预热副轨，确保切歌瞬间动效满帧无卡顿
+    if (posMs >= 4500L) {
         ensureAutoMixPreload(false)
     }
     val remainingMs = (effDur - posMs).coerceAtLeast(0L)

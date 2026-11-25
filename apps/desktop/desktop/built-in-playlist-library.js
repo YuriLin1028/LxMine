@@ -4,6 +4,8 @@ const path = require('path');
 
 const BUILT_IN_PLAYLIST_VERSION = 1;
 const BUILT_IN_PLAYLIST_FILE = 'built-in-playlists.json';
+const FAVORITE_PORTABLE_ID = 'lxmine-favorite';
+const FAVORITE_ID = crypto.createHash('sha256').update(FAVORITE_PORTABLE_ID).digest('hex').slice(0, 24);
 const MAX_PLAYLISTS = 100;
 const MAX_INDEX_BYTES = 32 * 1024 * 1024;
 const MAX_TRACK_BYTES = 48 * 1024;
@@ -113,18 +115,67 @@ function sanitizePlaylist(source) {
     ? customCoverRaw.slice(0, 600000)
     : '';
   const cleanName = cleanText(source.name, '未命名歌单', 80);
-  const isFavorite = source.isFavorite === true || cleanName === '我喜欢的' || cleanName === '我的收藏';
+  const isFavorite = source.isFavorite === true;
   const normalizedName = isFavorite && cleanName === '我喜欢的' ? '我的收藏' : cleanName;
   return {
     id,
     name: normalizedName,
     customCover,
     isFavorite,
-    portableId: cleanText(source.portableId, isFavorite ? 'lxmine-favorite' : id, 128),
+    portableId: cleanText(source.portableId, isFavorite ? FAVORITE_PORTABLE_ID : id, 128),
     createdAt: Math.max(0, Number(source.createdAt) || Date.now()),
     updatedAt: Math.max(0, Number(source.updatedAt) || Date.now()),
     tracks,
   };
+}
+
+/**
+ * 规范化内置收藏唯一性（方案 B + 1.3.0 自愈）：
+ * - 若没有任何 isFavorite=true，仅为首个旧版收藏项补打 isFavorite=true；
+ * - 若存在多个 isFavorite=true（1.3.0 导入同名 .lxmc 造成的重复项），仅保留规范收藏（FAVORITE_ID 优先），其余恢复为独立普通歌单。
+ */
+function normalizeSingleFavorite(playlists) {
+  const list = Array.isArray(playlists) ? playlists : [];
+  const favIndices = [];
+  for (let i = 0; i < list.length; i += 1) {
+    if (list[i] && list[i].isFavorite === true) favIndices.push(i);
+  }
+  if (favIndices.length === 0) {
+    let promoted = false;
+    return list.map((item) => {
+      if (!promoted && item && (item.id === FAVORITE_ID || item.portableId === FAVORITE_PORTABLE_ID || item.name === '我喜欢的' || item.name === '我的收藏')) {
+        promoted = true;
+        return {
+          ...item,
+          isFavorite: true,
+          portableId: item.portableId || FAVORITE_PORTABLE_ID,
+          name: (!item.name || item.name === '我喜欢的') ? '我的收藏' : item.name,
+        };
+      }
+      return item;
+    });
+  }
+  let keepIndex = favIndices.find((idx) => list[idx].id === FAVORITE_ID);
+  if (keepIndex === undefined) {
+    const portableMatches = favIndices.filter((idx) => list[idx].portableId === FAVORITE_PORTABLE_ID);
+    keepIndex = portableMatches.length ? portableMatches[portableMatches.length - 1] : favIndices[favIndices.length - 1];
+  }
+  return list.map((item, idx) => {
+    if (!item || item.isFavorite !== true) return item;
+    if (idx === keepIndex) {
+      return {
+        ...item,
+        isFavorite: true,
+        portableId: item.portableId || FAVORITE_PORTABLE_ID,
+        name: (!item.name || item.name === '我喜欢的') ? '我的收藏' : item.name,
+      };
+    }
+    return {
+      ...item,
+      isFavorite: false,
+      portableId: item.portableId === FAVORITE_PORTABLE_ID ? item.id : (item.portableId || item.id),
+    };
+  });
 }
 
 class BuiltInPlaylistLibrary {
@@ -143,11 +194,12 @@ class BuiltInPlaylistLibrary {
       const parsed = JSON.parse(fs.readFileSync(this.indexPath, 'utf8'));
       if (!parsed || parsed.version !== BUILT_IN_PLAYLIST_VERSION || !Array.isArray(parsed.playlists)) return;
       const seen = new Set();
-      this.playlists = parsed.playlists.slice(0, MAX_PLAYLISTS).map(sanitizePlaylist).filter((playlist) => {
+      const loaded = parsed.playlists.slice(0, MAX_PLAYLISTS).map(sanitizePlaylist).filter((playlist) => {
         if (!playlist || seen.has(playlist.id)) return false;
         seen.add(playlist.id);
         return true;
       });
+      this.playlists = normalizeSingleFavorite(loaded);
     } catch (_) {}
   }
 
@@ -233,7 +285,8 @@ class BuiltInPlaylistLibrary {
   create(name) {
     return this.mutate((next) => {
       if (next.length >= MAX_PLAYLISTS) throw Object.assign(new Error('BUILT_IN_PLAYLIST_LIMIT_REACHED'), { code: 'BUILT_IN_PLAYLIST_LIMIT_REACHED' });
-      const playlist = { id: crypto.randomBytes(12).toString('hex'), name: cleanText(name, '我的歌单', 80), createdAt: Date.now(), updatedAt: Date.now(), tracks: [] };
+      const id = crypto.randomBytes(12).toString('hex');
+      const playlist = { id, portableId: id, isFavorite: false, name: cleanText(name, '我的歌单', 80), createdAt: Date.now(), updatedAt: Date.now(), tracks: [] };
       next.unshift(playlist);
       return { playlist: this.summary(playlist) };
     });
@@ -244,7 +297,8 @@ class BuiltInPlaylistLibrary {
       const tracks = list.tracks.map(sanitizeTrack);
       if (tracks.some(track => !track)) throw new Error('导入歌单含有无效歌曲');
       const unique = [...new Map(tracks.map(track => [track.builtInIdentity, track])).values()];
-      return { id: crypto.randomBytes(12).toString('hex'), name: cleanText(list.name, '导入歌单', 80), createdAt: Date.now(), updatedAt: Date.now(), tracks: unique };
+      const id = crypto.randomBytes(12).toString('hex');
+      return { id, portableId: id, isFavorite: false, name: cleanText(list.name, '导入歌单', 80), createdAt: Date.now(), updatedAt: Date.now(), tracks: unique };
     });
     return this.mutate(next => {
       if (next.length + imported.length > MAX_PLAYLISTS) throw new Error('歌单超过存储数量限制');
@@ -295,6 +349,31 @@ class BuiltInPlaylistLibrary {
       playlist.tracks.unshift(track);
       playlist.updatedAt = Date.now();
       return { playlist: this.summary(playlist), added: true };
+    });
+  }
+
+  addTracks(id, sources) {
+    const list = Array.isArray(sources) ? sources.map(sanitizeTrack).filter(Boolean) : [];
+    if (!list.length) return Promise.reject(Object.assign(new Error('BUILT_IN_PLAYLIST_TRACK_INVALID'), { code: 'BUILT_IN_PLAYLIST_TRACK_INVALID' }));
+    return this.mutate((next) => {
+      const playlist = next.find((item) => item.id === cleanText(id, '', 64).toLowerCase());
+      if (!playlist) throw Object.assign(new Error('BUILT_IN_PLAYLIST_NOT_FOUND'), { code: 'BUILT_IN_PLAYLIST_NOT_FOUND' });
+      const seen = new Set(playlist.tracks.map((item) => item.builtInIdentity));
+      const toInsert = [];
+      let skippedCount = 0;
+      for (const track of list) {
+        if (seen.has(track.builtInIdentity)) {
+          skippedCount += 1;
+          continue;
+        }
+        seen.add(track.builtInIdentity);
+        toInsert.push(track);
+      }
+      if (toInsert.length) {
+        playlist.tracks.unshift(...toInsert);
+        playlist.updatedAt = Date.now();
+      }
+      return { playlist: this.summary(playlist), addedCount: toInsert.length, skippedCount };
     });
   }
 
@@ -388,11 +467,11 @@ class BuiltInPlaylistLibrary {
     }
     const touch = options && options.touch === true;
     return this.mutate((next) => {
-      let favorite = next.find((item) => item.isFavorite === true || item.name === '我喜欢的' || item.name === '我的收藏');
+      let favorite = next.find((item) => item.isFavorite === true);
       if (!favorite) {
         favorite = {
-          id: crypto.createHash('sha256').update('lxmine-favorite').digest('hex').slice(0, 24),
-          portableId: 'lxmine-favorite',
+          id: FAVORITE_ID,
+          portableId: FAVORITE_PORTABLE_ID,
           name: '我的收藏',
           customCover: '',
           isFavorite: true,
@@ -406,7 +485,7 @@ class BuiltInPlaylistLibrary {
         const nextSig = cleaned.map(t => t.builtInIdentity).join('|');
         favorite.isFavorite = true;
         if (!favorite.name || favorite.name === '我喜欢的') favorite.name = '我的收藏';
-        favorite.portableId = favorite.portableId || 'lxmine-favorite';
+        favorite.portableId = favorite.portableId || FAVORITE_PORTABLE_ID;
         favorite.tracks = cleaned;
         if (touch || prevSig !== nextSig) {
           favorite.updatedAt = Date.now();
@@ -420,7 +499,10 @@ class BuiltInPlaylistLibrary {
 module.exports = {
   BUILT_IN_PLAYLIST_FILE,
   BUILT_IN_PLAYLIST_VERSION,
+  FAVORITE_ID,
+  FAVORITE_PORTABLE_ID,
   BuiltInPlaylistLibrary,
+  normalizeSingleFavorite,
   sanitizeTrack,
   trackIdentity,
 };

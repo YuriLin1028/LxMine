@@ -175,7 +175,53 @@
         }
       }
       let clockRate = 1;
-      function position() { return clock.positionMs + (clock.playing ? (performance.now() - at) * clockRate : 0); }
+      let clockRateUntil = 0;
+      function position() {
+        const now = performance.now();
+        if (clock.playing) {
+          if (clockRate !== 1 && clockRateUntil > 0 && now >= clockRateUntil) {
+            clock.positionMs = clock.positionMs + (clockRateUntil - at) * clockRate;
+            at = clockRateUntil;
+            clockRate = 1;
+            clockRateUntil = 0;
+          }
+          return Math.max(0, clock.positionMs + (now - at) * clockRate);
+        }
+        return Math.max(0, clock.positionMs);
+      }
+      function applyPlainClockSample(inMsRaw, nextPlaying, snapImmediate) {
+        const now = performance.now();
+        const curMs = position();
+        const inMs = Math.max(0, Number(inMsRaw) || 0);
+        const diff = inMs - curMs;
+        if (!snapImmediate && clock.playing && nextPlaying) {
+          if (Math.abs(diff) > 450 || at <= 0) {
+            clock = { positionMs: inMs, playing: true };
+            clockRate = 1;
+            clockRateUntil = 0;
+          } else if (Math.abs(diff) < 18) {
+            clock = { positionMs: curMs, playing: true };
+            clockRate = 1;
+            clockRateUntil = 0;
+          } else {
+            const catchupMs = Math.min(850, Math.max(220, Math.abs(diff) * 2.4));
+            const rate = Math.max(0.90, Math.min(1.10, 1 + diff / catchupMs));
+            const windowMs = Math.abs(rate - 1) > 0.0005 ? Math.min(1200, Math.abs(diff / (rate - 1))) : 0;
+            clock = { positionMs: curMs, playing: true };
+            clockRate = rate;
+            clockRateUntil = windowMs > 0 ? now + windowMs : 0;
+          }
+        } else if (!snapImmediate && clock.playing && !nextPlaying && Math.abs(diff) < 400) {
+          clock = { positionMs: curMs, playing: false };
+          clockRate = 1;
+          clockRateUntil = 0;
+        } else {
+          clock = { positionMs: inMs, playing: !!nextPlaying };
+          clockRate = 1;
+          clockRateUntil = 0;
+        }
+        at = now;
+      }
       function cancelFollow() { cancelAnimationFrame(scrollFrame); scrollFrame = 0; scrollNode = null; scrollVelocity = 0; scrollAt = 0; }
       function scrollStep(time) {
         const dt = Math.max(.001, Math.min(.032, (time - (scrollAt || time - 16)) / 1000)); scrollAt = time;
@@ -431,26 +477,16 @@
             vcSourceUrl = value.audioUrl;
             if (vcAudio) vcAudio.pause();
           }
+          if (value.positionMs !== undefined && value.positionMs !== null && Number.isFinite(Number(value.positionMs))) {
+            applyPlainClockSample(Number(value.positionMs), value.playing !== undefined ? !!value.playing : clock.playing, key !== nextKey);
+          }
           syncPlainVocalAudio();
           if (metaVisualChanged) tick(true, initial);
           if (window.__lxmineNative && typeof window.__lxmineNative.visualReady === 'function') window.__lxmineNative.visualReady();
           if (parent !== window) parent.postMessage({ type: 'lxmine-stage-visual-ready' }, location.origin);
         },
         clock(value) {
-          const now = performance.now();
-          const curMs = position();
-          const inMs = Math.max(0, Number(value && value.positionMs) || 0);
-          const nextPlaying = !!(value && value.playing);
-          const diff = inMs - curMs;
-          let finalMs = inMs;
-          if (clock.playing && nextPlaying && Math.abs(diff) <= 650) {
-            finalMs = curMs;
-            clockRate = Math.max(0.88, Math.min(1.12, 1 + (diff / 1000) * 0.35));
-          } else {
-            clockRate = 1;
-          }
-          clock = { positionMs: finalMs, playing: nextPlaying };
-          at = now;
+          applyPlainClockSample(Number(value && value.positionMs) || 0, !!(value && value.playing), false);
           syncPlainVocalAudio();
           tick();
         },

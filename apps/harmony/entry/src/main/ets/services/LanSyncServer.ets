@@ -1,10 +1,11 @@
 import { socket } from '@kit.NetworkKit';
 import { buffer } from '@kit.ArkTS';
 import { PullSyncRequest } from './LanDiscovery';
+import { LanPushResponse, PeerSummary, IntroducedPeer } from './LanSyncClient';
 
 // 鸿蒙端局域网同步接收端：最小 HTTP 服务（TCPSocketServer）。
-// 只实现 docs/LANSYNC.md 需要的两个端点：GET /ping 与 POST /push。
-// 收到 push 后不立即应用，挂起等待本机用户在界面上确认。
+// 实现 /ping、/pair、/vouch、/unpair、/push、/auto-playlists、/pull、/receipt。
+// 未加入设备信任圈的同步与自动同步一律拒绝（403 UNTRUSTED）。
 
 export interface SyncSummary {
   settings: number;
@@ -18,6 +19,25 @@ export interface SyncIncoming {
   platform: string;
   bundleJson: string;
   summary: SyncSummary;
+  kind?: string;
+  peerId?: string;
+  pairCode?: string;
+  pairToken?: string;
+  transitive?: boolean;
+  peers?: PeerSummary[];
+  introducedPeers?: IntroducedPeer[];
+}
+
+export interface PairRespondOptions {
+  transitive: boolean;
+  introducedPeers: IntroducedPeer[];
+  reverseVouches: IntroducedPeer[];
+}
+
+export interface VouchHandlerReply {
+  accepted: boolean;
+  code: string;
+  message: string;
 }
 
 interface HttpRequestHead {
@@ -34,17 +54,43 @@ interface PendingEntry {
 
 interface OutgoingTransfer {
   receiverId: string;
+  kind: string;
   bundleJson: string;
   timer: number;
-  resolve: (accepted: boolean) => void;
+  resolve: (result: LanPushResponse) => void;
   reject: (error: Error) => void;
 }
 
-interface PullReceipt { receiverId?: string; accepted?: boolean; }
+interface PullReceipt {
+  receiverId?: string;
+  accepted?: boolean;
+  code?: string;
+  message?: string;
+  device?: BundleDevice;
+  transitive?: boolean;
+  introducedPeers?: IntroducedPeer[];
+  acceptedIntroducedIds?: string[];
+}
+
+export interface AutoSyncServerReply {
+  accepted: boolean;
+  changed: boolean;
+  syncDigest: string;
+  playlists: Object[];
+}
 
 interface BundleShape {
   protocol?: string;
   version?: number;
+  type?: string;
+  code?: string;
+  token?: string;
+  trustToken?: string;
+  transitive?: boolean;
+  peers?: PeerSummary[];
+  introducedPeers?: IntroducedPeer[];
+  introduced?: IntroducedPeer;
+  syncDigest?: string;
   device?: BundleDevice;
   settings?: Record<string, string>;
   sources?: Object[];
@@ -55,6 +101,21 @@ interface BundleDevice {
   id?: string;
   name?: string;
   platform?: string;
+}
+
+interface PairReplyPayload {
+  accepted: boolean;
+  device?: BundleDevice;
+  transitive?: boolean;
+  introducedPeers?: IntroducedPeer[];
+  reverseVouches?: IntroducedPeer[];
+  message: string;
+}
+
+interface VouchReplyPayload {
+  accepted: boolean;
+  code?: string;
+  message?: string;
 }
 
 const PROTOCOL = 'lxlia-lansync/1';
@@ -89,9 +150,13 @@ export class LanSyncServer {
   private buffers: Map<number, Uint8Array> = new Map();
   private pending: Map<string, PendingEntry> = new Map();
   private outgoing: Map<string, OutgoingTransfer> = new Map();
+  private rejectedPairAt: Map<string, number> = new Map();
   private seq: number = 0;
   private handler: ((incoming: SyncIncoming) => void) | null = null;
-  private autoPlaylistHandler: ((playlistsJson: string) => boolean) | null = null;
+  private autoPlaylistHandler: ((peerId: string, peerName: string, peerDigest: string, playlistsJson: string) => AutoSyncServerReply) | null = null;
+  private verifyTrustHandler: ((peerId: string, token: string) => boolean) | null = null;
+  private vouchHandler: ((voucherId: string, introduced: IntroducedPeer) => VouchHandlerReply) | null = null;
+  private unpairHandler: ((peerId: string) => void) | null = null;
   private autoSyncEnabled: boolean = false;
   private queue: SyncIncoming[] = [];
   private connections: Map<number, socket.TCPSocketConnection> = new Map();
@@ -100,7 +165,15 @@ export class LanSyncServer {
 
   setIdentity(id: string, name: string): void { this.deviceId = id; this.deviceName = name; }
   setAutoSync(enabled: boolean): void { this.autoSyncEnabled = enabled; }
-  onAutoPlaylists(handler: (playlistsJson: string) => boolean): void { this.autoPlaylistHandler = handler; }
+  setVerifyTrust(handler: (peerId: string, token: string) => boolean): void { this.verifyTrustHandler = handler; }
+  onAcceptVouch(handler: (voucherId: string, introduced: IntroducedPeer) => VouchHandlerReply): void { this.vouchHandler = handler; }
+  onUnpair(handler: (peerId: string) => void): void { this.unpairHandler = handler; }
+  onAutoPlaylists(handler: (peerId: string, peerName: string, peerDigest: string, playlistsJson: string) => AutoSyncServerReply): void { this.autoPlaylistHandler = handler; }
+
+  private isTrusted(peerId: string, token: string): boolean {
+    if (!this.verifyTrustHandler || !peerId || !token) return false;
+    try { return this.verifyTrustHandler(peerId, token) === true; } catch (_) { return false; }
+  }
 
   onIncoming(handler: (incoming: SyncIncoming) => void): void {
     this.handler = handler;
@@ -112,18 +185,35 @@ export class LanSyncServer {
 
   pullRequests(): PullSyncRequest[] {
     const requests: PullSyncRequest[] = [];
-    this.outgoing.forEach((entry: OutgoingTransfer, id: string) => { requests.push({ id, receiverId: entry.receiverId }); });
+    this.outgoing.forEach((entry: OutgoingTransfer, id: string) => { requests.push({ id, receiverId: entry.receiverId, kind: entry.kind }); });
     return requests;
   }
 
-  offerPush(receiverId: string, bundleJson: string): Promise<boolean> {
+  async offerPush(receiverId: string, bundleJson: string): Promise<boolean> {
+    const res = await this.offerOutgoing(receiverId, bundleJson, 'push');
+    return res.accepted;
+  }
+
+  offerPushDetailed(receiverId: string, bundleJson: string): Promise<LanPushResponse> {
+    return this.offerOutgoing(receiverId, bundleJson, 'push');
+  }
+
+  offerPair(receiverId: string, pairJson: string): Promise<LanPushResponse> {
+    return this.offerOutgoing(receiverId, pairJson, 'pair', 120000);
+  }
+
+  offerVouch(receiverId: string, vouchJson: string): Promise<LanPushResponse> {
+    return this.offerOutgoing(receiverId, vouchJson, 'vouch', 18000);
+  }
+
+  private offerOutgoing(receiverId: string, bundleJson: string, kind: string, timeoutMs: number = 120000): Promise<LanPushResponse> {
     const id = `${Date.now()}-${++this.seq}-${Math.random().toString(36).slice(2)}`;
-    return new Promise<boolean>((resolve, reject) => {
+    return new Promise<LanPushResponse>((resolve, reject) => {
       const timer = setTimeout(() => {
         this.outgoing.delete(id);
-        reject(new Error('接收方确认超时'));
-      }, 120000);
-      this.outgoing.set(id, { receiverId, bundleJson, timer, resolve, reject });
+        reject(new Error(kind === 'pair' ? '信任确认超时' : (kind === 'vouch' ? '引荐确认超时' : '接收方确认超时')));
+      }, timeoutMs);
+      this.outgoing.set(id, { receiverId, kind, bundleJson, timer, resolve, reject });
     });
   }
 
@@ -176,18 +266,35 @@ export class LanSyncServer {
     }
   }
 
-  /** 返回 true 表示请求已接受；调用方负责先应用数据。 */
   /** 供 UI 轮询：返回尚未处理的第一条请求（不消费，respond 时移除）。 */
   pollIncoming(): SyncIncoming | null {
     return this.queue.length > 0 ? this.queue[0] : null;
   }
 
-  async respond(id: string, accepted: boolean, message: string = ''): Promise<void> {
+  async respond(id: string, accepted: boolean, message: string = '', pairOpts?: PairRespondOptions): Promise<void> {
     const entry = this.pending.get(id);
     if (!entry) return;
     this.pending.delete(id);
     clearTimeout(entry.timer);
     this.queue = this.queue.filter((item: SyncIncoming) => item.id !== id);
+    if (entry.incoming.kind === 'pair') {
+      if (!accepted && entry.incoming.peerId) {
+        this.rejectedPairAt.set(entry.incoming.peerId, Date.now());
+      }
+      const selfDev: BundleDevice = { id: this.deviceId, name: this.deviceName, platform: 'harmony' };
+      const pairReply: PairReplyPayload = accepted
+        ? {
+          accepted: true,
+          device: selfDev,
+          transitive: pairOpts ? pairOpts.transitive : false,
+          introducedPeers: pairOpts ? pairOpts.introducedPeers : [],
+          reverseVouches: pairOpts ? pairOpts.reverseVouches : [],
+          message: message || 'accepted',
+        }
+        : { accepted: false, message: message || '对方拒绝了信任请求' };
+      await this.reply(entry.conn, 200, JSON.stringify(pairReply));
+      return;
+    }
     await this.reply(entry.conn, 200, JSON.stringify({ accepted, message }));
   }
 
@@ -274,13 +381,35 @@ export class LanSyncServer {
         } else {
           this.outgoing.delete(id); clearTimeout(entry.timer);
           this.reply(conn, 200, '{"confirmed":true}');
-          entry.resolve(receipt.accepted === true);
+          entry.resolve({
+            accepted: receipt.accepted === true,
+            code: typeof receipt.code === 'string' ? receipt.code : '',
+            message: typeof receipt.message === 'string' ? receipt.message : '',
+            peerId: receipt.device?.id ?? '',
+            peerName: receipt.device?.name ?? '',
+            peerPlatform: receipt.device?.platform ?? '',
+            transitive: receipt.transitive === true,
+            introducedPeers: Array.isArray(receipt.introducedPeers) ? receipt.introducedPeers : [],
+            acceptedIntroducedIds: Array.isArray(receipt.acceptedIntroducedIds) ? receipt.acceptedIntroducedIds : [],
+          });
         }
       } catch (_) { this.reply(conn, 400, '{"confirmed":false}'); }
       return;
     }
     if (head.method === 'GET' && head.path === '/lxlia-sync/ping') {
       this.reply(conn, 200, JSON.stringify({ protocol: PROTOCOL, id: this.deviceId, name: this.deviceName, platform: 'harmony', port: this.port }));
+      return;
+    }
+    if (head.method === 'POST' && head.path === '/lxlia-sync/pair') {
+      this.handlePair(conn, body);
+      return;
+    }
+    if (head.method === 'POST' && head.path === '/lxlia-sync/vouch') {
+      this.handleVouch(conn, body);
+      return;
+    }
+    if (head.method === 'POST' && head.path === '/lxlia-sync/unpair') {
+      this.handleUnpair(conn, body);
       return;
     }
     if (head.method === 'POST' && head.path === '/lxlia-sync/auto-playlists') {
@@ -294,8 +423,21 @@ export class LanSyncServer {
           this.reply(conn, 400, '{"accepted":false,"message":"invalid auto-sync payload"}');
           return;
         }
-        const changed = this.autoPlaylistHandler(JSON.stringify(bundle.playlists));
-        this.reply(conn, 200, JSON.stringify({ accepted: true, changed }));
+        const peerId = bundle.device.id ?? '';
+        const trustToken = typeof bundle.trustToken === 'string' ? bundle.trustToken : '';
+        if (!this.isTrusted(peerId, trustToken)) {
+          this.reply(conn, 403, '{"accepted":false,"code":"UNTRUSTED","message":"设备不在信任圈内"}');
+          return;
+        }
+        const peerName = bundle.device.name ?? 'LxMine';
+        const peerDigest = typeof bundle.syncDigest === 'string' ? bundle.syncDigest : '';
+        const reply = this.autoPlaylistHandler(peerId, peerName, peerDigest, JSON.stringify(bundle.playlists));
+        this.reply(conn, 200, JSON.stringify({
+          accepted: reply.accepted,
+          changed: reply.changed,
+          syncDigest: reply.syncDigest,
+          playlists: reply.playlists,
+        }));
       } catch (_) {
         this.reply(conn, 400, '{"accepted":false,"message":"invalid json"}');
       }
@@ -317,9 +459,17 @@ export class LanSyncServer {
       this.reply(conn, 400, '{"accepted":false,"message":"invalid bundle protocol"}');
       return;
     }
+    const peerId = bundle.device.id ?? '';
+    const trustToken = typeof bundle.trustToken === 'string' ? bundle.trustToken : '';
+    if (!this.isTrusted(peerId, trustToken)) {
+      this.reply(conn, 403, '{"accepted":false,"code":"UNTRUSTED","message":"设备不在信任圈内，请先加入信任圈"}');
+      return;
+    }
     const id = String(++this.seq);
     const incoming: SyncIncoming = {
       id,
+      kind: 'push',
+      peerId,
       peerName: bundle.device.name ?? 'LxMine',
       platform: bundle.device.platform ?? 'unknown',
       bundleJson: body,
@@ -334,5 +484,138 @@ export class LanSyncServer {
     this.queue.push(incoming);
     // 保持请求挂起；本机用户确认、数据成功落盘后才由 respond 返回成功。
     this.handler?.(incoming);
+  }
+
+  private handlePair(conn: socket.TCPSocketConnection, body: string): void {
+    let payload: BundleShape;
+    try {
+      payload = JSON.parse(body) as BundleShape;
+    } catch (_) {
+      this.reply(conn, 400, '{"accepted":false,"message":"invalid pair json"}');
+      return;
+    }
+    const peerId = payload.device?.id ?? '';
+    const code = typeof payload.code === 'string' ? payload.code : '';
+    const token = typeof payload.token === 'string' ? payload.token : '';
+    if (payload.protocol !== PROTOCOL || payload.version !== 1 || payload.type !== 'pair' ||
+      !peerId || peerId === this.deviceId || !/^\d{6}$/.test(code) || token.length < 16) {
+      this.reply(conn, 400, '{"accepted":false,"message":"invalid pair protocol"}');
+      return;
+    }
+    if (this.isTrusted(peerId, token)) {
+      const selfDev: BundleDevice = { id: this.deviceId, name: this.deviceName, platform: 'harmony' };
+      const okReply: PairReplyPayload = { accepted: true, device: selfDev, message: 'already trusted' };
+      this.reply(conn, 200, JSON.stringify(okReply));
+      return;
+    }
+    const lastRejected = this.rejectedPairAt.get(peerId) ?? 0;
+    if (Date.now() - lastRejected < 10000) {
+      this.reply(conn, 429, '{"accepted":false,"code":"RATE_LIMITED","message":"对方刚刚拒绝了请求，请稍后再试"}');
+      return;
+    }
+    for (const existing of this.pending.values()) {
+      if (existing.incoming.peerId === peerId) {
+        this.reply(conn, 409, '{"accepted":false,"code":"PENDING","message":"对方已有待处理的请求，请在对方屏幕确认"}');
+        return;
+      }
+    }
+    if (this.pending.size >= 3) {
+      this.reply(conn, 429, '{"accepted":false,"code":"BUSY","message":"对方待处理请求过多，请稍后再试"}');
+      return;
+    }
+    const id = String(++this.seq);
+    const peerList: PeerSummary[] = [];
+    if (Array.isArray(payload.peers)) {
+      for (const item of payload.peers) {
+        if (!item || typeof item.id !== 'string' || !item.id || item.id === this.deviceId || item.id === peerId) continue;
+        peerList.push({
+          id: item.id,
+          name: typeof item.name === 'string' && item.name ? item.name : 'LxMine',
+          platform: typeof item.platform === 'string' && item.platform ? item.platform : 'unknown',
+        });
+        if (peerList.length >= 32) break;
+      }
+    }
+    const incoming: SyncIncoming = {
+      id,
+      kind: 'pair',
+      peerId,
+      pairCode: code,
+      pairToken: token,
+      transitive: payload.transitive === true,
+      peers: peerList,
+      peerName: payload.device?.name ?? 'LxMine',
+      platform: payload.device?.platform ?? 'unknown',
+      bundleJson: body,
+      summary: { settings: 0, sources: 0, playlists: 0 },
+    };
+    const timer = setTimeout(() => { this.respond(id, false, '信任确认超时'); }, 120000);
+    this.pending.set(id, { conn, incoming, timer });
+    this.queue.push(incoming);
+    this.handler?.(incoming);
+  }
+
+  private handleVouch(conn: socket.TCPSocketConnection, body: string): void {
+    try {
+      const payload = JSON.parse(body) as BundleShape;
+      const peerId = payload.device?.id ?? '';
+      const token = typeof payload.trustToken === 'string' ? payload.trustToken : '';
+      const intro = payload.introduced;
+      const introId = typeof intro?.id === 'string' ? intro.id.trim() : '';
+      const introToken = typeof intro?.token === 'string' ? intro.token.trim() : '';
+      if (payload.protocol !== PROTOCOL || payload.version !== 1 || payload.type !== 'vouch' ||
+        !peerId || !introId || introId === this.deviceId || introToken.length < 16) {
+        const bad: VouchReplyPayload = { accepted: false, code: 'INVALID', message: 'invalid vouch payload' };
+        this.reply(conn, 400, JSON.stringify(bad));
+        return;
+      }
+      if (!this.isTrusted(peerId, token)) {
+        const deny: VouchReplyPayload = { accepted: false, code: 'UNTRUSTED', message: '设备不在信任圈内' };
+        this.reply(conn, 403, JSON.stringify(deny));
+        return;
+      }
+      if (!this.vouchHandler) {
+        const off: VouchReplyPayload = { accepted: false, code: 'TRANSITIVE_DISABLED', message: '未开启信任圈成员互通' };
+        this.reply(conn, 403, JSON.stringify(off));
+        return;
+      }
+      const introducedPeer: IntroducedPeer = {
+        id: introId,
+        name: typeof intro?.name === 'string' && intro.name.trim() ? intro.name.trim() : 'LxMine',
+        platform: typeof intro?.platform === 'string' && intro.platform.trim() ? intro.platform.trim() : 'unknown',
+        token: introToken,
+      };
+      const res = this.vouchHandler(peerId, introducedPeer);
+      if (res.accepted) {
+        const ok: VouchReplyPayload = { accepted: true };
+        this.reply(conn, 200, JSON.stringify(ok));
+      } else {
+        const rej: VouchReplyPayload = {
+          accepted: false,
+          code: res.code || 'TRANSITIVE_DISABLED',
+          message: res.message || '对方未开启信任圈成员互通',
+        };
+        this.reply(conn, 403, JSON.stringify(rej));
+      }
+    } catch (_) {
+      const err: VouchReplyPayload = { accepted: false, code: 'INVALID' };
+      this.reply(conn, 400, JSON.stringify(err));
+    }
+  }
+
+  private handleUnpair(conn: socket.TCPSocketConnection, body: string): void {
+    try {
+      const payload = JSON.parse(body) as BundleShape;
+      const peerId = payload.device?.id ?? '';
+      const token = typeof payload.trustToken === 'string' ? payload.trustToken : '';
+      if (payload.protocol !== PROTOCOL || !peerId || !this.isTrusted(peerId, token)) {
+        this.reply(conn, 403, '{"ok":false,"code":"UNTRUSTED"}');
+        return;
+      }
+      this.unpairHandler?.(peerId);
+      this.reply(conn, 200, '{"ok":true}');
+    } catch (_) {
+      this.reply(conn, 400, '{"ok":false}');
+    }
   }
 }

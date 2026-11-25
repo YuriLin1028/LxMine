@@ -41,7 +41,8 @@ function load(name, bindings, exports) {
   const source = stripTypeScriptTypes(text, { mode:'transform' });
   return vm.runInNewContext(`${source}\n;({${exports.join(',')}})`, { console, setTimeout, clearTimeout, Date, Uint8Array, ArrayBuffer, ...bindings });
 }
-const bundle = () => ({ protocol:'lxlia-lansync/1', version:1, device:{id:'other',name:'测试设备',platform:'win32'}, settings:{}, sources:[], playlists:[] });
+const TEST_TRUST_TOKEN = '0123456789abcdef0123456789abcdef';
+const bundle = () => ({ protocol:'lxlia-lansync/1', version:1, device:{id:'other',name:'测试设备',platform:'win32'}, trustToken: TEST_TRUST_TOKEN, settings:{}, sources:[], playlists:[] });
 
 test('source batch skips existing and intra-selection duplicates while preserving later files and metadata', () => {
   const { SourceImportBatch } = load('SourceImports', {}, ['SourceImportBatch']);
@@ -205,11 +206,12 @@ function serverFixture() {
   const tcp=new EventEmitter(); tcp.listen=async()=>{}; tcp.close=async()=>{};
   const {LanSyncServer} = load('LanSyncServer',{socket:{constructTCPSocketServerInstance:()=>tcp},buffer:Buffer},['LanSyncServer']);
   const server=new LanSyncServer(); server.setIdentity('self','Lxlia');
+  server.setVerifyTrust((peerId, token) => peerId === 'other' && token === TEST_TRUST_TOKEN);
   return {server,tcp};
 }
-function httpBytes(payload,head='') {
+function httpBytes(payload,head='',reqPath='/lxlia-sync/push') {
   const body=JSON.stringify(payload);
-  return Buffer.from(`POST /lxlia-sync/push HTTP/1.1\r\nContent-Length: ${Buffer.byteLength(body)}\r\n${head}\r\n${body}`);
+  return Buffer.from(`POST ${reqPath} HTTP/1.1\r\nContent-Length: ${Buffer.byteLength(body)}\r\n${head}\r\n${body}`);
 }
 
 test('a container transfer is addressed, fetched, and acknowledged after confirmation', async () => {
@@ -257,6 +259,53 @@ test('native receiver rejects oversized body declarations before buffering the p
   const {server,tcp}=serverFixture(); await server.start(); const conn=new Connection(); tcp.emit('connect',conn);
   conn.receive(Buffer.from('POST /lxlia-sync/push HTTP/1.1\r\nContent-Length: 999999999\r\n\r\n'));
   await new Promise(resolve=>setTimeout(resolve,0)); assert.match(conn.sent[0],/400/); await server.stop();
+});
+test('native trusted circle blocks untrusted push and auto-sync, supports pair handshake and authenticated unpair',async()=>{
+  const {server,tcp}=serverFixture();
+  const trusted = new Map();
+  let autoCalls = 0;
+  server.setVerifyTrust((peerId, token) => Boolean(token && trusted.get(peerId) === token));
+  server.onUnpair(peerId => trusted.delete(peerId));
+  server.setAutoSync(true);
+  server.onAutoPlaylists(() => { autoCalls += 1; return { accepted: true, changed: false, syncDigest: '0123456789abcdef', playlists: [] }; });
+  await server.start();
+
+  // Untrusted push -> 403 UNTRUSTED, never queued.
+  const c1 = new Connection(10); tcp.emit('connect', c1);
+  c1.receive(httpBytes(bundle()));
+  assert.match(c1.sent[0], /403/);
+  assert.match(c1.sent[0], /UNTRUSTED/);
+  assert.equal(server.pollIncoming(), null);
+
+  // Untrusted auto-playlists -> 403 UNTRUSTED, never merged.
+  const c2 = new Connection(11); tcp.emit('connect', c2);
+  c2.receive(httpBytes({ protocol:'lxlia-lansync/1', version:1, device:{id:'other',name:'Stranger'}, playlists:[] }, '', '/lxlia-sync/auto-playlists'));
+  assert.match(c2.sent[0], /403/);
+  assert.equal(autoCalls, 0);
+
+  // Pair request -> queued with kind='pair' and 6-digit code -> accepted -> unlocks auto-sync.
+  const token = 'aabbccddeeff00112233445566778899';
+  const c3 = new Connection(12); tcp.emit('connect', c3);
+  c3.receive(httpBytes({ protocol:'lxlia-lansync/1', version:1, type:'pair', code:'246810', token, device:{id:'friend',name:'PC',platform:'win32'} }, '', '/lxlia-sync/pair'));
+  const incomingPair = server.pollIncoming();
+  assert.equal(incomingPair.kind, 'pair');
+  assert.equal(incomingPair.pairCode, '246810');
+  trusted.set(incomingPair.peerId, incomingPair.pairToken);
+  await server.respond(incomingPair.id, true);
+  assert.match(c3.sent[0], /"accepted":true/);
+  assert.match(c3.sent[0], /"id":"self"/);
+
+  const c4 = new Connection(13); tcp.emit('connect', c4);
+  c4.receive(httpBytes({ protocol:'lxlia-lansync/1', version:1, device:{id:'friend',name:'PC'}, trustToken:token, playlists:[] }, '', '/lxlia-sync/auto-playlists'));
+  assert.match(c4.sent[0], /200 OK/);
+  assert.equal(autoCalls, 1);
+
+  // Authenticated unpair revokes trust.
+  const c5 = new Connection(14); tcp.emit('connect', c5);
+  c5.receive(httpBytes({ protocol:'lxlia-lansync/1', version:1, type:'unpair', device:{id:'friend'}, trustToken:token }, '', '/lxlia-sync/unpair'));
+  assert.match(c5.sent[0], /200 OK/);
+  assert.equal(trusted.has('friend'), false);
+  await server.stop();
 });
 test('native LRC handles repeated timestamps, offset, enhanced words and empty gap lines',()=>{
   const {parseLrc,findLyricIndex}=load('LyricParser',{},['parseLrc','findLyricIndex']);
@@ -423,4 +472,55 @@ test('native local artwork decodes the own-file cover and rejects an outdated co
   service.setArtwork({ source: 'local', id: 'old', coverUrl: 'file:///files/wrong.jpg' });
   assert.equal(updates.length, 1);
   await service.release();
+});
+
+test('imported favorite-named .lxmc playlists stay independent (Option B) and 1.3.0 duplicate favorites auto-heal', () => {
+  const { parsePlaylists, normalizePlaylists, mergeSyncPlaylists, computeSyncDigest } = load(
+    'MusicLibrary',
+    {},
+    ['parsePlaylists', 'normalizePlaylists', 'mergeSyncPlaylists', 'computeSyncDigest'],
+  );
+  const song1 = { source: 'wy', id: '1001', name: '晴天', singer: '周杰伦' };
+  const song2 = { source: 'tx', id: '2002', name: '江南', singer: '林俊杰' };
+
+  // 1) Importing a .lxmc playlist named "我的收藏" or "我喜欢的" keeps isFavorite = false
+  const imported = parsePlaylists(JSON.stringify([
+    { id: 'lx-import-1', name: '我的收藏', kind: 'lx', songs: [song1], createdAt: 10, updatedAt: 10 },
+    { id: 'lx-import-2', name: '我喜欢的', kind: 'lx', isFavorite: true, songs: [song2], createdAt: 20, updatedAt: 20 },
+  ]), true);
+  assert.equal(imported.length, 2);
+  assert.equal(imported[0].isFavorite, false);
+  assert.equal(imported[0].name, '我的收藏');
+  assert.equal(imported[1].isFavorite, false);
+  assert.equal(imported[1].name, '我喜欢的');
+
+  // 2) Auto-heal v1.3.0 damaged storage with two isFavorite=true playlists
+  const healed = parsePlaylists(JSON.stringify([
+    { id: 'builtin-fav', name: '我的收藏', kind: 'lx', isFavorite: true, songs: [], createdAt: 1, updatedAt: 1 },
+    { id: 'lx-trapped-130', name: '我的收藏', kind: 'lx', isFavorite: true, songs: [song1, song2], createdAt: 2, updatedAt: 2 },
+  ]));
+  assert.equal(healed.length, 2);
+  assert.equal(healed[0].isFavorite, true);
+  assert.equal(healed[0].id, 'builtin-fav');
+  assert.equal(healed[1].isFavorite, false);
+  assert.equal(healed[1].id, 'lx-trapped-130');
+  assert.equal(healed[1].songs.length, 2);
+
+  // 3) LAN sync & digest keep built-in favorite and imported same-named playlist strictly separate
+  const local = [
+    { id: 'builtin-fav', name: '我的收藏', kind: 'lx', isFavorite: true, songs: [song1], createdAt: 1, updatedAt: 100 },
+  ];
+  const incoming = [
+    { id: 'peer-fav', name: '我的收藏', kind: 'lx', isFavorite: true, songs: [song1], createdAt: 1, updatedAt: 100 },
+    { id: 'lx-import-1', name: '我的收藏', kind: 'lx', isFavorite: false, songs: [song2], createdAt: 2, updatedAt: 200 },
+  ];
+  const merged = mergeSyncPlaylists(local, incoming);
+  assert.equal(merged.length, 2);
+  assert.equal(merged.filter(p => p.isFavorite).length, 1);
+  const importedAfterSync = merged.find(p => p.id === 'lx-import-1');
+  assert.ok(importedAfterSync);
+  assert.equal(importedAfterSync.isFavorite, false);
+  assert.equal(importedAfterSync.songs.length, 1);
+  assert.notEqual(computeSyncDigest(local), computeSyncDigest(merged));
+  assert.equal(normalizePlaylists([{ id: 'legacy-1', name: '我喜欢的', kind: 'lx', songs: [], createdAt: 1, updatedAt: 1 }])[0].isFavorite, true);
 });

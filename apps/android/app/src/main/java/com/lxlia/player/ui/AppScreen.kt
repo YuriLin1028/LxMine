@@ -445,7 +445,11 @@ fun AppScreen(
                                                 duration = viewModel.duration,
                                                 lyricOffset = viewModel.lyricOffset,
                                                 playing = (viewModel.playing || viewModel.stageFadingOut) && viewModel.foreground,
-                                                positionMsProvider = { viewModel.positionMs },
+                                                positionMsProvider = {
+                                                    // 订阅 Compose positionMs 触发 200ms 刷新，同时读取 ExoPlayer 真实实时时刻消除歌词滞后
+                                                    val fallback = viewModel.positionMs
+                                                    com.lxlia.player.audio.PlaybackController.livePositionMs().takeIf { it > 0L || fallback <= 0L } ?: fallback
+                                                },
                                                 topInset = stageTopInset,
                                                 bottomInset = stageBottomInset,
                                                 visible = visible,
@@ -698,6 +702,20 @@ fun AppScreen(
                                     },
                                 )
                             }
+                            viewModel.batchCollectPickerSongs?.let { songsToCollect ->
+                                BatchCollectDialog(
+                                    title = viewModel.batchCollectPickerTitle,
+                                    songs = songsToCollect,
+                                    playlists = viewModel.playlists,
+                                    likedKeys = viewModel.likedKeys,
+                                    wide = viewModel.wide,
+                                    onDismiss = { viewModel.batchCollectPickerSongs = null },
+                                    onConfirm = { chosen, targetId, newName ->
+                                        viewModel.batchCollectPickerSongs = null
+                                        viewModel.collectSongsToPlaylist(chosen, targetId, newName)
+                                    },
+                                )
+                            }
                             viewModel.coverPickerPlaylist?.let { targetPl ->
                                 PlaylistCoverDialog(
                                     playlist = targetPl,
@@ -710,17 +728,60 @@ fun AppScreen(
                                 )
                             }
                             if (viewModel.colorPickerTarget.isNotEmpty()) {
-                                val isPrimary = viewModel.colorPickerTarget == "primary"
+                                val target = viewModel.colorPickerTarget
+                                val dialogTitle = when (target) {
+                                    "primary" -> "选择歌词主色"
+                                    "secondary" -> "选择歌词辅色"
+                                    "desktop-primary" -> "选择桌面歌词主色"
+                                    else -> "选择桌面歌词辅色"
+                                }
+                                val initHex = when (target) {
+                                    "primary" -> viewModel.lyricPrefs.primary
+                                    "secondary" -> viewModel.lyricPrefs.secondary
+                                    "desktop-primary" -> viewModel.mobileDesktopLyricColor
+                                    else -> viewModel.mobileDesktopLyricColor2
+                                }
                                 ColorPickerDialog(
-                                    title = if (isPrimary) "选择歌词主色" else "选择歌词辅色",
-                                    initialHex = if (isPrimary) viewModel.lyricPrefs.primary else viewModel.lyricPrefs.secondary,
+                                    title = dialogTitle,
+                                    initialHex = initHex,
                                     wide = viewModel.wide,
                                     onDismiss = { viewModel.colorPickerTarget = "" },
                                     onConfirm = { hex ->
-                                        if (isPrimary) viewModel.setLyricPrimary(hex) else viewModel.setLyricSecondary(hex)
+                                        when (target) {
+                                            "primary" -> viewModel.setLyricPrimary(hex)
+                                            "secondary" -> viewModel.setLyricSecondary(hex)
+                                            "desktop-primary" -> viewModel.setMobileDesktopLyricColor(hex)
+                                            else -> viewModel.setMobileDesktopLyricColor2(hex)
+                                        }
                                         viewModel.colorPickerTarget = ""
                                     },
                                 )
+                            }
+                            if (viewModel.overlayPermissionPromptOpen) {
+                                GlassDialog(onDismiss = {
+                                    viewModel.overlayPermissionPromptOpen = false
+                                    viewModel.pendingEnableDesktopLyrics = false
+                                }) {
+                                    Text("开启悬浮窗权限", fontSize = 18.sp, fontWeight = FontWeight.Bold, color = TEXT)
+                                    Text(
+                                        "桌面歌词需要系统的「显示在其他应用上层」权限，授权返回后将自动为您开启。",
+                                        fontSize = 14.sp,
+                                        color = TEXT,
+                                        lineHeight = 20.sp,
+                                    )
+                                    Row(
+                                        Modifier.fillMaxWidth(),
+                                        horizontalArrangement = Arrangement.spacedBy(12.dp, Alignment.End),
+                                    ) {
+                                        SheetHeaderTextAction("取消", color = MUTED) {
+                                            viewModel.overlayPermissionPromptOpen = false
+                                            viewModel.pendingEnableDesktopLyrics = false
+                                        }
+                                        SheetHeaderTextAction("前往开启", color = ACCENT) {
+                                            viewModel.openOverlayPermissionSettings()
+                                        }
+                                    }
+                                }
                             }
                             if (viewModel.earMonitorOpen) {
                                 viewModel.earMonitorOpen = false

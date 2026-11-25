@@ -36,6 +36,7 @@ import com.lxlia.player.ui.importFile
 import com.lxlia.player.ui.onBackground
 import com.lxlia.player.ui.onForeground
 import com.lxlia.player.ui.onHostReady
+import com.lxlia.player.ui.onOverlayPermissionReturn
 import com.lxlia.player.ui.AppViewModel
 import androidx.compose.ui.viewinterop.AndroidView
 import kotlinx.coroutines.launch
@@ -159,6 +160,7 @@ class MainActivity : ComponentActivity() {
             .onFailure { viewModel.error = "播放器服务启动失败：${it.message}" }
         viewModel.onForeground()
         PlaybackController.foregroundActive = true
+        viewModel.onOverlayPermissionReturn()
         if (viewModel.updateNeedsInstallPermission && viewModel.updateDownloadedApk != null &&
             com.lxlia.player.data.AppUpdater.canInstallPackages(this)
         ) {

@@ -35,6 +35,9 @@ export struct FeedSectionPage {
   onLikeSong: (song: Song) => void = () => {};
   onAddToPlaylist: (song: Song) => void = () => {};
   onDownloadSong: (song: Song) => void = () => {};
+  onPlayNextSong: (song: Song) => void = () => {};
+  onBatchCollectSongs: (songs: Song[]) => void = () => {};
+  onBatchDownloadSongs: (songs: Song[]) => void = () => {};
   @State private sortMode: string = 'added';
   @State private manualOrder: string[] = [];
   @State private orderOpen: boolean = false;
@@ -72,10 +75,11 @@ export struct FeedSectionPage {
   }
   @Builder private songRow(song: Song) {
     // 标准歌曲行：搜索、歌单详情、板块详情共用同一组件，禁止自造列表样式。
-    SongRow({ song, index: 0, wide: this.wide,
+    SongRow({ song, index: 0, wide: this.wide, showPlayNext: true,
       active: !!this.selectedKey && this.selectedKey === songKey(song),
       liked: this.likedSong(song),
       onPlay: () => this.onPlaySong(song, this.orderedSongs()),
+      onPlayNext: () => this.onPlayNextSong(song),
       onLike: () => this.onLikeSong(song),
       onMore: () => this.onAddToPlaylist(song),
       onDownload: () => this.onDownloadSong(song) })
@@ -105,9 +109,12 @@ export struct FeedSectionPage {
       Column({ space: 20 }) {
         if (this.songs.length) {
           SongListTools({ countText: `${this.songs.length} 首歌曲`,
+            wide: this.wide, showBatchCollect: true, showBatchDownload: true,
             onPlayAll: () => { const list = this.orderedSongs(); if (list.length) this.onPlaySongs(list); },
             onSort: (mode: string) => { this.sortMode = mode; },
-            onManual: () => { this.orderSongs = this.orderedSongs(); this.orderOpen = true; } })
+            onManual: () => { this.orderSongs = this.orderedSongs(); this.orderOpen = true; },
+            onBatchCollect: () => { const list = this.orderedSongs(); if (list.length) this.onBatchCollectSongs(list); },
+            onBatchDownload: () => { const list = this.orderedSongs(); if (list.length) this.onBatchDownloadSongs(list); } })
           Column({ space: 8 }) {
             ForEach(this.orderedSongs(), (song: Song) => { this.songRow(song) }, (song: Song) => `${song.source}:${song.id}|${song.coverUrl ?? ''}`)
           }.width('100%')

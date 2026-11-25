@@ -271,7 +271,7 @@ private fun SettingsMainPanel(vm: AppViewModel) {
         )
         LinkRow(
             title = "局域网同步",
-            detail = if (vm.lanAutoSync) "已开启自动同步 · 手机、平板与电脑双向合并" else "手机、平板与电脑之间双向同步歌单、音源与设置",
+            detail = if (vm.lanAutoSync) "已开启信任圈自动同步 · 手机、平板与电脑双向合并" else "设备信任圈 · 手机、平板与电脑之间双向同步歌单、音源与设置",
             onClick = { vm.openSettingsPanel("sync") },
         )
         LinkRow(
@@ -654,6 +654,7 @@ private fun LyricSettingsPanel(vm: AppViewModel) {
             horizontalAlignment = Alignment.CenterHorizontally,
             verticalArrangement = Arrangement.spacedBy((10f * vm.lyricPrefs.lyricLineSpacing).dp),
         ) {
+            Text("播放详情页歌词预览", fontSize = 11.sp, color = MUTED, modifier = Modifier.fillMaxWidth())
             Text(
                 previewText,
                 fontSize = (22f * vm.lyricPrefs.lyricScale).sp,
@@ -675,6 +676,29 @@ private fun LyricSettingsPanel(vm: AppViewModel) {
                     .height(4.dp)
                     .clip(RoundedCornerShape(2.dp))
                     .background(Brush.horizontalGradient(listOf(parseColor(vm.previewPrimary()), parseColor(vm.previewSecondary())))),
+            )
+            Box(
+                Modifier
+                    .fillMaxWidth()
+                    .padding(top = 6.dp, bottom = 2.dp)
+                    .height(0.8.dp)
+                    .background(Color(0x22FFFFFF)),
+            )
+            Text("桌面歌词预览（独立配色与字号）", fontSize = 11.sp, color = MUTED, modifier = Modifier.fillMaxWidth())
+            Text(
+                previewText,
+                fontSize = (20f * vm.mobileDesktopLyricScale.coerceIn(0.65f, 1.35f)).sp,
+                fontWeight = FontWeight.Bold,
+                color = parseColor(vm.desktopPreviewPrimary()),
+                maxLines = 2,
+                textAlign = androidx.compose.ui.text.style.TextAlign.Center,
+            )
+            Box(
+                Modifier
+                    .fillMaxWidth(0.54f)
+                    .height(3.dp)
+                    .clip(RoundedCornerShape(2.dp))
+                    .background(Brush.horizontalGradient(listOf(parseColor(vm.desktopPreviewPrimary()), parseColor(vm.desktopPreviewSecondary())))),
             )
         }
     }
@@ -776,6 +800,100 @@ private fun LyricSettingsPanel(vm: AppViewModel) {
             )
         }
     }
+    SectionLabel("桌面歌词")
+    SettingsCard {
+        ToggleRow(
+            title = "桌面歌词",
+            detail = "在桌面、其他应用及状态栏上方自由悬浮显示纯文本逐字滚动歌词，支持任意拖动、双指缩放及点按拖拽边角调整窗口大小",
+            value = vm.mobileDesktopLyricsEnabled,
+            onChange = { vm.setMobileDesktopLyricsEnabled(it) },
+        )
+        if (vm.mobileDesktopLyricsEnabled) {
+            ToggleRow(
+                title = "锁定桌面歌词（触摸穿透）",
+                detail = "开启后桌面歌词不拦截点击，可随时在此处或播放页「更多」中解锁",
+                value = vm.mobileDesktopLyricsLocked,
+                onChange = { vm.setMobileDesktopLyricsLocked(it) },
+            )
+        }
+        Column(Modifier.fillMaxWidth().padding(18.dp), verticalArrangement = Arrangement.spacedBy(10.dp)) {
+            Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                RowCopy("桌面歌词字号", "独立调节悬浮纯文字歌词大小（60%–165%，也可双指捏合或拖拽右下角缩放）", Modifier.weight(1f))
+                Text("${(vm.mobileDesktopLyricScale * 100f).roundToInt()}%", fontSize = 13.sp, fontWeight = FontWeight.Medium, color = ACCENT)
+                SliderResetIcon(active = kotlin.math.abs(vm.mobileDesktopLyricScale - 1.0f) > 0.01f) {
+                    vm.setMobileDesktopLyricScale(1.0f)
+                }
+            }
+            GlassSlider(
+                value = (vm.mobileDesktopLyricScale * 100f).roundToInt().coerceIn(60, 165).toFloat(),
+                onValueChange = { value -> vm.setMobileDesktopLyricScale(value / 100f) },
+                valueRange = 60f..165f,
+                step = 1f,
+            )
+        }
+        Column(Modifier.fillMaxWidth().padding(18.dp), verticalArrangement = Arrangement.spacedBy(10.dp)) {
+            Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                RowCopy("桌面歌词宽度", "独立调节悬浮窗宽度（36%–100%，可调窄贴合状态栏或拉宽展示长句）", Modifier.weight(1f))
+                Text("${(vm.mobileDesktopLyricWidth * 100f).roundToInt()}%", fontSize = 13.sp, fontWeight = FontWeight.Medium, color = ACCENT)
+                SliderResetIcon(active = kotlin.math.abs(vm.mobileDesktopLyricWidth - 0.86f) > 0.01f) {
+                    vm.setMobileDesktopLyricWidth(0.86f)
+                }
+            }
+            GlassSlider(
+                value = (vm.mobileDesktopLyricWidth * 100f).roundToInt().coerceIn(36, 100).toFloat(),
+                onValueChange = { value -> vm.setMobileDesktopLyricWidth(value / 100f) },
+                valueRange = 36f..100f,
+                step = 1f,
+            )
+        }
+        Column(Modifier.fillMaxWidth().padding(18.dp), verticalArrangement = Arrangement.spacedBy(10.dp)) {
+            Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                RowCopy("桌面歌词纵向位置", "支持负值直接上移覆盖状态栏（也可在悬浮歌词上直接自由拖动）", Modifier.weight(1f))
+                Text("${(vm.mobileDesktopLyricY * 100f).roundToInt()}%", fontSize = 13.sp, fontWeight = FontWeight.Medium, color = ACCENT)
+                SliderResetIcon(active = kotlin.math.abs(vm.mobileDesktopLyricY - 0.045f) > 0.008f) {
+                    vm.setMobileDesktopLyricY(0.045f)
+                }
+            }
+            GlassSlider(
+                value = (vm.mobileDesktopLyricY * 100f).roundToInt().coerceIn(-18, 96).toFloat(),
+                onValueChange = { value -> vm.setMobileDesktopLyricY(value / 100f) },
+                valueRange = -18f..96f,
+                step = 1f,
+            )
+        }
+        SelectRow(
+            title = "桌面歌词显示行数",
+            detail = "单行极简聚焦，或双行显示翻译 / 下一句",
+            labels = listOf("1 行（推荐）", "2 行（含翻译 / 下句）"),
+            values = listOf("1", "2"),
+            current = vm.mobileDesktopLyricLines.toString(),
+            onSelect = { vm.setMobileDesktopLyricLines(it.toIntOrNull() ?: 1) },
+        )
+        SelectRow(
+            title = "桌面歌词颜色来源",
+            detail = "独立于播放详情页设置桌面歌词配色，默认封面取色渐变",
+            labels = listOf("封面取色 · 纯色", "封面取色 · 渐变", "自定义 · 纯色", "自定义 · 渐变"),
+            values = listOf("cover-solid", "cover-gradient", "custom-solid", "custom-gradient"),
+            current = vm.mobileDesktopLyricColorMode,
+            onSelect = { vm.setMobileDesktopLyricColorMode(it) },
+        )
+        if (vm.mobileDesktopLyricColorMode.startsWith("custom")) {
+            ColorPickerTriggerRow("桌面歌词主色", vm.mobileDesktopLyricColor) {
+                vm.colorPickerTarget = "desktop-primary"
+            }
+            if (vm.mobileDesktopLyricColorMode.endsWith("gradient")) {
+                ColorPickerTriggerRow("桌面歌词辅色", vm.mobileDesktopLyricColor2) {
+                    vm.colorPickerTarget = "desktop-secondary"
+                }
+            }
+        }
+        LinkRow(
+            title = "重置桌面歌词位置与大小",
+            detail = "恢复默认居中靠上位置、86% 宽度与 100% 字号",
+            label = "重置",
+            onClick = { vm.resetMobileDesktopLyricsGeometry() },
+        )
+    }
     SectionLabel("车载与蓝牙歌词")
     SettingsCard {
         ToggleRow(
@@ -870,13 +988,74 @@ private fun SyncPanel(vm: AppViewModel) {
         }
         ToggleRow(
             title = "同局域网自动同步歌单",
-            detail = "开启后与同样开启此项的设备自动合并歌单与收藏列表（保留最新修改，不覆盖音源与设置）",
+            detail = "仅与已加入「设备信任圈」且开启此项的设备自动合并歌单与收藏（不覆盖音源与设置）",
             value = vm.lanAutoSync,
             onChange = { vm.setLanAutoSync(it) },
         )
+        ToggleRow(
+            title = "信任圈成员互通",
+            detail = "开启后，配对新设备时自动同步对方信任圈里的设备并互相引荐；关闭则仅拉入当前配对设备",
+            value = vm.trustCircleTransitive,
+            onChange = { vm.setTrustCircleTransitive(it) },
+        )
     }
 
-    SectionLabel("手动直连发送")
+    val trustedIds = remember(vm.trustedDevices) { vm.trustedDevices.map { it.id }.toSet() }
+    val onlineMap = remember(vm.devices) { vm.devices.associateBy { it.id } }
+
+    SectionLabel("设备信任圈（${vm.trustedDevices.size} 台）")
+    Text(
+        "仅信任圈内的设备可在此发送同步或自动合并歌单，防止同 Wi-Fi 下陌生设备误同步。",
+        fontSize = 12.sp,
+        color = MUTED,
+        modifier = Modifier.fillMaxWidth().padding(start = 4.dp, bottom = 10.dp),
+    )
+    SettingsCard {
+        if (vm.trustedDevices.isEmpty()) {
+            Text(
+                "尚未信任任何设备：请在下方「附近未信任设备」点击「加入信任圈」，对端核对验证码确认后即可在此发送同步。",
+                fontSize = 13.sp,
+                color = MUTED,
+                modifier = Modifier.fillMaxWidth().padding(18.dp),
+            )
+        }
+        vm.trustedDevices.forEach { item ->
+            val online = onlineMap[item.id]
+            val platformLabel = when (item.platform) {
+                "harmony" -> "HarmonyOS"
+                "android" -> "Android"
+                "win32", "windows" -> "Windows"
+                "darwin", "macos" -> "macOS"
+                "linux" -> "Linux"
+                else -> item.platform
+            }
+            val meta = buildList {
+                add(platformLabel)
+                add(if (online != null) "在线 · ${online.address}:${online.port}" else "离线")
+                if (online?.autoSyncPlaylists == true) add("自动同步已开启")
+            }.joinToString(" · ")
+            Row(
+                modifier = Modifier.fillMaxWidth().padding(horizontal = 18.dp, vertical = 14.dp),
+                verticalAlignment = Alignment.CenterVertically,
+                horizontalArrangement = Arrangement.spacedBy(8.dp),
+            ) {
+                RowCopy(title = item.name, detail = meta, modifier = Modifier.weight(1f))
+                PillButton(
+                    label = if (online != null) "发送" else "离线",
+                    filled = online != null,
+                    enabled = online != null && !vm.busy,
+                    onClick = { if (online != null) vm.send(online) },
+                )
+                PillButton(
+                    label = "移除",
+                    filled = false,
+                    onClick = { vm.requestRemoveTrustedDevice(item) },
+                )
+            }
+        }
+    }
+
+    SectionLabel("手动直连（广播隔离时使用）")
     SettingsCard {
         Column(
             modifier = Modifier.fillMaxWidth().padding(18.dp),
@@ -884,7 +1063,7 @@ private fun SyncPanel(vm: AppViewModel) {
         ) {
             RowCopy(
                 title = "输入目标 IP:端口",
-                detail = "广播被路由器隔离时，可直接填写接收端 IP（默认端口 41300）发送整份同步",
+                detail = "广播被路由器隔离时填写对端 IP（默认端口 41300）；未信任目标将先发起验证码信任配对",
             )
             Row(
                 modifier = Modifier.fillMaxWidth(),
@@ -913,7 +1092,7 @@ private fun SyncPanel(vm: AppViewModel) {
                     )
                 }
                 PillButton(
-                    label = if (vm.busy) "发送中…" else "发送",
+                    label = if (vm.busy) "处理中…" else "直连",
                     filled = true,
                     enabled = !vm.busy && manualInput.trim().isNotEmpty(),
                     onClick = { vm.sendDirect(manualInput) },
@@ -922,9 +1101,12 @@ private fun SyncPanel(vm: AppViewModel) {
         }
     }
 
-    SectionLabel("附近设备")
+    val untrustedDevices = remember(vm.devices, trustedIds) {
+        vm.devices.filter { it.id !in trustedIds }.sortedBy { it.name }
+    }
+    SectionLabel("附近未信任设备")
     Text(
-        "发送后由对方确认接收，支持手机、平板与电脑之间双向同步。",
+        "此处仅用于发现附近未信任设备并发起「加入信任圈」，已信任设备请直接在上方信任圈中操作。",
         fontSize = 12.sp,
         color = MUTED,
         modifier = Modifier.fillMaxWidth().padding(start = 4.dp, bottom = 10.dp),
@@ -939,8 +1121,15 @@ private fun SyncPanel(vm: AppViewModel) {
                 )
                 Text("正在寻找附近的 LxMine…", fontSize = 14.sp, color = MUTED)
             }
+        } else if (untrustedDevices.isEmpty()) {
+            Text(
+                "附近发现的 ${vm.devices.size} 台设备均已在上方信任圈内，请在信任圈中发送或管理。",
+                fontSize = 13.sp,
+                color = MUTED,
+                modifier = Modifier.fillMaxWidth().padding(18.dp),
+            )
         }
-        vm.devices.forEach { device ->
+        untrustedDevices.forEach { device ->
             val platformLabel = when (device.platform) {
                 "harmony" -> "HarmonyOS"
                 "android" -> "Android"
@@ -950,17 +1139,25 @@ private fun SyncPanel(vm: AppViewModel) {
                 else -> device.platform
             }
             val meta = buildList {
+                add("未信任")
                 add(platformLabel)
                 add("${device.address}:${device.port}")
                 if (device.ssid.isNotEmpty()) add(device.ssid)
                 if (device.autoSyncPlaylists) add("自动同步已开启")
             }.joinToString(" · ")
-            LinkRow(
-                title = device.name,
-                detail = meta,
-                label = "发送",
-                onClick = { vm.send(device) },
-            )
+            Row(
+                modifier = Modifier.fillMaxWidth().padding(horizontal = 18.dp, vertical = 14.dp),
+                verticalAlignment = Alignment.CenterVertically,
+                horizontalArrangement = Arrangement.spacedBy(10.dp),
+            ) {
+                RowCopy(title = device.name, detail = meta, modifier = Modifier.weight(1f))
+                PillButton(
+                    label = "加入信任圈",
+                    filled = true,
+                    enabled = !vm.busy,
+                    onClick = { vm.pairDevice(device) },
+                )
+            }
         }
     }
     if (vm.message.isNotEmpty()) {

@@ -325,6 +325,45 @@ fun PlayerMoreSheet(
                 chevron = true,
                 onClick = { vm.moreSubSheet = "定时关闭" },
             )
+            // 15. 桌面歌词快捷开关（与鸿蒙移动端对齐）
+            Row(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .padding(start = 12.dp, end = 12.dp, top = 8.dp, bottom = 6.dp),
+                horizontalArrangement = Arrangement.spacedBy(8.dp),
+                verticalAlignment = Alignment.CenterVertically,
+            ) {
+                Box(
+                    modifier = Modifier
+                        .clip(RoundedCornerShape(17.dp))
+                        .background(if (vm.mobileDesktopLyricsEnabled) ACCENT else CHIP_BG)
+                        .clickable { vm.setMobileDesktopLyricsEnabled(!vm.mobileDesktopLyricsEnabled) }
+                        .padding(horizontal = 14.dp, vertical = 8.dp),
+                ) {
+                    Text(
+                        if (vm.mobileDesktopLyricsEnabled) "桌面歌词：开" else "桌面歌词：关",
+                        fontSize = 13.sp,
+                        fontWeight = FontWeight.Medium,
+                        color = if (vm.mobileDesktopLyricsEnabled) ON_ACCENT else TEXT,
+                    )
+                }
+                if (vm.mobileDesktopLyricsEnabled) {
+                    Box(
+                        modifier = Modifier
+                            .clip(RoundedCornerShape(17.dp))
+                            .background(if (vm.mobileDesktopLyricsLocked) ACCENT else CHIP_BG)
+                            .clickable { vm.setMobileDesktopLyricsLocked(!vm.mobileDesktopLyricsLocked) }
+                            .padding(horizontal = 14.dp, vertical = 8.dp),
+                    ) {
+                        Text(
+                            if (vm.mobileDesktopLyricsLocked) "已锁定桌面歌词" else "锁定桌面歌词",
+                            fontSize = 13.sp,
+                            fontWeight = FontWeight.Medium,
+                            color = if (vm.mobileDesktopLyricsLocked) ON_ACCENT else TEXT,
+                        )
+                    }
+                }
+            }
         }
     }
 }

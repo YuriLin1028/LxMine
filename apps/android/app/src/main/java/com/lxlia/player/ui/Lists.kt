@@ -90,6 +90,7 @@ fun SongRow(
     onLike: () -> Unit,
     onMore: () -> Unit,
     onDownload: () -> Unit,
+    onPlayNext: (() -> Unit)? = null,
     onSwitchPlatform: (() -> Unit)? = null,
     onRemove: (() -> Unit)? = null,
     removeLabel: String = "从歌单移除",
@@ -98,6 +99,9 @@ fun SongRow(
     val canSwitch = onSwitchPlatform != null && song.source != "local"
     val rowMenu = rememberGlassMenuTrigger {
         buildList {
+            if (onPlayNext != null) {
+                add(GlassMenuItem("下一首播放") { onPlayNext() })
+            }
             add(GlassMenuItem(if (liked) "取消收藏" else "收藏") { onLike() })
             add(GlassMenuItem("添加到歌单") { onMore() })
             if (canSwitch) {
@@ -166,6 +170,9 @@ fun SongRow(
                     grouped = true,
                     onClick = onLike,
                 )
+                if (onPlayNext != null) {
+                    MaterialIconButton("ic_play_next.svg", "下一首播放", diameter = 42.dp, grouped = true, systemSymbol = false, onClick = onPlayNext)
+                }
                 if (canSwitch) {
                     MaterialIconButton("ic_switch_platform.svg", "切换平台", diameter = 42.dp, grouped = true, systemSymbol = false, onClick = { onSwitchPlatform?.invoke() })
                 }
@@ -177,35 +184,43 @@ fun SongRow(
                     MaterialIconButton("ic_download.svg", "下载歌曲", diameter = 42.dp, grouped = true, onClick = onDownload)
                 }
             } else {
-                MaterialIconButton(
-                    icon = if (liked) "ic_heart_fill.svg" else "ic_heart.svg",
-                    label = if (liked) "取消收藏" else "收藏",
-                    diameter = 38.dp,
-                    rawNoTint = liked,
-                    systemSymbol = false,
-                    selected = false,
-                    grouped = true,
-                    onClick = onLike,
-                )
-                if (showDownload && song.source != "local") {
-                    MaterialIconButton("ic_download.svg", "下载歌曲", diameter = 38.dp, grouped = true, onClick = onDownload)
-                }
-                val rotation by animateFloatAsState(if (expanded) 180f else 0f, tween(220), label = "row-chevron")
-                Box(
-                    Modifier
-                        .size(width = 34.dp, height = 42.dp)
-                        .semantics { contentDescription = "展开歌曲操作" }
-                        .pressDeform()
-                        .clickable { expanded = !expanded },
-                    contentAlignment = Alignment.Center,
+                Row(
+                    horizontalArrangement = Arrangement.spacedBy(2.dp),
+                    verticalAlignment = Alignment.CenterVertically,
                 ) {
-                    AssetIcon(
-                        "ic_down.svg",
-                        size = 16.dp,
-                        tint = MUTED,
+                    MaterialIconButton(
+                        icon = if (liked) "ic_heart_fill.svg" else "ic_heart.svg",
+                        label = if (liked) "取消收藏" else "收藏",
+                        diameter = 36.dp,
+                        rawNoTint = liked,
                         systemSymbol = false,
-                        modifier = Modifier.rotate(rotation),
+                        selected = false,
+                        grouped = true,
+                        onClick = onLike,
                     )
+                    if (onPlayNext != null) {
+                        MaterialIconButton("ic_play_next.svg", "下一首播放", diameter = 36.dp, grouped = true, systemSymbol = false, onClick = onPlayNext)
+                    }
+                    if (showDownload && song.source != "local") {
+                        MaterialIconButton("ic_download.svg", "下载歌曲", diameter = 36.dp, grouped = true, onClick = onDownload)
+                    }
+                    val rotation by animateFloatAsState(if (expanded) 180f else 0f, tween(220), label = "row-chevron")
+                    Box(
+                        Modifier
+                            .size(width = 30.dp, height = 40.dp)
+                            .semantics { contentDescription = "展开歌曲操作" }
+                            .pressDeform()
+                            .clickable { expanded = !expanded },
+                        contentAlignment = Alignment.Center,
+                    ) {
+                        AssetIcon(
+                            "ic_down.svg",
+                            size = 16.dp,
+                            tint = MUTED,
+                            systemSymbol = false,
+                            modifier = Modifier.rotate(rotation),
+                        )
+                    }
                 }
             }
         }
@@ -244,7 +259,9 @@ fun SongListTools(
     collected: Boolean = false,
     onCollect: (() -> Unit)? = null,
     onPlayAll: () -> Unit,
+    onBatchCollect: (() -> Unit)? = null,
     onBatchDownload: (() -> Unit)? = null,
+    wide: Boolean = false,
     onCustomCover: (() -> Unit)? = null,
     onSort: (String) -> Unit,
     onManual: () -> Unit,
@@ -252,6 +269,12 @@ fun SongListTools(
     onRename: () -> Unit = {},
     onBatchDelete: () -> Unit = {},
 ) {
+    val batchMenu = rememberGlassMenuTrigger {
+        buildList {
+            if (onBatchCollect != null) add(GlassMenuItem("批量收藏") { onBatchCollect() })
+            if (onBatchDownload != null) add(GlassMenuItem("批量下载") { onBatchDownload() })
+        }
+    }
     val sortMenu = rememberGlassMenuTrigger {
         listOf(
             "添加顺序" to "added",
@@ -298,8 +321,17 @@ fun SongListTools(
                 onClick = onCollect,
             )
         }
-        if (onBatchDownload != null) {
-            TextAction("批量下载", enabled = !disabled, onClick = onBatchDownload)
+        if (!wide && onBatchCollect != null && onBatchDownload != null) {
+            Box(batchMenu.modifier) {
+                TextAction("批量", enabled = !disabled, onClick = { batchMenu.show() })
+            }
+        } else {
+            if (onBatchCollect != null) {
+                TextAction("批量收藏", enabled = !disabled, onClick = onBatchCollect)
+            }
+            if (onBatchDownload != null) {
+                TextAction("批量下载", enabled = !disabled, onClick = onBatchDownload)
+            }
         }
         Box(sortMenu.modifier) {
             TextAction("排列", onClick = { sortMenu.show() })

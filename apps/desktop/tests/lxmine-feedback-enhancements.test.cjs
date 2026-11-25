@@ -31,10 +31,10 @@ test('BuiltInPlaylistLibrary supports favorite mirror, single/batch track remova
 
     const removed = await library.removeTracks(created.id, [1]);
     assert.equal(removed.removedCount, 1);
-    assert.deepEqual(library.playlists.find(p => p.id === created.id).tracks.map(t => String(t.id)), ['101', '303']);
-
-    await library.replaceTracks(created.id, [s3, s1]);
     assert.deepEqual(library.playlists.find(p => p.id === created.id).tracks.map(t => String(t.id)), ['303', '101']);
+
+    await library.replaceTracks(created.id, [s1, s3]);
+    assert.deepEqual(library.playlists.find(p => p.id === created.id).tracks.map(t => String(t.id)), ['101', '303']);
   } finally {
     fs.rmSync(userDataPath, { recursive: true, force: true });
   }
@@ -122,4 +122,64 @@ test('Redesigned 120fps startup.html has zero gold colors and high-refresh WebGL
   assert.match(html, /powerPreference:\s*'high-performance'/);
   assert.match(html, /__lxStartup/);
   assert.match(html, /window\.dismissSplash\s*=/);
+});
+
+test('Importing favorite-named .lxmc playlists stays independent (Option B), survives reload, heals 1.3.0 duplicates, and syncs separately', async () => {
+  const userDataPath = fs.mkdtempSync(path.join(os.tmpdir(), 'lxmine-import-fav-optionb-'));
+  try {
+    const library = new BuiltInPlaylistLibrary({ userDataPath });
+    const s1 = { source: 'wy', id: '101', name: '晴天', artist: '周杰伦', duration: 269 };
+    const s2 = { source: 'tx', id: '202', name: '江南', artist: '林俊杰', duration: 267 };
+
+    // 1) Import a .lxmc playlist named "我的收藏" BEFORE built-in favorite exists
+    await library.importLists([{ name: '我的收藏', tracks: [s2] }]);
+    assert.equal(library.playlists.length, 1);
+    assert.equal(library.playlists[0].isFavorite, false);
+    assert.equal(library.playlists[0].name, '我的收藏');
+
+    // 2) Setting built-in favorites must NOT hijack the imported "我的收藏" playlist
+    await library.setFavoriteTracks([s1]);
+    assert.equal(library.playlists.length, 2);
+    assert.equal(library.playlists.filter(p => p.isFavorite).length, 1);
+    const builtInFav = library.playlists.find(p => p.isFavorite);
+    const importedList = library.playlists.find(p => !p.isFavorite);
+    assert.equal(builtInFav.tracks.length, 1);
+    assert.equal(String(builtInFav.tracks[0].id), '101');
+    assert.equal(importedList.name, '我的收藏');
+    assert.equal(importedList.tracks.length, 1);
+    assert.equal(String(importedList.tracks[0].id), '202');
+
+    // 3) Reloading from disk preserves both separately
+    const reloaded = new BuiltInPlaylistLibrary({ userDataPath });
+    assert.equal(reloaded.playlists.length, 2);
+    assert.equal(reloaded.playlists.filter(p => p.isFavorite).length, 1);
+    assert.equal(reloaded.playlists.filter(p => !p.isFavorite && p.name === '我的收藏').length, 1);
+
+    // 4) Auto-heal a 1.3.0-damaged file containing two isFavorite=true playlists
+    const damagedPath = path.join(userDataPath, 'built-in-playlists.json');
+    const raw = JSON.parse(fs.readFileSync(damagedPath, 'utf8'));
+    raw.playlists.forEach(p => { p.isFavorite = true; p.portableId = 'lxmine-favorite'; });
+    fs.writeFileSync(damagedPath, JSON.stringify(raw), 'utf8');
+    const healed = new BuiltInPlaylistLibrary({ userDataPath });
+    assert.equal(healed.playlists.length, 2);
+    assert.equal(healed.playlists.filter(p => p.isFavorite).length, 1);
+    const healedImported = healed.playlists.find(p => !p.isFavorite);
+    assert.ok(healedImported);
+    assert.equal(healedImported.name, '我的收藏');
+    assert.equal(String(healedImported.tracks[0].id), '202');
+    assert.notEqual(healedImported.portableId, 'lxmine-favorite');
+
+    // 5) LAN sync snapshot + merge keep built-in favorite and imported "我的收藏" separate
+    const syncData = new LanSyncData({
+      root: userDataPath,
+      library: healed,
+      sourceManager: { list: () => ({ sources: [], activeId: '' }), reload() {} },
+    });
+    const snap = syncData.snapshot();
+    assert.equal(snap.playlists.length, 2);
+    assert.equal(snap.playlists.filter(p => p.isFavorite).length, 1);
+    assert.equal(snap.playlists.filter(p => !p.isFavorite && p.name === '我的收藏').length, 1);
+  } finally {
+    fs.rmSync(userDataPath, { recursive: true, force: true });
+  }
 });

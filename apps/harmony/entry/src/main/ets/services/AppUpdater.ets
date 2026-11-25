@@ -5,7 +5,7 @@ import { PRODUCT_NAME, VERSION_NAME } from 'BuildProfile';
 
 export const UPDATE_REPO: string = 'YuriLin1028/LxMine';
 export const HARMONY_INVITE_URL: string =
-  'https://appgallery.huawei.com/link/invite-test-wap?taskId=4bce68afbce8009046507ba1485a6273&invitationCode=1Klp9jEJXOp';
+  'https://appgallery.huawei.com/link/invite-test-wap?taskId=cb0477c12f7f41de8b3af93a13bb9483&invitationCode=1Klp9jEJXOp';
 
 export function isStoreEdition(): boolean {
   return PRODUCT_NAME.toString() === 'store';
@@ -179,7 +179,7 @@ function raceWithGrace<T>(tasks: Promise<T | null>[], graceMs: number = 1200): P
       if (settled) return;
       settled = true;
       if (graceTimer !== -1) clearTimeout(graceTimer);
-      resolve(collected);
+      resolve(collected.slice());
     };
     if (pending === 0) { finish(); return; }
     for (const task of tasks) {
@@ -200,28 +200,16 @@ function raceWithGrace<T>(tasks: Promise<T | null>[], graceMs: number = 1200): P
 
 export async function checkHarmonyUpdate(): Promise<AppUpdateInfo> {
   const current = currentHarmonyVersion();
+  // 应用市场邀请测试版（com.lxmine.player）统一走应用市场「应用尝鲜」更新，不提供应用内检测更新。
   if (isStoreEdition()) {
-    const storeTasks = STORE_RELEASE_ENDPOINTS.map(async (endpoint: string): Promise<RawStoreReleasePayload | null> => {
-      return await fetchStoreReleaseEndpoint(endpoint);
-    });
-    const validStores = await raceWithGrace<RawStoreReleasePayload>(storeTasks, 1200);
-    if (!validStores.length) {
-      throw new Error('无法连接邀请测试更新渠道，请检查网络');
-    }
-    validStores.sort((a: RawStoreReleasePayload, b: RawStoreReleasePayload) =>
-      compareVersions(b.tag_name ?? '', a.tag_name ?? '')
-    );
-    const bestStore = validStores[0];
-    const storeTag = bestStore.tag_name ?? '';
-    const storeLatest = storeTag.replace(/^v/i, '');
     return {
       currentVersion: current,
-      latestVersion: storeLatest,
-      tagName: storeTag,
-      hasUpdate: compareVersions(storeLatest, current) > 0,
-      publishedAt: bestStore.published_at ?? '',
-      notes: ((bestStore.notes ?? bestStore.body) ?? '').trim(),
-      releaseUrl: bestStore.invite_url ?? HARMONY_INVITE_URL,
+      latestVersion: current,
+      tagName: `v${current}`,
+      hasUpdate: false,
+      publishedAt: '',
+      notes: '',
+      releaseUrl: HARMONY_INVITE_URL,
       asset: null,
     };
   }

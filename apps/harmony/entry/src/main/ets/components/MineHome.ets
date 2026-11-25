@@ -33,6 +33,9 @@ export struct MineHome {
   onLikeSong: (song: Song) => void = () => {};
   onAddToPlaylist: (song: Song) => void = () => {};
   onDownloadSong: (song: Song) => void = () => {};
+  onPlayNextSong: (song: Song) => void = () => {};
+  onBatchCollectSongs: (songs: Song[]) => void = () => {};
+  onBatchDownloadSongs: (songs: Song[]) => void = () => {};
   @Prop activeAnchor: string = 'banner';
   onChip: (anchor: string) => void = () => {};
   @Prop activeFeedId: string = '';
@@ -177,12 +180,13 @@ export struct MineHome {
               Image($r('app.media.ic_play')).width(24).height(24).fillColor(ACCENT)
             }
           }.justifyContent(FlexAlign.Center)
+          .width(34).height(34).borderRadius(17).hoverEffect(HoverEffect.Highlight)
           // 播放键只管播放/暂停（ArkUI 点击不冒泡，不会触发卡片跳转）。
           .onClick(() => this.onPlayBanner(item))
         }.width('100%').padding(14)
       }.width('100%').height('100%').borderRadius(20).clip(true).backgroundColor('#17191C')
       this.badge(item.source, 22, 12)
-    }.width('100%').height('100%').onClick(() => this.onOpenFeed(item))
+    }.width('100%').height('100%').borderRadius(20).hoverEffect(HoverEffect.Highlight).onClick(() => this.onOpenFeed(item))
   }
   @Builder private homeBannerRow() {
     List({ space: 12 }) {
@@ -196,6 +200,7 @@ export struct MineHome {
   @Builder private songCardMenu(song: Song, queue: Song[]) {
     Menu() {
       MenuItem({ content: '立即播放' }).onClick(() => this.onPlayFeedSong(song, queue))
+      MenuItem({ content: '下一首播放' }).onClick(() => this.onPlayNextSong(song))
       MenuItem({ content: this.likedSong(song) ? '取消收藏' : '收藏' }).onClick(() => this.onLikeSong(song))
       MenuItem({ content: '添加到歌单' }).onClick(() => this.onAddToPlaylist(song))
       if (song.source !== 'local') {
@@ -221,10 +226,11 @@ export struct MineHome {
   }
   @Builder private feedSongLine(song: Song) {
     // 新歌速递行 = 标准 SongRow（与歌单详情/搜索一致），禁止自造列表样式。
-    SongRow({ song, index: 0, wide: this.wide,
+    SongRow({ song, index: 0, wide: this.wide, showPlayNext: true,
       active: this.playing && this.selectedKey === songKey(song),
       liked: this.likedSong(song),
       onPlay: () => this.onPlayFeedSong(song, this.sortedNewSongs()),
+      onPlayNext: () => this.onPlayNextSong(song),
       onLike: () => this.onLikeSong(song),
       onMore: () => this.onAddToPlaylist(song),
       onDownload: () => this.onDownloadSong(song) })
@@ -293,9 +299,12 @@ export struct MineHome {
           Column({ space: 10 }) {
             this.sectionTitle('新歌速递', '四平台新声同步汇聚', 'newSongs')
             SongListTools({ countText: `${this.feed.newSongs.length} 首歌曲`,
+              wide: this.wide, showBatchCollect: true, showBatchDownload: true,
               onPlayAll: () => { const list = this.sortedNewSongs(); if (list.length) this.onPlaySongs(list); },
               onSort: (mode: string) => { this.newSongsSort = mode; },
-              onManual: () => this.openNewSongsOrder() })
+              onManual: () => this.openNewSongsOrder(),
+              onBatchCollect: () => { const list = this.sortedNewSongs(); if (list.length) this.onBatchCollectSongs(list); },
+              onBatchDownload: () => { const list = this.sortedNewSongs(); if (list.length) this.onBatchDownloadSongs(list); } })
               .padding({ left: this.bleed(), right: this.bleed() })
             Column({ space: 2 }) {
               ForEach(this.sortedNewSongs().slice(0, 10), (song: Song) => { this.feedSongLine(song) }, (song: Song) => `${song.source}:${song.id}|${song.coverUrl ?? ''}`)

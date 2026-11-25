@@ -24,16 +24,42 @@ import { PlayerService, SessionLyricLine } from '../services/PlayerService';
 import { decodePlaylistFile } from '../services/PlaylistFiles';
 import { LyricLine, parseLrc, alignAuxLyricsToMain } from '../services/LyricParser';
 import { publicLyricBundle } from '../services/LyricService';
-import { initStore, loadAppData, saveAppData, loadDeviceId, saveUiDiagnostics, loadHomeCache, saveHomeCache, AppData } from '../services/Store';
+import { initStore, loadAppData, saveAppData, loadDeviceId, loadTrustedDevices, saveTrustedDevices, loadTrustCircleTransitive, saveTrustCircleTransitive, loadPendingVouches, savePendingVouches, saveUiDiagnostics, loadHomeCache, saveHomeCache, AppData } from '../services/Store';
 import { LanDiscovery, LanDevice } from '../services/LanDiscovery';
-import { LanSyncServer, SyncIncoming } from '../services/LanSyncServer';
-import { pushBundle, pushDirect, SyncBundle, SyncSourcePayload, uniqueSyncSources } from '../services/LanSyncClient';
+import { LanSyncServer, SyncIncoming, AutoSyncServerReply, PairRespondOptions, VouchHandlerReply } from '../services/LanSyncServer';
+import {
+  pushBundleDetailed,
+  pushDirectDetailed,
+  pingDirect,
+  pairDirect,
+  vouchDirect,
+  unpairDirect,
+  exchangeAutoPlaylists,
+  SyncBundle,
+  SyncSourcePayload,
+  TrustedDevice,
+  PairRequestPayload,
+  UnpairRequestPayload,
+  LanPushResponse,
+  PeerSummary,
+  IntroducedPeer,
+  PendingVouch,
+  VouchRequestPayload,
+  PENDING_VOUCH_TTL_MS,
+  uniqueSyncSources,
+  parseTrustedDevices,
+  parsePendingVouches,
+  generateTrustToken,
+  generatePairCode,
+  formatPairCode,
+  safeTokenEquals,
+} from '../services/LanSyncClient';
 import { SourceImportBatch } from '../services/SourceImports';
-import { MusicPlaylist, createPlaylist, parsePlaylists, playlistWithSong, playlistWithoutSongs, playlistRenamed, playlistCoverUpdated, playlistReordered, playlistSongReplaced, playlistCoversPatched, mergeSyncPlaylists, songKey } from '../services/MusicLibrary';
+import { MusicPlaylist, createPlaylist, parsePlaylists, playlistWithSong, playlistWithSongs, playlistWithoutSongs, playlistRenamed, playlistCoverUpdated, playlistReordered, playlistSongReplaced, playlistCoversPatched, mergeSyncPlaylists, computeSyncDigest, songKey } from '../services/MusicLibrary';
 import { FeedPlaylist, FeedSongsResult, HomeFeed, FeedSection, loadPlatformSection, loadFeedPlaylistSongs, loadMergedHome, enrichPersonalizedHome, loadMergedChartSongs, platformFeedSongs, hydrateSongCovers, applyCoversToSongs, recordListenHabit } from '../services/HomeFeed';
 import { PlatformSwitchDialog } from '../components/PlatformSwitchDialog';
 import { UpdateDialog } from '../components/UpdateDialog';
-import { AppUpdateInfo, UpdateProgress, checkHarmonyUpdate, downloadHapToCache, cancelHarmonyUpdateDownload, saveCachedHapToUserLocation, openAppGalleryInviteTest } from '../services/AppUpdater';
+import { AppUpdateInfo, UpdateProgress, isStoreEdition, checkHarmonyUpdate, downloadHapToCache, cancelHarmonyUpdateDownload, saveCachedHapToUserLocation, openAppGalleryInviteTest } from '../services/AppUpdater';
 import {
   DesktopLyricBounds,
   DesktopLyricDisplayLine,
@@ -60,6 +86,7 @@ import { EarMonitorService, EarMonitorMode, EarMonitorState } from '../services/
 import { defaultShortcutBindings, normalizeShortcutBindings, formatKeyEventCombo } from '../services/KeyboardShortcuts';
 import { ColorPickerSheet } from '../components/ColorPickerSheet';
 import { BatchDownloadSheet } from '../components/BatchDownloadSheet';
+import { BatchCollectSheet } from '../components/BatchCollectSheet';
 import { PlaylistCoverSheet } from '../components/PlaylistCoverSheet';
 import { EarMonitorSheet } from '../components/EarMonitorSheet';
 import { CommentsPanel } from '../components/CommentsPanel';
@@ -78,7 +105,7 @@ import { orderSongList } from '../services/SongOrder';
 import { LocalMusic, DownloadTrack } from '../services/LocalMusic';
 import { SongListView } from '../components/SongListView';
 import { AmbientBackdrop } from '../components/AmbientBackdrop';
-import { INK, TEXT, MUTED, ACCENT, platformName } from '../components/Theme';
+import { INK, TEXT, MUTED, ACCENT, platformName, devicePlatformName } from '../components/Theme';
 
 // 应用装配与用户动作；可见界面全部原生。
 interface PlaybackSnapshot { explicit?: boolean; song: Song; queue: Song[]; positionMs: number; playing: boolean; }
@@ -291,6 +318,12 @@ struct Index {
   @State private mode: string = '列表循环';
   @State private lyricOffset: number = 0;
   @State private devices: LanDevice[] = [];
+  @State private trustedDevices: TrustedDevice[] = [];
+  @State private trustCircleTransitive: boolean = true;
+  private trustedMap: Map<string, TrustedDevice> = new Map();
+  private pendingVouches: PendingVouch[] = [];
+  private vouchInFlight: Set<string> = new Set();
+  private vouchBackoff: Map<string, number> = new Map();
   @State private deviceName: string = 'Harmony';
   @State private lanSsid: string = '';
   @State private lanLocalAddress: string = '';
@@ -300,8 +333,8 @@ struct Index {
   @State private refreshAlgoDoubleTap: boolean = true;
   private algoRefreshSeed: number = 0;
   @State private editPlaylistOpen: boolean = false;
-  @State @Watch('syncFeatureSheets') private switchTargetSong: Song | null = null;
-  @State @Watch('syncFeatureSheets') private switchTargetScope: string = '';
+  @State private switchTargetSong: Song | null = null;
+  @State private switchTargetScope: string = '';
   @State private platformSwitchOpen: boolean = false;
   @State private sourcesVisited: boolean = false;
   private autoSyncTimer: number = -1;
@@ -337,17 +370,47 @@ struct Index {
   private settingsRestoreOffset: number = 0;
   private downloadsReturnTab: string = '资料库';
   @State private updateChecking: boolean = false;
-  @State @Watch('syncUpdateDialog') private updateDialogOpen: boolean = false;
-  private updateDialogController: CustomDialogController | null = null;
+  @State private updateDialogOpen: boolean = false;
   @State private updateInfo: AppUpdateInfo | null = null;
   @State private updateError: string = '';
   @State private updateDownloading: boolean = false;
   @State private updateProgress: UpdateProgress = { mirror: '', received: 0, total: 0, percent: 0 };
   @State private updateDownloadedPath: string = '';
+  // 必须直接声明在 @Component 属性初始化器中，确保 ets-loader 正确改写 @Link 双向引用，彻底根治点击检测更新闪退。
+  private updateDialogController: CustomDialogController = new CustomDialogController({
+    builder: UpdateDialog({
+      info: this.updateInfo,
+      errorText: this.updateError,
+      downloading: this.updateDownloading,
+      progress: this.updateProgress,
+      downloadedPath: this.updateDownloadedPath,
+      onDismiss: () => this.dismissUpdateDialog(),
+      onRetryCheck: () => { this.dismissUpdateDialog(); this.checkAppUpdate(false).catch(() => {}); },
+      onStartDownload: () => { this.startUpdateHapDownload().catch(() => {}); },
+      onCancelDownload: () => { cancelHarmonyUpdateDownload(); this.updateDownloading = false; },
+      onSaveToLocation: () => { this.saveUpdateHapToLocation().catch(() => {}); },
+      onOpenInvite: () => { this.openUpdateInviteLink().catch(() => {}); }
+    }),
+    alignment: DialogAlignment.Center,
+    autoCancel: true,
+    customStyle: false,
+    systemMaterial: musicMenuMaterial(),
+    onWillDismiss: (action: DismissDialogAction) => {
+      if (this.updateDownloading) return;
+      action.dismiss();
+      this.updateDialogOpen = false;
+    },
+    cancel: () => {
+      if (!this.updateDownloading) this.updateDialogOpen = false;
+    }
+  });
   @State private volume: number = 1.0;
   private preMuteVolume: number = 1.0;
   @State private desktopLyrics: boolean = false;
   @State private desktopLyricsLocked: boolean = false;
+  @State private mobileDesktopLyrics: boolean = false;
+  @State private mobileDesktopLyricsLocked: boolean = false;
+  @State private mobileDesktopLyricsSupported: boolean = false;
   @State private desktopLyricSize: number = 1.0;
   @State private desktopLyricLines: number = 3;
   @State private desktopLyricColorMode: string = 'cover-gradient';
@@ -360,11 +423,15 @@ struct Index {
   @State private pcImmersiveHovered: boolean = false;
   @State private spatialSystemActive: boolean = false;
   @State private earMonitorState: EarMonitorState = { mode: 'off', micVolume: 1.0, vocalVolume: 1.0, active: false, statusText: '未开启' };
-  @State @Watch('syncFeatureSheets') private colorPickerTarget: string = '';
+  @State private colorPickerTarget: string = '';
   @State private colorPickerOpen: boolean = false;
-  @State @Watch('syncFeatureSheets') private batchDownloadSongs: Song[] | null = null;
+  @State private batchDownloadSongs: Song[] | null = null;
   @State private batchDownloadOpen: boolean = false;
-  @State @Watch('syncFeatureSheets') private coverPickerPlaylist: MusicPlaylist | null = null;
+  @State private batchCollectSongs: Song[] | null = null;
+  @State private batchCollectTitle: string = '批量收藏歌曲';
+  @State private batchCollectOpen: boolean = false;
+  private upNextKeys: string[] = [];
+  @State private coverPickerPlaylist: MusicPlaylist | null = null;
   @State private coverPickerOpen: boolean = false;
   @State private shortcutsEnabled: boolean = true;
   @State private shortcuts: Record<string, string> = defaultShortcutBindings();
@@ -389,6 +456,11 @@ struct Index {
   private coverPalette: CoverPalette = new CoverPalette();
   private discovery: LanDiscovery | null = null;
   private syncServer: LanSyncServer = new LanSyncServer();
+  private autoSyncReconcileTimer: number = -1;
+  private autoSyncInFlight: Set<string> = new Set();
+  private autoSyncExchanged: Map<string, string> = new Map();
+  private autoSyncBackoff: Map<string, number> = new Map();
+  private lastAutoSyncToastAt: number = 0;
   private shareService: ShareService = new ShareService();
   private grip: GripService = new GripService();
   private promptedIncoming: string = '';
@@ -536,22 +608,23 @@ struct Index {
   }
 
   private async checkAppUpdate(silent: boolean = false): Promise<void> {
-    if (this.updateChecking) return;
+    if (isStoreEdition() || this.updateChecking || this.disposed) return;
     this.updateChecking = true;
     if (!silent) this.updateError = '';
     try {
       const info = await checkHarmonyUpdate();
+      if (this.disposed) return;
       this.updateInfo = info;
       this.updateError = '';
       this.updateDownloadedPath = '';
       if (info.hasUpdate || !silent) {
-        this.updateDialogOpen = true;
+        this.openUpdateDialog();
       }
     } catch (error) {
-      if (!silent) {
+      if (!silent && !this.disposed) {
         this.updateInfo = null;
         this.updateError = (error as Error).message || '无法连接更新服务器';
-        this.updateDialogOpen = true;
+        this.openUpdateDialog();
       }
     } finally {
       this.updateChecking = false;
@@ -559,6 +632,7 @@ struct Index {
   }
 
   private async startUpdateHapDownload(): Promise<void> {
+    if (isStoreEdition()) return;
     const asset = this.updateInfo?.asset;
     if (!asset || this.updateDownloading) return;
     this.updateDownloading = true;
@@ -580,6 +654,7 @@ struct Index {
   }
 
   private async saveUpdateHapToLocation(): Promise<void> {
+    if (isStoreEdition()) return;
     const cached = this.updateDownloadedPath;
     const asset = this.updateInfo?.asset;
     if (!cached || !asset) return;
@@ -587,7 +662,7 @@ struct Index {
       const ctx = getContext(this) as common.UIAbilityContext;
       const saved = await saveCachedHapToUserLocation(ctx, cached, asset.name);
       if (saved) {
-        this.updateDialogOpen = false;
+        this.closeUpdateDialog();
         this.notify(`已保存 ${asset.name} 到指定位置`, 3200);
       }
     } catch (error) {
@@ -596,63 +671,62 @@ struct Index {
   }
 
   private async openUpdateInviteLink(): Promise<void> {
+    if (isStoreEdition()) return;
     try {
       const ctx = getContext(this) as common.UIAbilityContext;
       await openAppGalleryInviteTest(ctx, this.updateInfo?.releaseUrl);
-      this.updateDialogOpen = false;
+      this.closeUpdateDialog();
     } catch (error) {
       this.updateError = `无法打开应用市场邀测链接：${(error as Error).message}`;
     }
   }
 
-  private syncFeatureSheets(): void {
-    this.platformSwitchOpen = this.switchTargetSong !== null && this.switchTargetScope.length > 0;
-    this.colorPickerOpen = this.colorPickerTarget.length > 0;
-    this.batchDownloadOpen = this.batchDownloadSongs !== null;
-    this.coverPickerOpen = this.coverPickerPlaylist !== null;
+  private openColorPicker(target: string): void {
+    this.colorPickerTarget = target;
+    this.colorPickerOpen = true;
   }
 
-  private syncUpdateDialog(): void {
-    if (this.updateDialogOpen) {
-      if (!this.updateDialogController) {
-        this.updateDialogController = new CustomDialogController({
-          builder: UpdateDialog({
-            info: this.updateInfo,
-            errorText: this.updateError,
-            downloading: this.updateDownloading,
-            progress: this.updateProgress,
-            downloadedPath: this.updateDownloadedPath,
-            onDismiss: () => this.dismissUpdateDialog(),
-            onRetryCheck: () => { this.dismissUpdateDialog(); this.checkAppUpdate(false).catch(() => {}); },
-            onStartDownload: () => { this.startUpdateHapDownload().catch(() => {}); },
-            onCancelDownload: () => { cancelHarmonyUpdateDownload(); this.updateDownloading = false; },
-            onSaveToLocation: () => { this.saveUpdateHapToLocation().catch(() => {}); },
-            onOpenInvite: () => { this.openUpdateInviteLink().catch(() => {}); }
-          }),
-          alignment: DialogAlignment.Center,
-          autoCancel: true,
-          customStyle: false,
-          systemMaterial: musicMenuMaterial(),
-          onWillDismiss: (action: DismissDialogAction) => {
-            if (this.updateDownloading) return;
-            action.dismiss();
-            this.updateDialogOpen = false;
-          },
-          cancel: () => {
-            if (!this.updateDownloading) this.updateDialogOpen = false;
-          }
-        });
-      }
-      try { this.updateDialogController.open(); } catch (_) {}
-    } else {
-      try { this.updateDialogController?.close(); } catch (_) {}
-    }
+  private closeColorPicker(): void {
+    this.colorPickerOpen = false;
+  }
+
+  private closeBatchDownload(): void {
+    this.batchDownloadOpen = false;
+  }
+
+  private closeBatchCollect(): void {
+    this.batchCollectOpen = false;
+  }
+
+  private openCoverPicker(playlist: MusicPlaylist): void {
+    this.coverPickerPlaylist = playlist;
+    this.coverPickerOpen = true;
+  }
+
+  private closeCoverPicker(): void {
+    this.coverPickerOpen = false;
+  }
+
+  private closePlatformSwitch(returnParent: boolean = false): void {
+    this.platformSwitchOpen = false;
+    if (returnParent) this.maybeReturnToParentSheet();
+  }
+
+  private openUpdateDialog(): void {
+    if (isStoreEdition() || this.disposed) return;
+    this.updateDialogOpen = true;
+    try { this.updateDialogController.open(); } catch (_) {}
+  }
+
+  private closeUpdateDialog(): void {
+    this.updateDialogOpen = false;
+    try { this.updateDialogController.close(); } catch (_) {}
   }
 
   private dismissUpdateDialog(): void {
     cancelHarmonyUpdateDownload();
     this.updateDownloading = false;
-    this.updateDialogOpen = false;
+    this.closeUpdateDialog();
   }
 
   private onPcLyricCmd(): void {
@@ -686,6 +760,30 @@ struct Index {
     this.save();
     this.pcWindow.setDesktopLyricsLocked(locked).catch(() => {});
     if (this.desktopLyrics) this.syncHarmonyPcDesktopLyrics(this.livePositionMs, true);
+  }
+
+  private applyMobileDesktopLyrics(enabled: boolean): void {
+    if (isHarmonyPc()) return;
+    this.mobileDesktopLyrics = enabled;
+    this.save();
+    this.player.setSystemDesktopLyrics(enabled, this.mobileDesktopLyricsLocked).then((ok: boolean) => {
+      if (this.disposed) return;
+      if (!ok && enabled) {
+        this.mobileDesktopLyrics = false;
+        this.save();
+        this.notify('当前系统暂不支持桌面歌词', 2400);
+      } else if (ok) {
+        this.notify(enabled ? '桌面歌词已开启（切至桌面即可查看）' : '桌面歌词已关闭', 1800);
+      }
+    }).catch(() => {});
+  }
+
+  private applyMobileDesktopLyricsLocked(locked: boolean): void {
+    if (isHarmonyPc()) return;
+    this.mobileDesktopLyricsLocked = locked;
+    this.save();
+    this.player.setSystemDesktopLyricsLocked(locked).catch(() => {});
+    this.notify(locked ? '已锁定桌面歌词位置' : '已解锁桌面歌词', 1600);
   }
 
   private buildDesktopLyricLines(activeIdx: number, count: number): DesktopLyricDisplayLine[] {
@@ -754,10 +852,11 @@ struct Index {
 
   private dismissTopView(): boolean {
     if (this.incoming) return true;
-    if (this.colorPickerTarget) { this.colorPickerTarget = ''; return true; }
-    if (this.batchDownloadSongs) { this.batchDownloadSongs = null; return true; }
-    if (this.coverPickerPlaylist) { this.coverPickerPlaylist = null; return true; }
-    if (this.switchTargetSong) { this.switchTargetSong = null; this.switchTargetScope = ''; this.maybeReturnToParentSheet(); return true; }
+    if (this.colorPickerOpen) { this.closeColorPicker(); return true; }
+    if (this.batchDownloadOpen) { this.closeBatchDownload(); return true; }
+    if (this.batchCollectOpen) { this.closeBatchCollect(); return true; }
+    if (this.coverPickerOpen) { this.closeCoverPicker(); return true; }
+    if (this.platformSwitchOpen) { this.closePlatformSwitch(true); return true; }
     if (this.editPlaylistOpen) { this.editPlaylistOpen = false; return true; }
     if (this.orderOpen) { this.orderOpen = false; return true; }
     if (this.queueOrderOpen) { this.queueOrderOpen = false; this.maybeReturnToParentSheet(); return true; }
@@ -958,6 +1057,24 @@ struct Index {
         this.lastStageSyncPos = this.livePositionMs;
       }
     });
+    this.player.onDesktopLyricChange((visible: boolean) => {
+      if (this.disposed || isHarmonyPc()) return;
+      if (this.mobileDesktopLyrics !== visible) {
+        this.mobileDesktopLyrics = visible;
+        this.scheduleSave();
+      }
+    }, (locked: boolean) => {
+      if (this.disposed || isHarmonyPc()) return;
+      if (this.mobileDesktopLyricsLocked !== locked) {
+        this.mobileDesktopLyricsLocked = locked;
+        this.scheduleSave();
+      }
+    });
+    if (!isHarmonyPc()) {
+      this.player.checkDesktopLyricSupported().then((supported: boolean) => {
+        if (!this.disposed) this.mobileDesktopLyricsSupported = supported;
+      }).catch(() => {});
+    }
     this.player.onBeforePreparedPlay((rawMs: number): boolean => {
       const cur = this.selected;
       const mismatch = this.classifyStreamDurationMismatch(cur, rawMs);
@@ -1119,7 +1236,7 @@ struct Index {
       }
       if (this.showPlayer || this.vocalCancelEngaged()) {
         const expectedStage = this.lastStageSyncPos + (this.playing ? now - this.lastStageSyncAt : 0);
-        if (!this.lastStageSyncAt || Math.abs(time - expectedStage) > 350 || now - this.lastStageSyncAt >= 5000) {
+        if (!this.lastStageSyncAt || Math.abs(time - expectedStage) > 90 || (this.playing && now - this.lastStageSyncAt >= 1000)) {
           this.lastStageSyncAt = now;
           this.lastStageSyncPos = time;
           this.stageClockMs = time;
@@ -1192,14 +1309,14 @@ struct Index {
     try { this.mainWindow?.off('avoidAreaChange'); } catch (_) {}
     this.pendingHomeFeed = null;
     for (const timer of this.introTimers) clearTimeout(timer);
+    if (this.autoSyncReconcileTimer >= 0) { clearTimeout(this.autoSyncReconcileTimer); this.autoSyncReconcileTimer = -1; }
     this.discovery?.stop(); this.syncServer.stop().catch(() => {});
     this.pcWindow.dispose().catch(() => {});
     try { display.off('foldStatusChange', this.foldListener); } catch (_) {}
     this.car.stop();
     this.shareService.stop();
     this.earMonitor.release().catch(() => {});
-    try { this.updateDialogController?.close(); } catch (_) {}
-    this.updateDialogController = null;
+    try { this.updateDialogController.close(); } catch (_) {}
     this.host.dispose(); this.player.release().catch(() => {});
   }
   onBackPress(): boolean {
@@ -1208,10 +1325,11 @@ struct Index {
     const consume = (): boolean => { this.backGuardUntil = now + 1500; return true; };
     console.info(`[BackPress] player=${this.showPlayer} feed=${this.feedSection} playlist=${!!this.openedPlaylist} search=${this.searchOpen}`);
     if (this.incoming) return consume();
-    if (this.colorPickerTarget) { this.colorPickerTarget = ''; return consume(); }
-    if (this.batchDownloadSongs) { this.batchDownloadSongs = null; return consume(); }
-    if (this.coverPickerPlaylist) { this.coverPickerPlaylist = null; return consume(); }
-    if (this.switchTargetSong) { this.switchTargetSong = null; this.switchTargetScope = ''; this.maybeReturnToParentSheet(); return consume(); }
+    if (this.colorPickerOpen) { this.closeColorPicker(); return consume(); }
+    if (this.batchDownloadOpen) { this.closeBatchDownload(); return consume(); }
+    if (this.batchCollectOpen) { this.closeBatchCollect(); return consume(); }
+    if (this.coverPickerOpen) { this.closeCoverPicker(); return consume(); }
+    if (this.platformSwitchOpen) { this.closePlatformSwitch(true); return consume(); }
     if (this.editPlaylistOpen) { this.editPlaylistOpen = false; return consume(); }
     if (this.orderOpen) { this.orderOpen = false; return consume(); }
     if (this.queueOrderOpen) { this.queueOrderOpen = false; this.maybeReturnToParentSheet(); return consume(); }
@@ -1235,30 +1353,65 @@ struct Index {
     await initStore(getContext(this) as common.UIAbilityContext);
     this.deviceId = await loadDeviceId();
     this.deviceName = deviceInfo.marketName || deviceInfo.productModel || 'Harmony';
+    await this.loadTrustedCircle();
     // Start LAN discovery before the stage/source bundle so a slow renderer
     // cannot delay peer visibility.
     this.syncServer.setIdentity(this.deviceId, this.deviceName);
-    this.syncServer.onAutoPlaylists((playlistsJson: string): boolean => {
+    this.syncServer.setVerifyTrust((peerId: string, token: string): boolean => this.verifyTrustedPeer(peerId, token));
+    this.syncServer.onAcceptVouch((_voucherId: string, introduced: IntroducedPeer): VouchHandlerReply => this.handleIncomingVouch(introduced));
+    this.syncServer.onUnpair((peerId: string) => {
+      setTimeout(() => {
+        if (!this.disposed) this.removeTrustedLocal(peerId);
+      }, 0);
+    });
+    this.syncServer.onAutoPlaylists((peerId: string, peerName: string, peerDigest: string, playlistsJson: string): AutoSyncServerReply => {
       try {
+        const beforeJson = JSON.stringify(this.playlists);
         const incomingLists = parsePlaylists(playlistsJson);
         const merged = mergeSyncPlaylists(this.playlists, incomingLists);
-        this.suppressAutoSyncUntil = Date.now() + 3000;
-        this.playlists = merged;
-        this.syncLikedKeysStorage();
-        if (this.openedPlaylist) {
-          const updated = this.openedPlaylist.isFavorite
-            ? merged.find((item: MusicPlaylist) => item.isFavorite)
-            : merged.find((item: MusicPlaylist) => item.id === this.openedPlaylist?.id);
-          if (updated) this.openedPlaylist = updated;
+        const changed = JSON.stringify(merged) !== beforeJson;
+        const postDigest = computeSyncDigest(merged);
+        if (peerId) {
+          this.autoSyncExchanged.set(peerId, `${postDigest}|${peerDigest}`);
         }
-        this.save();
-        this.notify('已自动合并局域网歌单与我的收藏', 1800);
-        return true;
-      } catch (_) { return false; }
+        if (changed) {
+          this.suppressAutoSyncUntil = Date.now() + 2500;
+          this.playlists = merged;
+          this.syncLikedKeysStorage();
+          if (this.openedPlaylist) {
+            const updated = this.openedPlaylist.isFavorite
+              ? merged.find((item: MusicPlaylist) => item.isFavorite)
+              : merged.find((item: MusicPlaylist) => item.id === this.openedPlaylist?.id);
+            if (updated) this.openedPlaylist = updated;
+          }
+          this.save();
+          this.discovery?.announceNow();
+          const now = Date.now();
+          if (now - this.lastAutoSyncToastAt >= 2500) {
+            this.lastAutoSyncToastAt = now;
+            this.notify(peerName ? `已自动合并「${peerName}」的歌单与收藏` : '已自动合并局域网歌单与我的收藏', 1800);
+          }
+          this.scheduleAutoSyncReconcile(450, false);
+        }
+        return { accepted: true, changed, syncDigest: postDigest, playlists: merged };
+      } catch (_) {
+        return { accepted: false, changed: false, syncDigest: computeSyncDigest(this.playlists), playlists: [] };
+      }
     });
     this.discovery = new LanDiscovery(this.deviceId, this.deviceName);
     this.discovery.pendingRequests = () => this.syncServer.pullRequests();
-    this.discovery.onDevices((devices: LanDevice[]) => { setTimeout(() => { if (!this.disposed) this.devices = devices; }, 0); });
+    this.discovery.syncDigestProvider = () => computeSyncDigest(this.playlists);
+    this.discovery.onDevices((devices: LanDevice[]) => {
+      setTimeout(() => {
+        if (this.disposed) return;
+        this.devices = devices;
+        this.syncTrustedDisplayNames(devices);
+        this.flushPendingVouches();
+        if (this.lanAutoSync && this.storeReady) {
+          this.scheduleAutoSyncReconcile(350, false);
+        }
+      }, 0);
+    });
     try {
       const port = await this.syncServer.start();
       this.discovery.setPort(port);
@@ -1320,12 +1473,16 @@ struct Index {
       }
     } catch (_) {}
     this.playlists = parsePlaylists(data.playlistsJson);
-    if (!this.playlists.length) this.playlists = [createPlaylist('我的收藏', true)];
+    if (!this.playlists.some((item: MusicPlaylist) => item.isFavorite)) this.playlists.unshift(createPlaylist('我的收藏', true));
     this.syncLikedKeysStorage();
     this.sources = uniqueSyncSources(JSON.parse(data.sourcesJson) as SyncSourcePayload[]);
     try { this.recentSongs = JSON.parse(await loadRecentSongs()) as Song[]; } catch (_) { this.recentSongs = []; }
     if (!this.sources.length && data.sourceScript) this.sources = [this.sourceFromScript(data.sourceScript)];
     this.activeId = data.activeSourceId || this.sources[0]?.id || ''; this.storeReady = true; this.save(); this.restorePlaybackIfReady(); this.consumeSharedPlaylist();
+    if (this.lanAutoSync) {
+      this.discovery?.announceNow();
+      this.scheduleAutoSyncReconcile(450, true);
+    }
     this.restoreSource();
     this.refreshHomeFeed().catch(() => {});
   }
@@ -1797,6 +1954,8 @@ struct Index {
       if (typeof savedDlDir === 'string') this.downloadDirPath = savedDlDir;
       this.desktopLyrics = isHarmonyPc() && this.settings['lxmine_desktop_lyrics'] === true;
       this.desktopLyricsLocked = this.settings['lxmine_desktop_lyrics_locked'] === true;
+      this.mobileDesktopLyrics = !isHarmonyPc() && this.settings['lxmine_mobile_desktop_lyrics'] === true;
+      this.mobileDesktopLyricsLocked = this.settings['lxmine_mobile_desktop_lyrics_locked'] === true;
       const dlSize = this.settings['lxmine_desktop_lyric_size'];
       if (typeof dlSize === 'number' && Number.isFinite(dlSize)) this.desktopLyricSize = Math.max(0.72, Math.min(1.55, dlSize));
       const dlLines = this.settings['lxmine_desktop_lyric_lines'];
@@ -1842,6 +2001,8 @@ struct Index {
     if (isHarmonyPc() && this.desktopLyrics) {
       this.pcWindow.setDesktopLyrics(true, this.desktopLyricsLocked, this.desktopLyricBounds, this.desktopLyricLines).catch(() => {});
       this.syncHarmonyPcDesktopLyrics(this.livePositionMs, true);
+    } else if (!isHarmonyPc() && this.mobileDesktopLyrics) {
+      this.player.setSystemDesktopLyrics(true, this.mobileDesktopLyricsLocked).catch(() => {});
     }
     if (shouldSaveMosaic && this.storeReady) this.save();
   }
@@ -1874,6 +2035,8 @@ struct Index {
     this.settings['lxmine_download_dir_path'] = this.downloadDirPath;
     this.settings['lxmine_desktop_lyrics'] = this.desktopLyrics;
     this.settings['lxmine_desktop_lyrics_locked'] = this.desktopLyricsLocked;
+    this.settings['lxmine_mobile_desktop_lyrics'] = this.mobileDesktopLyrics;
+    this.settings['lxmine_mobile_desktop_lyrics_locked'] = this.mobileDesktopLyricsLocked;
     this.settings['lxmine_desktop_lyric_size'] = this.desktopLyricSize;
     this.settings['lxmine_desktop_lyric_lines'] = this.desktopLyricLines;
     this.settings['lxmine_desktop_lyric_color_mode'] = this.desktopLyricColorMode;
@@ -2101,7 +2264,7 @@ struct Index {
       this.loading = true;
       this.openedEntity = entity; this.entitySongs = [];
       if (entity.kind === 'songlist') {
-        const lists = parsePlaylists(await this.host.importPlaylist(entity.id, entity.source));
+        const lists = parsePlaylists(await this.host.importPlaylist(entity.id, entity.source), true);
         if (this.disposed || this.openedEntity?.id !== entity.id) return;
         const songs = lists[0]?.songs ?? [];
         this.entitySongs = songs;
@@ -2170,6 +2333,13 @@ struct Index {
       }
     }
     this.playingFromSearch = resolvedFromSearch;
+    const nextSongKey = songKey(song);
+    if (resolvedQueue !== this.queue) {
+      const queueSet = new Set<string>(resolvedQueue.map((item: Song) => songKey(item)));
+      this.upNextKeys = this.upNextKeys.filter((k: string) => k !== nextSongKey && queueSet.has(k));
+    } else {
+      this.upNextKeys = this.upNextKeys.filter((k: string) => k !== nextSongKey);
+    }
     const token = ++this.playToken;
     const intentId = this.player.beginSwitch(autoPlay);
     this.selected = song; this.shareService.setSong(song); this.coverColors = EMPTY_COVER_COLORS;
@@ -2286,6 +2456,7 @@ struct Index {
     }
     finally { if (token === this.playToken) this.resolving = false; }
   }
+  private preResolveTimer: number = -1;
   private preResolveNextTrack(): void {
     const next = this.nextQueueSong();
     if (!next || next.source === 'local' || !this.sourceReady || !this.hostReady || this.disposed) return;
@@ -2293,8 +2464,13 @@ struct Index {
     const nk = songKey(next);
     if (this.preResolveKey === nk) return;
     this.preResolveKey = nk;
-    // 静默预解析下一首音源 URL 进入 90s 缓存，切歌秒开。
-    this.raceAllSourcesForSong(next, [], true).catch(() => {});
+    clearTimeout(this.preResolveTimer);
+    const token = this.playToken;
+    // 延迟 4.5s 再后台静默预解析下一首，避免切歌瞬间与动效/歌词争抢资源。
+    this.preResolveTimer = setTimeout(() => {
+      if (this.disposed || token !== this.playToken) return;
+      this.raceAllSourcesForSong(next, [], true).catch(() => {});
+    }, 4500);
   }
   private friendlyPlayError(raw: string): string {
     const msg = (raw ?? '').trim();
@@ -2410,6 +2586,7 @@ struct Index {
       return;
     }
     this.batchDownloadSongs = online;
+    this.batchDownloadOpen = true;
   }
   private async downloadBatch(songs: Song[]): Promise<void> {
     if (!this.sourceReady) { this.error = '先启用音源再批量下载'; this.notify(this.error); this.tab = '设置'; return; }
@@ -2789,21 +2966,74 @@ struct Index {
       }
     }).catch((error: Error) => { this.error = error.message; });
   }
+  private resolveUpNextIndex(excludeKey: string, consume: boolean): number {
+    if (!this.upNextKeys.length || !this.queue.length) return -1;
+    for (let i = 0; i < this.upNextKeys.length; i += 1) {
+      const key = this.upNextKeys[i];
+      if (!key || key === excludeKey) continue;
+      const idx = this.queue.findIndex((item: Song) => songKey(item) === key);
+      if (idx >= 0) {
+        if (consume) {
+          this.upNextKeys = this.upNextKeys.slice(i + 1);
+        }
+        return idx;
+      }
+    }
+    if (consume) this.upNextKeys = [];
+    return -1;
+  }
+  private playNext(song: Song): void {
+    const targetKey = songKey(song);
+    if (!this.selected || !this.queue.length) {
+      this.playSong(song, [song]).catch(() => {});
+      return;
+    }
+    const curKey = songKey(this.selected);
+    if (curKey === targetKey) {
+      this.notify('当前正在播放这首歌曲', 1600);
+      return;
+    }
+    const nextQueue = this.queue.filter((item: Song) => songKey(item) !== targetKey);
+    const curIdx = nextQueue.findIndex((item: Song) => songKey(item) === curKey);
+    const insertAt = curIdx >= 0 ? curIdx + 1 : 0;
+    nextQueue.splice(insertAt, 0, song);
+    this.queue = nextQueue;
+    this.upNextKeys = [targetKey].concat(this.upNextKeys.filter((k: string) => k !== targetKey));
+    this.autoMixShuffleForKey = '';
+    this.autoMixShuffleCandidate = null;
+    this.autoMixPreloadToken++;
+    this.autoMixPreloadInFlight = false;
+    this.autoMixPreloadAttempts = 0;
+    this.autoMixPreloadingKey = '';
+    this.autoMixPreloadRetryAt = 0;
+    this.autoMixTriggeredFor = '';
+    this.player.cancelAutoMix();
+    this.refreshAutoMixPlan();
+    this.savePlayback(true);
+    this.notify(`已将「${song.name}」设为下一首播放`, 1600);
+  }
   private advance(step: number, completed: boolean = false, fromAutoAdvance: boolean = false): void {
     if (!this.queue.length || !this.selected) return;
     if (completed) {
       recordListenHabit(this.selected, this.duration || this.selected.durationMs, this.duration || this.selected.durationMs, true);
     }
-    const index = this.queue.findIndex((song: Song) => songKey(song) === songKey(this.selected!));
-    if (completed && this.mode === '顺序播放' && index >= this.queue.length - 1) return;
-    let next = (index + step + this.queue.length) % this.queue.length;
-    if (completed && this.mode === '单曲循环') next = Math.max(0, index);
-    else if (this.mode === '随机播放' && this.queue.length > 1) {
-      if (step > 0 && this.autoMixShuffleCandidate && this.autoMixShuffleForKey === songKey(this.selected)) {
-        const picked = this.queue.findIndex((song: Song) => songKey(song) === songKey(this.autoMixShuffleCandidate!));
-        next = picked >= 0 ? picked : (Math.max(0, index) + 1 + Math.floor(Math.random() * (this.queue.length - 1))) % this.queue.length;
-      } else {
-        next = (Math.max(0, index) + 1 + Math.floor(Math.random() * (this.queue.length - 1))) % this.queue.length;
+    const curKey = songKey(this.selected);
+    const index = this.queue.findIndex((song: Song) => songKey(song) === curKey);
+    let next = -1;
+    if (step > 0 && !(completed && this.mode === '单曲循环')) {
+      next = this.resolveUpNextIndex(curKey, true);
+    }
+    if (next < 0) {
+      if (completed && this.mode === '顺序播放' && index >= this.queue.length - 1) return;
+      next = (index + step + this.queue.length) % this.queue.length;
+      if (completed && this.mode === '单曲循环') next = Math.max(0, index);
+      else if (this.mode === '随机播放' && this.queue.length > 1) {
+        if (step > 0 && this.autoMixShuffleCandidate && this.autoMixShuffleForKey === curKey) {
+          const picked = this.queue.findIndex((song: Song) => songKey(song) === songKey(this.autoMixShuffleCandidate!));
+          next = picked >= 0 ? picked : (Math.max(0, index) + 1 + Math.floor(Math.random() * (this.queue.length - 1))) % this.queue.length;
+        } else {
+          next = (Math.max(0, index) + 1 + Math.floor(Math.random() * (this.queue.length - 1))) % this.queue.length;
+        }
       }
     }
     this.autoMixShuffleForKey = '';
@@ -2817,6 +3047,7 @@ struct Index {
     const wasCurrent = !!this.selected && songKey(this.selected) === targetKey;
     const nextQueue = this.queue.filter((_item: Song, i: number) => i !== idx);
     this.queue = nextQueue;
+    this.upNextKeys = this.upNextKeys.filter((k: string) => k !== targetKey);
     this.autoMixShuffleForKey = '';
     this.autoMixShuffleCandidate = null;
     this.autoMixPreloadToken++;
@@ -2907,47 +3138,68 @@ struct Index {
     this.save();
     this.triggerAutoSync();
   }
-  private collectSongsBatch(songs: Song[]): void {
+  private openBatchCollectPicker(songs: Song[], title: string = '批量收藏歌曲'): void {
     const valid = songs.filter((item: Song) => Boolean(item && songKey(item)));
-    if (!valid.length) return;
-    let favorite = this.playlists.find((list: MusicPlaylist) => list.isFavorite);
-    if (!favorite) {
-      favorite = createPlaylist('我的收藏', true);
-      this.playlists = [favorite].concat(this.playlists);
-    }
-    const existingKeys = new Set<string>((favorite.songs ?? []).map((item: Song) => songKey(item)));
-    const toAdd: Song[] = [];
-    for (const song of valid) {
-      const k = songKey(song);
-      if (!existingKeys.has(k)) {
-        existingKeys.add(k);
-        toAdd.push(song);
-      }
-    }
-    if (!toAdd.length) {
-      this.notify('所选歌曲均已收藏', 1800);
+    if (!valid.length) {
+      this.notify('当前列表没有可收藏的歌曲', 1800);
       return;
     }
-    const nextSongs = toAdd.concat(favorite.songs ?? []);
-    const next: MusicPlaylist = {
-      id: favorite.id,
-      name: favorite.name === '我喜欢的' ? '我的收藏' : (favorite.name || '我的收藏'),
-      kind: 'lx',
-      songs: nextSongs,
-      pcTracks: favorite.pcTracks,
-      customCover: favorite.customCover ?? '',
-      songIds: nextSongs.map(songKey),
-      createdAt: favorite.createdAt,
-      updatedAt: Date.now(),
-      isFavorite: true,
-      warning: favorite.warning,
-    };
-    this.playlists = this.playlists.map((list: MusicPlaylist) => list.id === next.id ? next : list);
-    if (this.openedPlaylist?.id === next.id) this.openedPlaylist = next;
+    this.batchCollectTitle = title;
+    this.batchCollectSongs = valid;
+    this.batchCollectOpen = true;
+  }
+  private collectSongsToPlaylist(songs: Song[], targetPlaylistId: string, newPlaylistName: string): void {
+    const valid = songs.filter((item: Song) => Boolean(item && songKey(item)));
+    if (!valid.length) return;
+    let target: MusicPlaylist | undefined;
+    let createdNew = false;
+    if (targetPlaylistId === '__new__') {
+      const cleanName = newPlaylistName.trim() || `歌单 ${this.playlists.length + 1}`;
+      const created = createPlaylist(cleanName, false);
+      const res = playlistWithSongs(created, valid);
+      target = res.playlist;
+      this.playlists = this.playlists.concat([target]);
+      createdNew = true;
+      this.syncLikedKeysStorage();
+      this.save();
+      this.triggerAutoSync();
+      this.notify(`已新建「${target.name}」并收藏 ${res.added} 首歌曲`, 2200);
+      return;
+    }
+    if (targetPlaylistId === '__favorite__') {
+      target = this.playlists.find((list: MusicPlaylist) => list.isFavorite);
+      if (!target) {
+        target = createPlaylist('我的收藏', true);
+        this.playlists = [target].concat(this.playlists);
+      }
+    } else {
+      target = this.playlists.find((list: MusicPlaylist) => list.id === targetPlaylistId);
+    }
+    if (!target) {
+      this.notify('未找到目标歌单', 1800);
+      return;
+    }
+    const res = playlistWithSongs(target, valid);
+    if (res.added <= 0 && !createdNew) {
+      this.notify(`所选歌曲均已在「${target.isFavorite ? '我的收藏' : target.name}」中`, 2000);
+      return;
+    }
+    this.playlists = this.playlists.map((list: MusicPlaylist) => list.id === res.playlist.id ? res.playlist : list);
+    if (this.openedPlaylist?.id === res.playlist.id) this.openedPlaylist = res.playlist;
     this.syncLikedKeysStorage();
     this.save();
     this.triggerAutoSync();
-    this.notify(`已批量收藏 ${toAdd.length} 首歌曲`, 2000);
+    const skipped = valid.length - res.added;
+    const targetName = res.playlist.isFavorite ? '我的收藏' : res.playlist.name;
+    this.notify(
+      skipped > 0
+        ? `已向「${targetName}」收藏 ${res.added} 首（跳过 ${skipped} 首重复）`
+        : `已向「${targetName}」收藏 ${res.added} 首歌曲`,
+      2200,
+    );
+  }
+  private collectSongsBatch(songs: Song[]): void {
+    this.collectSongsToPlaylist(songs, '__favorite__', '');
   }
   private addToPlaylist(song: Song): void {
     this.getUIContext().showAlertDialog({ title: '添加到歌单', message: song.name, systemMaterial: musicMenuMaterial(), buttons: this.playlists.filter((list: MusicPlaylist) => list.kind === 'lx').map((list: MusicPlaylist) => {
@@ -3002,12 +3254,12 @@ struct Index {
     if (song.source === 'local') return;
     this.switchTargetSong = song;
     this.switchTargetScope = scope;
+    this.platformSwitchOpen = true;
   }
   private applyPlatformSwitch(replacement: Song): void {
     const target = this.switchTargetSong;
     const scope = this.switchTargetScope;
-    this.switchTargetSong = null;
-    this.switchTargetScope = '';
+    this.platformSwitchOpen = false;
     if (!target) return;
     const targetKey = songKey(target);
     const replaceInArray = (arr: Song[]): Song[] => {
@@ -3296,6 +3548,8 @@ struct Index {
     if (!this.selected || this.queue.length <= 1) return null;
     if (this.mode === '单曲循环') return null;
     const curKey = songKey(this.selected);
+    const upNextIdx = this.resolveUpNextIndex(curKey, false);
+    if (upNextIdx >= 0) return this.queue[upNextIdx];
     const idx = this.queue.findIndex((s: Song) => songKey(s) === curKey);
     if (idx < 0) return null;
     if (this.mode === '顺序播放' && idx >= this.queue.length - 1) return null;
@@ -3612,7 +3866,7 @@ struct Index {
     const updated = playlistCoverUpdated(playlist, cover);
     this.playlists = this.playlists.map((item: MusicPlaylist) => item.id === updated.id ? updated : item);
     if (this.openedPlaylist?.id === updated.id) this.openedPlaylist = updated;
-    this.coverPickerPlaylist = null;
+    this.closeCoverPicker();
     this.save();
     this.triggerAutoSync();
     this.notify(cover ? '已更新歌单封面' : '已恢复默认歌单封面', 1800);
@@ -3662,7 +3916,7 @@ struct Index {
       return;
     }
     if (!this.shortcutsEnabled) return;
-    if (this.searchOpen || this.listSearchOpen || this.settingsPanel === 'shortcuts' || this.colorPickerTarget || this.editPlaylistOpen) return;
+    if (this.searchOpen || this.listSearchOpen || this.settingsPanel === 'shortcuts' || this.colorPickerOpen || this.editPlaylistOpen) return;
     const combo = formatKeyEventCombo(event);
     if (!combo) return;
     // 在可能存在文本输入的设置页，屏蔽无修饰键的单键（如 Space）以防打断输入
@@ -3792,7 +4046,24 @@ struct Index {
         playlistChanged = true;
       }
       else if (this.sheet === '导入歌单') {
-        const lists = parsePlaylists(await this.host.importPlaylist(this.draft.trim(), this.platform === 'all' ? 'wy' : this.platform));
+        const favoriteIds = new Set<string>(this.playlists.filter((list: MusicPlaylist) => Boolean(list.isFavorite)).map((list: MusicPlaylist) => list.id));
+        const lists = parsePlaylists(await this.host.importPlaylist(this.draft.trim(), this.platform === 'all' ? 'wy' : this.platform), true)
+          .map((item: MusicPlaylist, index: number): MusicPlaylist => {
+            if (!favoriteIds.has(item.id)) return item;
+            return {
+              id: `lx-${Date.now()}-${index}-${Math.random().toString(36).slice(2, 7)}`,
+              name: item.name,
+              kind: item.kind ?? 'lx',
+              songs: item.songs,
+              songIds: item.songIds,
+              pcTracks: item.pcTracks,
+              customCover: item.customCover ?? '',
+              createdAt: item.createdAt,
+              updatedAt: item.updatedAt,
+              isFavorite: false,
+              warning: item.warning,
+            };
+          });
         this.playlists = this.playlists.filter((list: MusicPlaylist) => !lists.some((incoming: MusicPlaylist) => incoming.id === list.id)).concat(lists);
         this.message = `已导入 ${lists.length} 个歌单，共 ${lists.reduce((sum: number, list: MusicPlaylist) => sum + (list.songs?.length ?? 0), 0)} 首`;
         const warnings = lists.map((list: MusicPlaylist) => list.warning ?? '').filter((value: string) => value.length > 0).join('\n');
@@ -3877,20 +4148,282 @@ struct Index {
       this.save();
     } } });
   }
+  private async loadTrustedCircle(): Promise<void> {
+    const raw = await loadTrustedDevices();
+    const loaded = parseTrustedDevices(raw);
+    this.trustedMap.clear();
+    for (const item of loaded) this.trustedMap.set(item.id, item);
+    this.trustedDevices = Array.from(this.trustedMap.values()).sort((a: TrustedDevice, b: TrustedDevice) => b.trustedAt - a.trustedAt);
+    this.trustCircleTransitive = await loadTrustCircleTransitive();
+    this.pendingVouches = parsePendingVouches(await loadPendingVouches());
+  }
+  private setTrustCircleTransitive(value: boolean): void {
+    this.trustCircleTransitive = value;
+    saveTrustCircleTransitive(value).catch(() => {});
+    this.notify(value ? '已开启信任圈成员互通' : '已关闭信任圈成员互通（仅拉入当前配对设备）', 2000);
+  }
+  private persistPendingVouches(): void {
+    savePendingVouches(JSON.stringify(this.pendingVouches.slice(-64))).catch(() => {});
+  }
+  private queuePendingVouch(targetId: string, introduced: IntroducedPeer): void {
+    const tid = targetId.trim();
+    if (!tid || !introduced.id || tid === this.deviceId || introduced.id === this.deviceId || tid === introduced.id) return;
+    if (!this.trustedMap.has(tid) || introduced.token.length < 16) return;
+    const now = Date.now();
+    this.pendingVouches = this.pendingVouches.filter((v: PendingVouch) =>
+      (now - v.createdAt <= PENDING_VOUCH_TTL_MS) && !(v.targetId === tid && v.introduced.id === introduced.id)
+    );
+    const entry: PendingVouch = { targetId: tid, introduced, createdAt: now };
+    this.pendingVouches.push(entry);
+    if (this.pendingVouches.length > 64) this.pendingVouches = this.pendingVouches.slice(-64);
+    this.persistPendingVouches();
+    this.vouchBackoff.delete(`${tid}|${introduced.id}`);
+    this.flushPendingVouches();
+  }
+  private flushPendingVouches(): void {
+    if (!this.pendingVouches.length || this.disposed) return;
+    const now = Date.now();
+    const before = this.pendingVouches.length;
+    this.pendingVouches = this.pendingVouches.filter((v: PendingVouch) =>
+      (now - v.createdAt <= PENDING_VOUCH_TTL_MS) && this.trustedMap.has(v.targetId)
+    );
+    if (this.pendingVouches.length !== before) this.persistPendingVouches();
+    if (!this.pendingVouches.length) return;
+    const onlineById = new Map<string, LanDevice>();
+    for (const d of this.devices) onlineById.set(d.id, d);
+    const snapshot = this.pendingVouches.slice();
+    for (const item of snapshot) {
+      const key = `${item.targetId}|${item.introduced.id}`;
+      if (this.vouchInFlight.has(key)) continue;
+      const until = this.vouchBackoff.get(key) ?? 0;
+      if (Date.now() < until) continue;
+      const targetOnline = onlineById.get(item.targetId);
+      const trustedTarget = this.trustedMap.get(item.targetId);
+      if (!targetOnline || !trustedTarget) continue;
+      this.vouchInFlight.add(key);
+      this.deliverPendingVouch(item, targetOnline, trustedTarget, key).catch(() => {});
+    }
+  }
+  private async deliverPendingVouch(item: PendingVouch, targetOnline: LanDevice, trustedTarget: TrustedDevice, key: string): Promise<void> {
+    try {
+      const payload: VouchRequestPayload = {
+        protocol: 'lxlia-lansync/1',
+        version: 1,
+        type: 'vouch',
+        device: { id: this.deviceId, name: this.deviceName, platform: 'harmony' },
+        trustToken: trustedTarget.token,
+        introduced: item.introduced,
+      };
+      let res: LanPushResponse;
+      if (targetOnline.receiveMode === 'pull') {
+        const p = this.syncServer.offerVouch(targetOnline.id, JSON.stringify(payload));
+        this.discovery?.announceNow();
+        res = await p;
+      } else {
+        res = await vouchDirect(targetOnline.address, targetOnline.port, payload);
+      }
+      if (res.accepted || res.code === 'TRANSITIVE_DISABLED' || res.code === 'UNTRUSTED') {
+        this.pendingVouches = this.pendingVouches.filter((v: PendingVouch) =>
+          !(v.targetId === item.targetId && v.introduced.id === item.introduced.id)
+        );
+        this.persistPendingVouches();
+        this.vouchBackoff.delete(key);
+      } else {
+        this.vouchBackoff.set(key, Date.now() + 5000);
+      }
+    } catch (_) {
+      this.vouchBackoff.set(key, Date.now() + 5000);
+    } finally {
+      this.vouchInFlight.delete(key);
+    }
+  }
+  private handleIncomingVouch(introduced: IntroducedPeer): VouchHandlerReply {
+    if (!this.trustCircleTransitive) {
+      return { accepted: false, code: 'TRANSITIVE_DISABLED', message: '对方未开启信任圈成员互通' };
+    }
+    if (!introduced.id || introduced.id === this.deviceId || introduced.token.length < 16) {
+      return { accepted: false, code: 'INVALID', message: 'invalid vouch' };
+    }
+    setTimeout(() => {
+      if (!this.disposed) this.addTrustedDevice(introduced.id, introduced.name, introduced.platform, introduced.token);
+    }, 0);
+    return { accepted: true, code: '', message: '' };
+  }
+  private verifyTrustedPeer(peerId: string, token: string): boolean {
+    const entry = this.trustedMap.get(peerId);
+    if (!entry) return false;
+    return safeTokenEquals(entry.token, token);
+  }
+  private persistTrustedCircle(): void {
+    const sorted = Array.from(this.trustedMap.values()).sort((a: TrustedDevice, b: TrustedDevice) => b.trustedAt - a.trustedAt);
+    this.trustedDevices = sorted;
+    saveTrustedDevices(JSON.stringify(sorted)).catch(() => {});
+  }
+  private addTrustedDevice(peerId: string, peerName: string, platform: string, token: string): void {
+    if (!peerId || peerId === this.deviceId || token.length < 16) return;
+    this.trustedMap.set(peerId, {
+      id: peerId,
+      name: peerName || 'LxMine',
+      platform: platform || 'unknown',
+      token,
+      trustedAt: Date.now(),
+    });
+    this.persistTrustedCircle();
+    this.autoSyncBackoff.delete(peerId);
+    this.autoSyncExchanged.delete(peerId);
+    if (this.lanAutoSync && this.storeReady) {
+      this.discovery?.announceNow();
+      this.scheduleAutoSyncReconcile(250, true);
+    }
+  }
+  private syncTrustedDisplayNames(onlineDevices: LanDevice[]): void {
+    let changed = false;
+    for (const dev of onlineDevices) {
+      const existing = this.trustedMap.get(dev.id);
+      if (existing && dev.name && existing.name !== dev.name) {
+        this.trustedMap.set(dev.id, {
+          id: existing.id,
+          name: dev.name,
+          platform: existing.platform,
+          token: existing.token,
+          trustedAt: existing.trustedAt,
+        });
+        changed = true;
+      }
+    }
+    if (changed) this.persistTrustedCircle();
+  }
+  private removeTrustedLocal(peerId: string): TrustedDevice | null {
+    const removed = this.trustedMap.get(peerId) ?? null;
+    if (!removed) return null;
+    this.trustedMap.delete(peerId);
+    this.pendingVouches = this.pendingVouches.filter((v: PendingVouch) => v.targetId !== peerId && v.introduced.id !== peerId);
+    this.persistPendingVouches();
+    this.persistTrustedCircle();
+    this.autoSyncBackoff.delete(peerId);
+    this.autoSyncExchanged.delete(peerId);
+    return removed;
+  }
+  private removeTrustedDevice(peerId: string): void {
+    const removed = this.removeTrustedLocal(peerId);
+    if (!removed) return;
+    this.message = `已将「${removed.name}」移出信任圈`;
+    this.notify(this.message, 1800);
+    const online = this.devices.find((item: LanDevice) => item.id === removed.id);
+    if (online && online.receiveMode !== 'pull' && online.port > 0) {
+      const payload: UnpairRequestPayload = {
+        protocol: 'lxlia-lansync/1',
+        version: 1,
+        type: 'unpair',
+        device: { id: this.deviceId, name: this.deviceName, platform: 'harmony' },
+        trustToken: removed.token,
+      };
+      unpairDirect(online.address, online.port, payload).catch(() => {});
+    }
+  }
+  private async pairDevice(device: LanDevice): Promise<void> {
+    if (this.busy) return;
+    const code = generatePairCode();
+    const token = generateTrustToken();
+    const ownPeers: PeerSummary[] = [];
+    const preIntroduced: IntroducedPeer[] = [];
+    if (this.trustCircleTransitive) {
+      for (const item of this.trustedMap.values()) {
+        if (item.id === device.id) continue;
+        ownPeers.push({ id: item.id, name: item.name, platform: item.platform });
+        if (device.receiveMode === 'pull') {
+          preIntroduced.push({ id: item.id, name: item.name, platform: item.platform, token: generateTrustToken() });
+        }
+        if (ownPeers.length >= 32) break;
+      }
+    }
+    this.busy = true;
+    this.message = `等待「${device.name}」确认加入信任圈（核对验证码：${formatPairCode(code)}）…`;
+    try {
+      const payload: PairRequestPayload = {
+        protocol: 'lxlia-lansync/1',
+        version: 1,
+        type: 'pair',
+        code,
+        token,
+        transitive: this.trustCircleTransitive,
+        peers: ownPeers,
+        introducedPeers: preIntroduced.length > 0 ? preIntroduced : undefined,
+        device: { id: this.deviceId, name: this.deviceName, platform: 'harmony' },
+      };
+      let res: LanPushResponse;
+      if (device.receiveMode === 'pull') {
+        const confirmation = this.syncServer.offerPair(device.id, JSON.stringify(payload));
+        this.discovery?.announceNow();
+        res = await confirmation;
+      } else {
+        res = await pairDirect(device.address, device.port, payload);
+      }
+      if (res.accepted) {
+        const peerId = res.peerId || device.id;
+        const peerName = res.peerName || device.name;
+        const peerPlatform = res.peerPlatform || device.platform;
+        this.addTrustedDevice(peerId, peerName, peerPlatform, token);
+        let extraCount = 0;
+        if (this.trustCircleTransitive && res.transitive === true) {
+          if (device.receiveMode === 'pull' && preIntroduced.length > 0) {
+            const accIds = new Set<string>(res.acceptedIntroducedIds ?? []);
+            for (const pre of preIntroduced) {
+              if (accIds.size === 0 || accIds.has(pre.id)) {
+                this.queuePendingVouch(pre.id, { id: peerId, name: peerName, platform: peerPlatform, token: pre.token });
+              }
+            }
+          }
+          for (const intro of (res.introducedPeers ?? [])) {
+            if (!intro || !intro.id || intro.id === this.deviceId || intro.id === peerId || intro.token.length < 16) continue;
+            if (this.trustedMap.has(intro.id)) continue;
+            this.addTrustedDevice(intro.id, intro.name, intro.platform, intro.token);
+            extraCount += 1;
+          }
+          for (const rv of (res.reverseVouches ?? [])) {
+            if (!rv || !rv.id || rv.id === this.deviceId || rv.token.length < 16 || !this.trustedMap.has(rv.id)) continue;
+            this.queuePendingVouch(rv.id, { id: peerId, name: peerName, platform: peerPlatform, token: rv.token });
+          }
+        }
+        const suffix = extraCount > 0 ? `（并同步加入对方信任圈内 ${extraCount} 台设备）` : '';
+        this.message = `已将「${peerName}」加入设备信任圈${suffix}`;
+      } else {
+        this.message = res.message ? `对方未接受：${res.message}` : '对方拒绝了信任请求';
+      }
+      this.notify(this.message, 2400);
+    } catch (error) {
+      this.message = `加入信任圈失败：${(error as Error).message}`;
+      this.notify(this.message, 3000);
+    } finally {
+      this.busy = false;
+    }
+  }
   private async send(device: LanDevice): Promise<void> {
     if (this.busy) return;
+    const trusted = this.trustedMap.get(device.id);
+    if (!trusted) {
+      await this.pairDevice(device);
+      return;
+    }
     this.busy = true; this.message = `等待「${device.name}」确认接收…`;
     try {
       await this.persist();
       const bundle: SyncBundle = { protocol: 'lxlia-lansync/1', version: 1, createdAt: Date.now(), device: { id: this.deviceId, name: this.deviceName, platform: 'harmony' },
-        settings: this.settings, playlists: this.playlists, sources: this.sources, activeSourceId: this.activeId };
-      let accepted: boolean;
+        trustToken: trusted.token, settings: this.settings, playlists: this.playlists, sources: this.sources, activeSourceId: this.activeId };
+      let res: LanPushResponse;
       if (device.receiveMode === 'pull') {
-        const confirmation = this.syncServer.offerPush(device.id, JSON.stringify(bundle));
+        const confirmation = this.syncServer.offerPushDetailed(device.id, JSON.stringify(bundle));
         this.discovery?.announceNow();
-        accepted = await confirmation;
-      } else accepted = await pushBundle(device, bundle);
-      this.message = accepted ? `已同步到「${device.name}」` : '对方未接受同步';
+        res = await confirmation;
+      } else res = await pushBundleDetailed(device, bundle);
+      if (res.accepted) {
+        this.message = `已同步到「${device.name}」`;
+      } else if (res.code === 'UNTRUSTED') {
+        this.message = `「${device.name}」已将本机移出信任圈，请先移除再重新加入信任圈`;
+      } else {
+        this.message = res.message ? `对方未接受：${res.message}` : '对方未接受同步';
+      }
+      this.notify(this.message, 2200);
     } catch (error) { this.message = `发送失败：${(error as Error).message}`; }
     finally { this.busy = false; }
   }
@@ -3905,34 +4438,193 @@ struct Index {
       this.notify(this.message);
       return;
     }
+    const pairCode = generatePairCode();
+    const pairToken = generateTrustToken();
     this.busy = true;
-    this.message = `正在直连 ${address}:${port} 等待确认…`;
+    this.message = `正在连接 ${address}:${port}（若未信任将请求加入信任圈，验证码：${formatPairCode(pairCode)}）…`;
     try {
       await this.persist();
+      const pingInfo = await pingDirect(address, port, 5000);
+      if (!pingInfo || !pingInfo.id) {
+        throw new Error('无法连接目标设备，请检查 IP、端口和 Wi-Fi');
+      }
+      if (pingInfo.id === this.deviceId) {
+        throw new Error('不能向本机自身发送同步');
+      }
+      const peerName = pingInfo.name || `${address}:${port}`;
+      const peerPlatform = pingInfo.platform || 'unknown';
+      const trusted = this.trustedMap.get(pingInfo.id);
+      if (!trusted) {
+        const ownPeers: PeerSummary[] = [];
+        if (this.trustCircleTransitive) {
+          for (const item of this.trustedMap.values()) {
+            if (item.id === pingInfo.id) continue;
+            ownPeers.push({ id: item.id, name: item.name, platform: item.platform });
+            if (ownPeers.length >= 32) break;
+          }
+        }
+        const pairPayload: PairRequestPayload = {
+          protocol: 'lxlia-lansync/1',
+          version: 1,
+          type: 'pair',
+          code: pairCode,
+          token: pairToken,
+          transitive: this.trustCircleTransitive,
+          peers: ownPeers,
+          device: { id: this.deviceId, name: this.deviceName, platform: 'harmony' },
+        };
+        const pairRes = await pairDirect(address, port, pairPayload);
+        if (pairRes.accepted) {
+          const finalId = pairRes.peerId || pingInfo.id;
+          const finalName = pairRes.peerName || peerName;
+          const finalPlatform = pairRes.peerPlatform || peerPlatform;
+          this.addTrustedDevice(finalId, finalName, finalPlatform, pairToken);
+          let extraCount = 0;
+          if (this.trustCircleTransitive && pairRes.transitive === true) {
+            for (const intro of (pairRes.introducedPeers ?? [])) {
+              if (!intro || !intro.id || intro.id === this.deviceId || intro.id === finalId || intro.token.length < 16) continue;
+              if (this.trustedMap.has(intro.id)) continue;
+              this.addTrustedDevice(intro.id, intro.name, intro.platform, intro.token);
+              extraCount += 1;
+            }
+            for (const rv of (pairRes.reverseVouches ?? [])) {
+              if (!rv || !rv.id || rv.id === this.deviceId || rv.token.length < 16 || !this.trustedMap.has(rv.id)) continue;
+              this.queuePendingVouch(rv.id, { id: finalId, name: finalName, platform: finalPlatform, token: rv.token });
+            }
+          }
+          const suffix = extraCount > 0 ? `（并同步加入对方信任圈内 ${extraCount} 台设备）` : '';
+          this.message = `已将「${finalName}」加入信任圈${suffix}，再次点击即可发送或自动同步`;
+        } else {
+          this.message = pairRes.message ? `对方未接受信任请求：${pairRes.message}` : '对方拒绝了信任请求';
+        }
+        this.notify(this.message, 2600);
+        return;
+      }
       const bundle: SyncBundle = { protocol: 'lxlia-lansync/1', version: 1, createdAt: Date.now(), device: { id: this.deviceId, name: this.deviceName, platform: 'harmony' },
-        settings: this.settings, playlists: this.playlists, sources: this.sources, activeSourceId: this.activeId };
-      const accepted = await pushDirect(address, port, bundle, '/lxlia-sync/push', 130000);
-      this.message = accepted ? `已直连同步到 ${address}:${port}` : '对方未接受同步';
-      this.notify(this.message);
+        trustToken: trusted.token, settings: this.settings, playlists: this.playlists, sources: this.sources, activeSourceId: this.activeId };
+      const res = await pushDirectDetailed(address, port, bundle, '/lxlia-sync/push', 130000);
+      if (res.accepted) {
+        this.message = `已直连同步到「${peerName}」`;
+      } else if (res.code === 'UNTRUSTED') {
+        this.message = `「${peerName}」已将本机移出信任圈，请先移除再重新加入信任圈`;
+      } else {
+        this.message = res.message ? `对方未接受：${res.message}` : '对方未接受同步';
+      }
+      this.notify(this.message, 2600);
     } catch (error) {
-      this.message = `直连发送失败：${(error as Error).message}`;
+      this.message = `直连失败：${(error as Error).message}`;
       this.notify(this.message, 3000);
     } finally { this.busy = false; }
   }
+  private scheduleAutoSyncReconcile(delayMs: number = 350, forceLocalPush: boolean = false): void {
+    if (!this.lanAutoSync || !this.storeReady || this.disposed || this.trustedMap.size === 0) return;
+    if (this.autoSyncReconcileTimer >= 0) clearTimeout(this.autoSyncReconcileTimer);
+    this.autoSyncReconcileTimer = setTimeout(() => {
+      this.autoSyncReconcileTimer = -1;
+      this.reconcileAutoSyncPeers(forceLocalPush).catch(() => {});
+    }, delayMs);
+  }
+  private async reconcileAutoSyncPeers(forceLocalPush: boolean = false): Promise<void> {
+    if (!this.lanAutoSync || !this.storeReady || this.disposed || this.trustedMap.size === 0) return;
+    const effectiveForce = forceLocalPush && Date.now() >= this.suppressAutoSyncUntil;
+    const myDigest = computeSyncDigest(this.playlists);
+    const now = Date.now();
+    const candidates = this.devices.filter((peer: LanDevice) => {
+      if (peer.autoSyncPlaylists !== true || peer.port <= 0) return false;
+      if (!this.trustedMap.has(peer.id)) return false;
+      if (this.autoSyncInFlight.has(peer.id)) return false;
+      const backoff = this.autoSyncBackoff.get(peer.id) ?? 0;
+      if (now < backoff) return false;
+      const peerDigest = peer.syncDigest ?? '';
+      if (peerDigest && peerDigest === myDigest) {
+        this.autoSyncBackoff.delete(peer.id);
+        return false;
+      }
+      const pairKey = `${myDigest}|${peerDigest}`;
+      if (!effectiveForce && this.autoSyncExchanged.get(peer.id) === pairKey) return false;
+      if (peer.receiveMode === 'pull') {
+        return effectiveForce;
+      }
+      return effectiveForce || this.deviceId < peer.id || !peerDigest;
+    });
+    if (!candidates.length) return;
+    let mergedLocally = false;
+    await Promise.allSettled(candidates.map(async (peer: LanDevice) => {
+      const trusted = this.trustedMap.get(peer.id);
+      if (!trusted) return;
+      this.autoSyncInFlight.add(peer.id);
+      try {
+        const bundle: SyncBundle = {
+          protocol: 'lxlia-lansync/1',
+          version: 1,
+          createdAt: Date.now(),
+          device: { id: this.deviceId, name: this.deviceName, platform: 'harmony' },
+          trustToken: trusted.token,
+          syncDigest: myDigest,
+          settings: {},
+          playlists: this.playlists,
+          sources: [],
+          activeSourceId: '',
+        };
+        const timeoutMs = peer.receiveMode === 'pull' ? 3500 : 10000;
+        const res = await exchangeAutoPlaylists(peer.address, peer.port, bundle, timeoutMs);
+        if (res.code === 'UNTRUSTED') {
+          this.autoSyncBackoff.set(peer.id, Date.now() + 30000);
+          return;
+        }
+        if (!res.accepted) {
+          this.autoSyncBackoff.set(peer.id, Date.now() + 5000);
+          return;
+        }
+        this.autoSyncBackoff.delete(peer.id);
+        let postDigest = computeSyncDigest(this.playlists);
+        if (res.playlists.length > 0 && !this.disposed) {
+          try {
+            const beforeJson = JSON.stringify(this.playlists);
+            const remoteLists = parsePlaylists(JSON.stringify(res.playlists));
+            const merged = mergeSyncPlaylists(this.playlists, remoteLists);
+            postDigest = computeSyncDigest(merged);
+            if (JSON.stringify(merged) !== beforeJson) {
+              mergedLocally = true;
+              this.suppressAutoSyncUntil = Date.now() + 2500;
+              this.playlists = merged;
+              this.syncLikedKeysStorage();
+              if (this.openedPlaylist) {
+                const updated = this.openedPlaylist.isFavorite
+                  ? merged.find((item: MusicPlaylist) => item.isFavorite)
+                  : merged.find((item: MusicPlaylist) => item.id === this.openedPlaylist?.id);
+                if (updated) this.openedPlaylist = updated;
+              }
+              this.save();
+            }
+          } catch (_) {}
+        }
+        const remoteDigest = res.syncDigest || (peer.syncDigest ?? '');
+        this.autoSyncExchanged.set(peer.id, `${postDigest}|${remoteDigest}`);
+      } catch (_) {
+        this.autoSyncBackoff.set(peer.id, Date.now() + 5000);
+      } finally {
+        this.autoSyncInFlight.delete(peer.id);
+      }
+    }));
+    if (mergedLocally && !this.disposed) {
+      this.discovery?.announceNow();
+      const toastNow = Date.now();
+      if (toastNow - this.lastAutoSyncToastAt >= 2500) {
+        this.lastAutoSyncToastAt = toastNow;
+        this.notify('已自动合并局域网歌单与我的收藏', 1800);
+      }
+      this.scheduleAutoSyncReconcile(450, false);
+    }
+  }
   private triggerAutoSync(): void {
-    if (!this.lanAutoSync || Date.now() < this.suppressAutoSyncUntil || this.disposed) return;
+    if (!this.lanAutoSync || this.trustedMap.size === 0 || Date.now() < this.suppressAutoSyncUntil || this.disposed) return;
+    this.discovery?.announceNow();
     if (this.autoSyncTimer >= 0) clearTimeout(this.autoSyncTimer);
     this.autoSyncTimer = setTimeout(() => {
       this.autoSyncTimer = -1;
-      if (!this.lanAutoSync || this.disposed) return;
-      const peers = this.devices.filter((item: LanDevice) => item.autoSyncPlaylists === true && item.port > 0);
-      if (!peers.length) return;
-      const bundle: SyncBundle = { protocol: 'lxlia-lansync/1', version: 1, createdAt: Date.now(), device: { id: this.deviceId, name: this.deviceName, platform: 'harmony' },
-        settings: {}, playlists: this.playlists, sources: [], activeSourceId: '' };
-      for (const peer of peers) {
-        pushDirect(peer.address, peer.port, bundle, '/lxlia-sync/auto-playlists', 10000).catch(() => {});
-      }
-    }, 1200);
+      this.reconcileAutoSyncPeers(true).catch(() => {});
+    }, 650);
   }
   /** 用户确认后校验全部数据，再持久化，最后回执；失败保留原数据。 */
   private async respond(accepted: boolean): Promise<void> {
@@ -3940,6 +4632,45 @@ struct Index {
     if (!incoming || this.applying) return;
     this.applying = true;
     try {
+      if (incoming.kind === 'pair') {
+        const pairOpts: PairRespondOptions = { transitive: false, introducedPeers: [], reverseVouches: [] };
+        if (accepted && incoming.peerId && incoming.pairToken) {
+          const existingBefore: TrustedDevice[] = [];
+          for (const item of this.trustedMap.values()) {
+            if (item.id !== incoming.peerId) existingBefore.push(item);
+          }
+          this.addTrustedDevice(incoming.peerId, incoming.peerName, incoming.platform, incoming.pairToken);
+          let extraCount = 0;
+          if (this.trustCircleTransitive && incoming.transitive === true) {
+            pairOpts.transitive = true;
+            const initiatorKnown = new Set<string>();
+            for (const p of (incoming.peers ?? [])) initiatorKnown.add(p.id);
+            for (const p of existingBefore) {
+              if (initiatorKnown.has(p.id)) continue;
+              const freshToken = generateTrustToken();
+              pairOpts.introducedPeers.push({ id: p.id, name: p.name, platform: p.platform, token: freshToken });
+              this.queuePendingVouch(p.id, {
+                id: incoming.peerId,
+                name: incoming.peerName,
+                platform: incoming.platform,
+                token: freshToken,
+              });
+            }
+            for (const q of (incoming.peers ?? [])) {
+              if (!q.id || q.id === this.deviceId || q.id === incoming.peerId || this.trustedMap.has(q.id)) continue;
+              const revToken = generateTrustToken();
+              this.addTrustedDevice(q.id, q.name, q.platform, revToken);
+              pairOpts.reverseVouches.push({ id: q.id, name: q.name, platform: q.platform, token: revToken });
+              extraCount += 1;
+            }
+          }
+          const suffix = extraCount > 0 ? `（并同步加入对方信任圈内 ${extraCount} 台设备）` : '';
+          this.message = `已将「${incoming.peerName}」加入设备信任圈${suffix}`;
+          this.notify(this.message, 2200);
+        }
+        await this.syncServer.respond(incoming.id, accepted, '', pairOpts); this.incoming = null;
+        return;
+      }
       if (accepted) {
         const bundle = JSON.parse(incoming.bundleJson) as SyncBundle;
         const playlists = parsePlaylists(JSON.stringify(bundle.playlists));
@@ -4119,8 +4850,23 @@ struct Index {
   private askIncoming(): void {
     const request = this.incoming; if (!request) return;
     this.promptedIncoming = request.id;
+    if (request.kind === 'pair') {
+      const codeText = formatPairCode(request.pairCode ?? '');
+      const transitiveNote = request.transitive
+        ? '\n\n对方已开启「信任圈成员互通」：若本机也开启此开关，确认后双方信任圈内已有设备将自动互相加入。'
+        : '';
+      this.getUIContext().showAlertDialog({
+        title: '信任圈加入请求',
+        message: `「${request.peerName}」（${devicePlatformName(request.platform)}）请求加入您的设备信任圈。\n\n核对验证码：${codeText}\n\n确认加入后，双方可互相发送整份数据并自动同步歌单。${transitiveNote}`,
+        autoCancel: false,
+        systemMaterial: musicMenuMaterial(),
+        primaryButton: { value: '拒绝', action: () => { this.respond(false); } },
+        secondaryButton: { value: '信任此设备', action: () => { this.respond(true); } }
+      });
+      return;
+    }
     this.getUIContext().showAlertDialog({ title: '接收同步',
-      message: `「${request.peerName}」将发送 ${request.summary.playlists} 个歌单、${request.summary.sources} 个音源及 ${request.summary.settings} 项设置。接收后覆盖本机对应数据。`,
+      message: `已信任设备「${request.peerName}」将发送 ${request.summary.playlists} 个歌单、${request.summary.sources} 个音源及 ${request.summary.settings} 项设置。接收后覆盖本机对应数据。`,
       autoCancel: false, systemMaterial: musicMenuMaterial(), primaryButton: { value: '拒绝', action: () => { this.respond(false); } },
       secondaryButton: { value: '接收并覆盖', action: () => { this.respond(true); } } });
   }
@@ -4135,10 +4881,12 @@ struct Index {
         ListItem() {
           SongListTools({ countText: `${$$.songs.length} 首歌曲`,
             disabled: !$$.songs.length,
+            wide: this.wide,
             showDelete: this.canDeleteOpenedPlaylist() || (this.openedPlaylist.kind === 'recent' && $$.songs.length > 0),
             deleteLabel: this.openedPlaylist.kind === 'recent' ? '清空' : '删除歌单',
             showEdit: this.canDeleteOpenedPlaylist(),
             showCustomCover: this.canCustomizeOpenedPlaylistCover(),
+            showBatchCollect: $$.songs.length > 0,
             showBatchDownload: $$.songs.length > 0 && this.openedPlaylist.kind !== 'local',
             showCollect: this.canCollectOpenedPlaylist(),
             collected: this.isCollectionSavedToLibrary(this.openedPlaylist.name, this.openedPlaylist.songs ?? []),
@@ -4151,8 +4899,9 @@ struct Index {
               else this.deleteOpenedPlaylist();
             },
             onRename: () => this.openSheet('重命名歌单'),
-            onCustomCover: () => { if (this.openedPlaylist) this.coverPickerPlaylist = this.openedPlaylist; },
+            onCustomCover: () => { if (this.openedPlaylist) this.openCoverPicker(this.openedPlaylist); },
             onBatchDelete: () => { this.editPlaylistOpen = true; },
+            onBatchCollect: () => { this.openBatchCollectPicker($$.songs, `批量收藏 · ${this.openedPlaylist?.name ?? '歌单'}`); },
             onBatchDownload: () => { this.openBatchDownloadPicker($$.songs); },
             onCollect: () => {
               if (this.openedPlaylist) {
@@ -4164,6 +4913,8 @@ struct Index {
       if ($$.scroller === this.searchScroller && this.searchOpen) {
         ListItem() {
           SongListTools({ countText: `${$$.songs.length} 首歌曲`, disabled: !$$.songs.length,
+            wide: this.wide,
+            showBatchCollect: $$.songs.length > 0,
             showBatchDownload: $$.songs.length > 0,
             showCollect: !!this.openedEntity && $$.songs.length > 0,
             collected: this.openedEntity ? this.isCollectionSavedToLibrary(this.openedEntity.name, this.entitySongs) : false,
@@ -4171,6 +4922,7 @@ struct Index {
             onPlayAll: () => { if ($$.songs.length) this.playSong($$.songs[0], $$.songs, 0, true, !!$$.fromSearch, !!$$.fromSearch); },
             onSort: (mode: string) => { this.listSortMode = mode; },
             onManual: () => this.openManualOrderFor(this.openedEntity ? this.entitySongs : this.results),
+            onBatchCollect: () => { this.openBatchCollectPicker($$.songs, this.openedEntity ? `批量收藏 · ${this.openedEntity.name}` : '批量收藏搜索结果'); },
             onBatchDownload: () => { this.openBatchDownloadPicker($$.songs); },
             onCollect: () => {
               if (this.openedEntity) {
@@ -4188,12 +4940,15 @@ struct Index {
       contentBottom: $$.scroller === this.queueScroller ? 28 : this.searchOpen ? 150 : 180,
       showRemove: $$.scroller === this.queueScroller || ($$.scroller === this.playlistScroller && this.canRemoveFromOpenedPlaylist()),
       showSwitchPlatform: $$.scroller === this.queueScroller || ($$.scroller === this.playlistScroller && this.canSwitchInOpenedPlaylist()),
+      showPlayNext: true,
+      hidePlayNextOnActive: $$.scroller === this.queueScroller,
       removeLabel: $$.scroller === this.queueScroller ? '从队列移除' : (this.openedPlaylist?.isFavorite ? '取消收藏' : (this.openedPlaylist?.kind === 'recent' ? '从最近播放移除' : '从歌单移除')),
       header: () => { this.songListHeader($$); }, likedSong: (song: Song) => this.liked(song),
       onPlay: (song: Song, context: Song[]) => {
         const queueToUse = ($$.playQueue && $$.playQueue.length > 0) ? $$.playQueue : context;
         this.playSong(song, queueToUse, 0, true, !!$$.fromSearch, false, !!$$.preserveQueue);
       },
+      onPlayNext: (song: Song) => this.playNext(song),
       onLike: (song: Song) => this.like(song), onMore: (song: Song) => this.addToPlaylist(song),
       onDownload: (song: Song) => this.downloadSong(song),
       onRemove: (song: Song) => { if ($$.scroller === this.queueScroller) this.removeFromQueue(song); else this.removeSongFromOpenedPlaylist(song); },
@@ -4430,6 +5185,9 @@ struct Index {
             likedSignature: this.likedSignature(),
             likedSong: (song: Song) => this.liked(song), onLikeSong: (song: Song) => this.like(song),
             onAddToPlaylist: (song: Song) => this.addToPlaylist(song), onDownloadSong: (song: Song) => this.downloadSong(song),
+            onPlayNextSong: (song: Song) => this.playNext(song),
+            onBatchCollectSongs: (songs: Song[]) => this.openBatchCollectPicker(songs, `批量收藏 · ${this.feedSectionTitle()}`),
+            onBatchDownloadSongs: (songs: Song[]) => this.openBatchDownloadPicker(songs),
             onOpenFeed: (item: FeedPlaylist) => { if (Date.now() < this.feedReadyAt) return; let offset = 0; try { offset = this.feedScroller.currentOffset().yOffset; } catch (_) {} this.openFeedPlaylist(item, false, offset).catch(() => {}); },
             onPlaySong: (song: Song, queue: Song[]) => { if (Date.now() < this.feedReadyAt) return; this.playSong(song, queue, 0, true, false, false, true).catch(() => {}); },
             onPlaySongs: (songs: Song[]) => { if (Date.now() < this.feedReadyAt) return; if (songs.length) this.playSong(songs[0], songs).catch(() => {}); },
@@ -4688,6 +5446,9 @@ struct Index {
           likedSignature: this.likedSignature(),
           likedSong: (song: Song) => this.liked(song), onLikeSong: (song: Song) => this.like(song),
           onAddToPlaylist: (song: Song) => this.addToPlaylist(song), onDownloadSong: (song: Song) => this.downloadSong(song),
+          onPlayNextSong: (song: Song) => this.playNext(song),
+          onBatchCollectSongs: (songs: Song[]) => this.openBatchCollectPicker(songs, '批量收藏 · 新歌速递'),
+          onBatchDownloadSongs: (songs: Song[]) => this.openBatchDownloadPicker(songs),
           activeAnchor: this.homeChipAnchor, onChip: (anchor: string) => this.onHomeChip(anchor),
           activeFeedId: this.openedFeedSourceId,
           playing: this.playing, selectedKey: this.selected ? songKey(this.selected) : '',
@@ -4738,7 +5499,9 @@ struct Index {
           likedSignature: this.likedSignature(),
           scroller: this.localScroller, likedSong: (song: Song) => this.liked(song),
           onPlay: (song: Song) => this.playSong(song, this.arrangedSongs(this.localTracks, false)),
+          onPlayNext: (song: Song) => this.playNext(song),
           onLike: (song: Song) => this.like(song), onMore: (song: Song) => this.addToPlaylist(song),
+          onBatchCollect: (songs: Song[]) => this.openBatchCollectPicker(songs, '批量收藏 · 本地音乐'),
           onPlayAll: () => { const list = this.arrangedSongs(this.localTracks, false); if (list.length) this.playSong(list[0], list); },
           onSort: (mode: string) => { this.listSortMode = mode; },
           onManualSort: () => this.openManualOrder(),
@@ -5238,8 +6001,9 @@ struct Index {
                   sleepRemainingText: this.sleepRemainingText,
                   isHarmonyPc: isHarmonyPc(),
                   volume: this.volume,
-                  desktopLyrics: this.desktopLyrics,
-                  desktopLyricsLocked: this.desktopLyricsLocked,
+                  desktopLyrics: isHarmonyPc() ? this.desktopLyrics : this.mobileDesktopLyrics,
+                  desktopLyricsLocked: isHarmonyPc() ? this.desktopLyricsLocked : this.mobileDesktopLyricsLocked,
+                  mobileDesktopLyricsSupported: this.mobileDesktopLyricsSupported,
                   wallpaperMode: this.wallpaperMode,
                   onAddToPlaylist: () => { if (this.selected) { this.showSheet = false; this.addToPlaylist(this.selected); } },
                   onSwitchPlatform: () => { if (this.selected) { this.showSheet = false; this.openSwitchPlatform(this.selected, 'player'); } },
@@ -5263,8 +6027,14 @@ struct Index {
             this.openSubSheetFromSheet('更多', () => { this.moreSleepOpen = true; });
           },
                   onVolume: (value: number) => { this.applyVolume(value); },
-                  onToggleDesktopLyrics: () => { this.applyHarmonyPcDesktopLyrics(!this.desktopLyrics); },
-                  onToggleDesktopLyricsLocked: () => { this.applyHarmonyPcDesktopLyricsLocked(!this.desktopLyricsLocked); },
+                  onToggleDesktopLyrics: () => {
+                    if (isHarmonyPc()) this.applyHarmonyPcDesktopLyrics(!this.desktopLyrics);
+                    else this.applyMobileDesktopLyrics(!this.mobileDesktopLyrics);
+                  },
+                  onToggleDesktopLyricsLocked: () => {
+                    if (isHarmonyPc()) this.applyHarmonyPcDesktopLyricsLocked(!this.desktopLyricsLocked);
+                    else this.applyMobileDesktopLyricsLocked(!this.mobileDesktopLyricsLocked);
+                  },
                   onToggleWallpaperMode: () => { this.toggleHarmonyPcWallpaper(!this.wallpaperMode); }
                 })
               }.width('100%').padding({ left: 24, right: 24, top: 72, bottom: 28 })
@@ -5290,7 +6060,7 @@ struct Index {
             }
             Button('完成').attributeModifier(musicButtonPress).buttonStyle(ButtonStyleMode.TEXTUAL)
               .backgroundColor(Color.Transparent).systemMaterial(uiMaterial.Material.empty).focusable(false).fontColor(ACCENT).enabled(!this.busy)
-              .onClick(() => { this.returnSheetAfterSub = ''; this.switchTargetSong = null; this.switchTargetScope = ''; this.queueOrderOpen = false; this.moreAudioFxOpen = false; this.moreSleepOpen = false; this.showSheet = false; })
+              .onClick(() => { this.returnSheetAfterSub = ''; this.platformSwitchOpen = false; this.queueOrderOpen = false; this.moreAudioFxOpen = false; this.moreSleepOpen = false; this.showSheet = false; })
           }.width('100%').padding({ left: 24, right: 24, top: 20, bottom: 10 }).hitTestBehavior(HitTestMode.Default)
         }.width('100%').height('100%')
       } else {
@@ -5398,7 +6168,7 @@ struct Index {
         bottomInset: 8,
         host: this.host,
         onSelect: (replacement: Song) => { this.applyPlatformSwitch(replacement); this.maybeReturnToParentSheet(); },
-        onClose: () => { this.switchTargetSong = null; this.switchTargetScope = ''; this.maybeReturnToParentSheet(); }
+        onClose: () => { this.closePlatformSwitch(true); }
       })
     }
   }
@@ -5417,7 +6187,7 @@ struct Index {
       wide: this.wide,
       statusInset: 0,
       bottomInset: 8,
-      onCancel: () => { this.colorPickerTarget = ''; },
+      onCancel: () => { this.closeColorPicker(); },
       onConfirm: (hex: string) => {
         if (this.colorPickerTarget === 'primary') {
           this.lyricPrefs = { colorMode: this.lyricPrefs.colorMode, primary: hex, secondary: this.lyricPrefs.secondary, showTranslation: this.lyricPrefs.showTranslation, showRomaji: this.lyricPrefs.showRomaji, scale: this.lyricPrefs.scale ?? 1, lineSpacing: this.lyricPrefs.lineSpacing ?? 1.2, maxLines: this.lyricPrefs.maxLines ?? 0 };
@@ -5428,7 +6198,7 @@ struct Index {
         } else {
           this.desktopLyricColor2 = hex;
         }
-        this.colorPickerTarget = '';
+        this.closeColorPicker();
         this.save();
         this.syncHarmonyPcDesktopLyrics(this.livePositionMs, true);
         this.syncHarmonyPcWallpaperState();
@@ -5444,10 +6214,27 @@ struct Index {
         wide: this.wide,
         statusInset: 0,
         bottomInset: 8,
-        onCancel: () => { this.batchDownloadSongs = null; },
+        onCancel: () => { this.closeBatchDownload(); },
         onConfirm: (chosen: Song[]) => {
-          this.batchDownloadSongs = null;
+          this.closeBatchDownload();
           this.downloadBatch(chosen).catch(() => {});
+        }
+      })
+    }
+  }
+  @LocalBuilder private batchCollectSheet() {
+    if (this.batchCollectSongs !== null) {
+      BatchCollectSheet({
+        title: this.batchCollectTitle,
+        songs: this.batchCollectSongs,
+        playlists: this.playlists,
+        wide: this.wide,
+        statusInset: 0,
+        bottomInset: 8,
+        onCancel: () => { this.closeBatchCollect(); },
+        onConfirm: (chosen: Song[], targetPlaylistId: string, newPlaylistName: string) => {
+          this.closeBatchCollect();
+          this.collectSongsToPlaylist(chosen, targetPlaylistId, newPlaylistName);
         }
       })
     }
@@ -5459,7 +6246,7 @@ struct Index {
         wide: this.wide,
         statusInset: 0,
         bottomInset: 8,
-        onCancel: () => { this.coverPickerPlaylist = null; },
+        onCancel: () => { this.closeCoverPicker(); },
         onPickLocal: () => {
           const target = this.coverPickerPlaylist;
           if (target) this.pickLocalPlaylistCover(target).catch(() => {});
@@ -5522,15 +6309,17 @@ struct Index {
         showBoostImmersive: !this.nativeExquisiteMaterial, boostImmersive: this.boostImmersive, materialLevelLabel: nativeMaterialLevelLabel(),
         bluetoothCarLyricsEnabled: this.bluetoothCarLyricsEnabled, bluetoothCarLyricsMode: this.bluetoothCarLyricsMode, bluetoothAudioConnected: this.bluetoothAudioConnected,
         startupAnimation: this.startupAnimation, resumeOnStartup: this.resumeOnStartup, gripEnabled: this.gripEnabled, gripSupported: this.gripSupported,
-        allowLandscapeLocked: this.allowLandscapeLocked, mixWithOthers: this.mixWithOthers, refreshAlgoDoubleTap: this.refreshAlgoDoubleTap, lanAutoSync: this.lanAutoSync, lanLocalAddress: this.lanLocalAddress, carDetail: this.carDetail,
-        completedDownloads: this.downloadItems.filter((item: MusicDownload) => item.state === 'complete').length, dislikedCount: this.uniqueDislikedCount(), devices: this.devices, lanSsid: this.lanSsid, message: this.message,
+        allowLandscapeLocked: this.allowLandscapeLocked, mixWithOthers: this.mixWithOthers, refreshAlgoDoubleTap: this.refreshAlgoDoubleTap, lanAutoSync: this.lanAutoSync, trustCircleTransitive: this.trustCircleTransitive, lanLocalAddress: this.lanLocalAddress, carDetail: this.carDetail,
+        completedDownloads: this.downloadItems.filter((item: MusicDownload) => item.state === 'complete').length, dislikedCount: this.uniqueDislikedCount(), devices: this.devices, trustedDevices: this.trustedDevices, lanSsid: this.lanSsid, message: this.message,
         lyrics: this.lyricPrefs, lyricOffset: this.lyricOffset, previewPrimary: lyricPrimary(this.lyricPrefs, this.coverColors), previewSecondary: lyricSecondary(this.lyricPrefs, this.coverColors),
         previewText: this.lyrics.find((line: LyricLine) => line.timeMs <= this.positionMs)?.text || '音乐在这里，与你相遇', contentTop: this.headerHeight(), updateChecking: this.updateChecking,
-        isHarmonyPc: isHarmonyPc(), volume: this.volume, desktopLyrics: this.desktopLyrics, desktopLyricsLocked: this.desktopLyricsLocked, desktopLyricSize: this.desktopLyricSize, desktopLyricLines: this.desktopLyricLines,
+        isHarmonyPc: isHarmonyPc(), volume: this.volume, desktopLyrics: this.desktopLyrics, desktopLyricsLocked: this.desktopLyricsLocked,
+        mobileDesktopLyrics: this.mobileDesktopLyrics, mobileDesktopLyricsLocked: this.mobileDesktopLyricsLocked, mobileDesktopLyricsSupported: this.mobileDesktopLyricsSupported,
+        desktopLyricSize: this.desktopLyricSize, desktopLyricLines: this.desktopLyricLines,
         desktopLyricColorMode: this.desktopLyricColorMode, desktopLyricColor: this.desktopLyricColor, desktopLyricColor2: this.desktopLyricColor2,
         desktopPreviewPrimary: this.desktopLyricPrimaryColor(), desktopPreviewSecondary: this.desktopLyricSecondaryColor(),
         wallpaperMode: this.wallpaperMode, wallpaperBgOpacity: this.wallpaperBgOpacity, wallpaperOverallOpacity: this.wallpaperOverallOpacity, spatialSystemActive: this.spatialSystemActive, shortcutsEnabled: this.shortcutsEnabled, shortcuts: this.shortcuts, scroller: this.settingsScroller,
-        onCheckUpdate: () => { this.checkAppUpdate(false).catch(() => {}); },
+        onCheckUpdate: () => { if (!isStoreEdition()) this.checkAppUpdate(false).catch(() => {}); },
         onVolume: (value: number) => { this.applyVolume(value); },
         onBoostImmersive: (value: boolean) => {
           this.boostImmersive = !this.nativeExquisiteMaterial && value;
@@ -5557,8 +6346,8 @@ struct Index {
           this.player.setBluetoothCarLyrics(this.bluetoothCarLyricsEnabled, this.bluetoothCarLyricsMode);
           this.save();
         },
-        onPickPrimaryColor: () => { this.colorPickerTarget = 'primary'; },
-        onPickSecondaryColor: () => { this.colorPickerTarget = 'secondary'; },
+        onPickPrimaryColor: () => { this.openColorPicker('primary'); },
+        onPickSecondaryColor: () => { this.openColorPicker('secondary'); },
         onShortcutsEnabled: (value: boolean) => { this.shortcutsEnabled = value; this.save(); },
         onShortcutChange: (actionId: string, combo: string) => {
           const next: Record<string, string> = {};
@@ -5574,6 +6363,12 @@ struct Index {
         },
         onDesktopLyricsLocked: (value: boolean) => {
           this.applyHarmonyPcDesktopLyricsLocked(value);
+        },
+        onMobileDesktopLyrics: (value: boolean) => {
+          this.applyMobileDesktopLyrics(value);
+        },
+        onMobileDesktopLyricsLocked: (value: boolean) => {
+          this.applyMobileDesktopLyricsLocked(value);
         },
         onDesktopLyricSize: (value: number) => {
           this.desktopLyricSize = Math.max(0.72, Math.min(1.55, Math.round(value * 100) / 100));
@@ -5595,8 +6390,8 @@ struct Index {
             this.syncHarmonyPcDesktopLyrics(this.livePositionMs, true);
           }
         },
-        onPickDesktopPrimaryColor: () => { this.colorPickerTarget = 'desktop-primary'; },
-        onPickDesktopSecondaryColor: () => { this.colorPickerTarget = 'desktop-secondary'; },
+        onPickDesktopPrimaryColor: () => { this.openColorPicker('desktop-primary'); },
+        onPickDesktopSecondaryColor: () => { this.openColorPicker('desktop-secondary'); },
         onWallpaperMode: (value: boolean) => { this.toggleHarmonyPcWallpaper(value); },
         onWallpaperBgOpacity: (value: number) => {
           this.wallpaperBgOpacity = Math.max(0, Math.min(1, value));
@@ -5610,13 +6405,20 @@ struct Index {
         },
         onScroll: (offset: number) => this.homeScroll(offset), onOpenSources: () => this.openSources(), onPanel: (panel: string) => this.openSettingsPanel(panel),
         onDownloads: () => this.openDownloads('设置'),
-        onSend: (device: LanDevice) => this.send(device), onSendDirect: (target: string) => { this.sendDirect(target); },
+        onSend: (device: LanDevice) => this.send(device), onPair: (device: LanDevice) => { this.pairDevice(device); }, onRemoveTrusted: (id: string) => { this.removeTrustedDevice(id); }, onSendDirect: (target: string) => { this.sendDirect(target); },
         onLanAutoSync: (value: boolean) => {
           this.lanAutoSync = value;
           this.syncServer.setAutoSync(value);
           this.discovery?.setAutoSync(value);
           this.save();
-          if (value) this.triggerAutoSync();
+          if (value) {
+            this.autoSyncExchanged.clear();
+            this.discovery?.announceNow();
+            this.scheduleAutoSyncReconcile(250, true);
+          }
+        },
+        onTrustCircleTransitive: (value: boolean) => {
+          this.setTrustCircleTransitive(value);
         },
         onQuality: (value: string) => { this.applyQuality(value, true); },
         onMode: (value: string) => { this.mode = value; this.refreshAutoMixPlan(); this.save(); },
@@ -5689,6 +6491,7 @@ struct Index {
           resetCameraOnSong: this.stageResetCameraOnSong,
           playing: (this.playing || this.stageFadingOut) && this.foreground,
           positionMs: this.stageClockMs,
+          getLivePositionMs: () => this.livePositionMs,
           topInset: Math.min(this.statusInset + 72, Math.round(this.viewportHeight * 0.22)),
           bottomInset: Math.min(this.bottomInset + 164, Math.round(this.viewportHeight * 0.34)),
           visible: this.stageSlotVisible(slot),
@@ -5896,7 +6699,8 @@ struct Index {
         .bindSheet($$this.platformSwitchOpen, this.platformSwitchSheet(), {
           height: SheetSize.LARGE, width: this.wide ? 580 : '100%', preferType: this.wide ? SheetType.CENTER : SheetType.BOTTOM,
           showClose: false, dragBar: true,
-          onWillDismiss: (action: DismissSheetAction) => { this.switchTargetSong = null; this.switchTargetScope = ''; action.dismiss(); this.maybeReturnToParentSheet(); },
+          onWillDismiss: (action: DismissSheetAction) => { this.platformSwitchOpen = false; action.dismiss(); this.maybeReturnToParentSheet(); },
+          onDisappear: () => { if (!this.platformSwitchOpen) { this.switchTargetSong = null; this.switchTargetScope = ''; } },
           systemMaterial: musicMenuMaterial()
         })
       Row().width(0).height(0).hitTestBehavior(HitTestMode.None)
@@ -5924,26 +6728,37 @@ struct Index {
         .bindSheet($$this.colorPickerOpen, this.colorPickerSheet(), {
           height: SheetSize.FIT_CONTENT, width: this.wide ? 480 : '100%', preferType: this.wide ? SheetType.CENTER : SheetType.BOTTOM,
           showClose: false, dragBar: true,
-          onWillDismiss: (action: DismissSheetAction) => { this.colorPickerTarget = ''; action.dismiss(); },
+          onWillDismiss: (action: DismissSheetAction) => { this.colorPickerOpen = false; action.dismiss(); },
+          onDisappear: () => { if (!this.colorPickerOpen) this.colorPickerTarget = ''; },
           systemMaterial: musicMenuMaterial()
         })
       Row().width(0).height(0).hitTestBehavior(HitTestMode.None)
         .bindSheet($$this.batchDownloadOpen, this.batchDownloadSheet(), {
           height: SheetSize.LARGE, width: this.wide ? 580 : '100%', preferType: this.wide ? SheetType.CENTER : SheetType.BOTTOM,
           showClose: false, dragBar: true,
-          onWillDismiss: (action: DismissSheetAction) => { this.batchDownloadSongs = null; action.dismiss(); },
+          onWillDismiss: (action: DismissSheetAction) => { this.batchDownloadOpen = false; action.dismiss(); },
+          onDisappear: () => { if (!this.batchDownloadOpen) this.batchDownloadSongs = null; },
+          systemMaterial: musicMenuMaterial()
+        })
+      Row().width(0).height(0).hitTestBehavior(HitTestMode.None)
+        .bindSheet($$this.batchCollectOpen, this.batchCollectSheet(), {
+          height: SheetSize.LARGE, width: this.wide ? 580 : '100%', preferType: this.wide ? SheetType.CENTER : SheetType.BOTTOM,
+          showClose: false, dragBar: true,
+          onWillDismiss: (action: DismissSheetAction) => { this.batchCollectOpen = false; action.dismiss(); },
+          onDisappear: () => { if (!this.batchCollectOpen) this.batchCollectSongs = null; },
           systemMaterial: musicMenuMaterial()
         })
       Row().width(0).height(0).hitTestBehavior(HitTestMode.None)
         .bindSheet($$this.coverPickerOpen, this.coverPickerSheet(), {
           height: SheetSize.LARGE, width: this.wide ? 580 : '100%', preferType: this.wide ? SheetType.CENTER : SheetType.BOTTOM,
           showClose: false, dragBar: true,
-          onWillDismiss: (action: DismissSheetAction) => { this.coverPickerPlaylist = null; action.dismiss(); },
+          onWillDismiss: (action: DismissSheetAction) => { this.coverPickerOpen = false; action.dismiss(); },
+          onDisappear: () => { if (!this.coverPickerOpen) this.coverPickerPlaylist = null; },
           systemMaterial: musicMenuMaterial()
         })
       Web({ src: $rawfile('lx-runtime/index.html'), controller: this.controller }).width(1).height(1).opacity(0).javaScriptAccess(true)
         .javaScriptProxy({ object: this.host, name: '__lxNative', methodList: ['onInited', 'onResult', 'httpRequest'], controller: this.controller })
-        .onPageEnd(() => { this.host.attach(this.controller); this.hostReady = true; this.restorePlaybackIfReady(); this.restoreSource(); this.consumeSharedPlaylist(); this.refreshHomeFeed().catch(()=>{}); setTimeout(() => { if (!this.disposed) this.checkAppUpdate(true).catch(() => {}); }, 5500); })
+        .onPageEnd(() => { this.host.attach(this.controller); this.hostReady = true; this.restorePlaybackIfReady(); this.restoreSource(); this.consumeSharedPlaylist(); this.refreshHomeFeed().catch(()=>{}); if (!isStoreEdition()) { setTimeout(() => { if (!this.disposed) this.checkAppUpdate(true).catch(() => {}); }, 5500); } })
     }.width('100%').height('100%').backgroundColor(INK).expandSafeArea([SafeAreaType.SYSTEM], [SafeAreaEdge.TOP, SafeAreaEdge.BOTTOM])
       .onAreaChange((_oldArea: Area, area: Area) => {
         const nextW = Number(area.width);

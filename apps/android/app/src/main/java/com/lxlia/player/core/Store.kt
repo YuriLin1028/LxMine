@@ -83,6 +83,14 @@ class Store(context: Context) {
         return id
     }
 
+    /** 局域网设备信任圈：独立于 appData 存储，接收同步覆盖设置/歌单时绝不会被清空。 */
+    fun loadTrustedDevices(): String = raw("trustedDevices", "[]")
+    fun saveTrustedDevices(value: String): Boolean = put("trustedDevices", value)
+    fun loadTrustCircleTransitive(): Boolean = prefs.getBoolean("trustCircleTransitive", true)
+    fun saveTrustCircleTransitive(value: Boolean): Boolean = prefs.edit().putBoolean("trustCircleTransitive", value).commit()
+    fun loadPendingVouches(): String = raw("trustedPendingVouches", "[]")
+    fun savePendingVouches(value: String): Boolean = put("trustedPendingVouches", value)
+
     fun saveUiDiagnostics(value: String) = runtimePrefs.edit().putString("uiDiagnostics", value).apply()
     fun saveStageDiagnostics(value: String) = runtimePrefs.edit().putString("stageDiagnostics", value).apply()
 

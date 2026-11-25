@@ -11,6 +11,7 @@ import { http } from '@kit.NetworkKit';
 import { equalPowerGains } from './AutoMixPlanner';
 import { AudioFxConfig, defaultAudioFxConfig, effectiveAudioFxBands } from './AudioFxPresets';
 import { isStoreEdition } from './AppUpdater';
+import { isHarmonyPc } from './HarmonyPcWindowService';
 
 export interface SessionLyricLine { timeMs: number; text: string; }
 
@@ -29,6 +30,22 @@ export class PlayerService {
   private player: media.AVPlayer | null = null;
   private creating: Promise<media.AVPlayer> | null = null;
   private session: avSession.AVSession | null = null;
+  private sessionCreating: Promise<avSession.AVSession | null> | null = null;
+  private desktopLyricSupported: boolean = false;
+  private desktopLyricFeatureEnabled: boolean = false;
+  private desktopLyricDesiredVisible: boolean = false;
+  private desktopLyricDesiredLocked: boolean = false;
+  private desktopLyricVisCallback: ((visible: boolean) => void) | null = null;
+  private desktopLyricLockCallback: ((locked: boolean) => void) | null = null;
+  private readonly handleDesktopLyricVisibility = (visible: boolean): void => {
+    this.desktopLyricDesiredVisible = Boolean(visible);
+    this.desktopLyricVisCallback?.(Boolean(visible));
+  };
+  private readonly handleDesktopLyricState = (st: avSession.DesktopLyricState): void => {
+    const locked = Boolean(st?.isLocked);
+    this.desktopLyricDesiredLocked = locked;
+    this.desktopLyricLockCallback?.(locked);
+  };
   private context: common.UIAbilityContext | null = null;
   private background: boolean = false;
   private current: Song | null = null;
@@ -361,7 +378,119 @@ export class PlayerService {
   }
   setLyricOffset(offset: number): void {
     this.lyricOffset = offset;
+    this.lyricText = this.buildLyricText(this.lyricLines);
+    this.lastFullMetaSig = '';
+    this.updateMetadata(false);
     this.updateSingleLyric(true);
+  }
+  onDesktopLyricChange(onVisible: (visible: boolean) => void, onLocked: (locked: boolean) => void): void {
+    this.desktopLyricVisCallback = onVisible;
+    this.desktopLyricLockCallback = onLocked;
+  }
+  async checkDesktopLyricSupported(): Promise<boolean> {
+    if (isHarmonyPc()) {
+      this.desktopLyricSupported = false;
+      return false;
+    }
+    try {
+      const supported = await avSession.isDesktopLyricSupported();
+      this.desktopLyricSupported = Boolean(supported);
+      return this.desktopLyricSupported;
+    } catch (_) {
+      this.desktopLyricSupported = false;
+      return false;
+    }
+  }
+  async setSystemDesktopLyrics(visible: boolean, locked: boolean): Promise<boolean> {
+    this.desktopLyricDesiredVisible = visible;
+    this.desktopLyricDesiredLocked = locked;
+    if (isHarmonyPc()) return false;
+    const supported = await this.checkDesktopLyricSupported();
+    if (!supported) return false;
+    const session = await this.ensureSession();
+    if (!session) return false;
+    try {
+      if (!this.desktopLyricFeatureEnabled) {
+        await session.enableDesktopLyric(true);
+        this.desktopLyricFeatureEnabled = true;
+      }
+      await session.setDesktopLyricVisible(visible);
+      if (visible) {
+        await session.setDesktopLyricState({ isLocked: locked }).catch(() => {});
+        if (this.current) {
+          this.lastFullMetaSig = '';
+          this.updateMetadata(false);
+          this.updateSession();
+        }
+      }
+      return true;
+    } catch (error) {
+      console.warn(`[DesktopLyric] setVisible(${visible}) failed: ${(error as BusinessError).code} ${(error as BusinessError).message}`);
+      return false;
+    }
+  }
+  async setSystemDesktopLyricsLocked(locked: boolean): Promise<boolean> {
+    this.desktopLyricDesiredLocked = locked;
+    if (isHarmonyPc() || !this.session || !this.desktopLyricFeatureEnabled) return false;
+    try {
+      await this.session.setDesktopLyricState({ isLocked: locked });
+      return true;
+    } catch (error) {
+      console.warn(`[DesktopLyric] setState(locked=${locked}) failed: ${(error as BusinessError).code} ${(error as BusinessError).message}`);
+      return false;
+    }
+  }
+  private async ensureSession(): Promise<avSession.AVSession | null> {
+    if (this.session) return this.session;
+    if (!this.context) return null;
+    if (this.sessionCreating) return await this.sessionCreating;
+    const ctx = this.context;
+    const task = (async (): Promise<avSession.AVSession | null> => {
+      try {
+        const session = await avSession.createAVSession(ctx, 'LxMine', 'audio');
+        session.on('play', () => { this.resume().catch((e: BusinessError) => this.report(e)); });
+        session.on('pause', () => { this.pause(true).catch((e: BusinessError) => this.report(e)); });
+        session.on('playNext', () => this.nextCallback?.(1));
+        session.on('playPrevious', () => this.nextCallback?.(-1));
+        session.on('seek', (time: number) => this.seek(time));
+        if (!isStoreEdition()) {
+          try {
+            await session.setExtras({ 'hicar.media.bundle.FOR_HICAR': true, 'hicar.media.bundle.PLAY_MODE': 0 });
+            console.info('[HiCar] AVSession marked FOR_HICAR');
+          } catch (error) { console.info(`[HiCar] extras: ${(error as BusinessError).message}`); }
+        }
+        await session.activate();
+        this.session = session;
+        if (!isHarmonyPc()) {
+          try {
+            const supported = await avSession.isDesktopLyricSupported();
+            this.desktopLyricSupported = Boolean(supported);
+            if (supported) {
+              await session.enableDesktopLyric(true);
+              this.desktopLyricFeatureEnabled = true;
+              session.onDesktopLyricVisibilityChanged(this.handleDesktopLyricVisibility);
+              session.onDesktopLyricStateChanged(this.handleDesktopLyricState);
+              if (this.desktopLyricDesiredVisible) {
+                await session.setDesktopLyricVisible(true).catch(() => {});
+                await session.setDesktopLyricState({ isLocked: this.desktopLyricDesiredLocked }).catch(() => {});
+              }
+            }
+          } catch (error) {
+            console.info(`[DesktopLyric] init: ${(error as BusinessError).code} ${(error as BusinessError).message}`);
+          }
+        }
+        this.updateMetadata(false);
+        this.updateSession();
+        return session;
+      } catch (error) {
+        this.errorCallback?.(`媒体会话：${(error as BusinessError).message}`);
+        return null;
+      } finally {
+        this.sessionCreating = null;
+      }
+    })();
+    this.sessionCreating = task;
+    return await task;
   }
   initialize(context: common.UIAbilityContext): void { this.context = context; }
   private report(error: BusinessError): void { this.errorCallback?.(error.message); }
@@ -592,23 +721,7 @@ export class PlayerService {
       } catch (_) {}
     }
     if (this.context && !this.session) {
-      try {
-        this.session = await avSession.createAVSession(this.context, 'LxMine', 'audio');
-        this.session.on('play', () => { this.resume().catch((e: BusinessError) => this.report(e)); });
-        this.session.on('pause', () => { this.pause(true).catch((e: BusinessError) => this.report(e)); });
-        this.session.on('playNext', () => this.nextCallback?.(1));
-        this.session.on('playPrevious', () => this.nextCallback?.(-1));
-        this.session.on('seek', (time: number) => this.seek(time));
-        if (!isStoreEdition()) {
-          try {
-            await this.session.setExtras({ 'hicar.media.bundle.FOR_HICAR': true, 'hicar.media.bundle.PLAY_MODE': 0 });
-            console.info('[HiCar] AVSession marked FOR_HICAR');
-          } catch (error) { console.info(`[HiCar] extras: ${(error as BusinessError).message}`); }
-        }
-        await this.session.activate();
-        this.updateMetadata(false);
-        this.updateSession();
-      } catch (error) { this.errorCallback?.(`媒体会话：${(error as BusinessError).message}`); }
+      await this.ensureSession();
     }
     return player;
   }
@@ -1065,14 +1178,40 @@ export class PlayerService {
   durationMs(): number { const duration = this.player?.duration ?? 0; return duration > 0 ? duration : this.current?.durationMs ?? 0; }
   rawDurationMs(): number { const duration = this.player?.duration ?? 0; return duration > 0 ? duration : 0; }
   currentPositionMs(): number { return Math.max(0, this.position || 0); }
+  private utf8ByteLength(text: string): number {
+    let bytes = 0;
+    for (let i = 0; i < text.length; i += 1) {
+      const code = text.charCodeAt(i);
+      if (code < 0x80) bytes += 1;
+      else if (code < 0x800) bytes += 2;
+      else if (code >= 0xd800 && code <= 0xdbff && i + 1 < text.length) {
+        bytes += 4;
+        i += 1;
+      } else bytes += 3;
+    }
+    return bytes;
+  }
   private buildLyricText(lines: SessionLyricLine[]): string {
     const rows: string[] = [];
+    let prevCs = -1;
+    let totalBytes = 0;
+    const MAX_BYTES = 39000;
     for (const line of lines) {
       if (!Number.isFinite(line.timeMs)) continue;
-      const ms = Math.max(0, line.timeMs);
-      const minutes = Math.floor(ms / 60000);
-      const seconds = ((ms % 60000) / 1000).toFixed(2).padStart(5, '0');
-      rows.push(`[${String(minutes).padStart(2, '0')}:${seconds}]${(line.text || '').replace(/\r?\n/g, ' / ')}`);
+      const clean = (line.text || '').replace(/\r?\n/g, ' / ').trim();
+      if (!clean) continue;
+      const shiftedMs = Math.max(0, Math.round(line.timeMs - this.lyricOffset));
+      let totalCs = Math.round(shiftedMs / 10);
+      if (totalCs <= prevCs) totalCs = prevCs + 1;
+      prevCs = totalCs;
+      const minutes = Math.floor(totalCs / 6000);
+      const secs = Math.floor((totalCs % 6000) / 100);
+      const cs = totalCs % 100;
+      const row = `[${String(minutes).padStart(2, '0')}:${String(secs).padStart(2, '0')}.${String(cs).padStart(2, '0')}]${clean}`;
+      const rowBytes = this.utf8ByteLength(row) + (rows.length ? 1 : 0);
+      if (totalBytes + rowBytes > MAX_BYTES) break;
+      rows.push(row);
+      totalBytes += rowBytes;
     }
     return rows.join('\n');
   }
@@ -1270,6 +1409,11 @@ export class PlayerService {
     await this.metadataChain.catch(() => {});
     await this.player?.release(); this.player = null;
     if (this.localFile) { fileIo.closeSync(this.localFile); this.localFile = null; }
+    if (this.session && this.desktopLyricFeatureEnabled) {
+      try { this.session.offDesktopLyricVisibilityChanged(this.handleDesktopLyricVisibility); } catch (_) {}
+      try { this.session.offDesktopLyricStateChanged(this.handleDesktopLyricState); } catch (_) {}
+    }
+    this.desktopLyricFeatureEnabled = false;
     await this.session?.destroy(); this.session = null;
     for (const artwork of this.localArtwork.values()) await artwork.then((map: image.PixelMap) => map.release()).catch(() => {});
     this.localArtwork.clear();

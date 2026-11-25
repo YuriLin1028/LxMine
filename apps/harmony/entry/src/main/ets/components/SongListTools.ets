@@ -11,6 +11,8 @@ export struct SongListTools {
   @Prop showEdit: boolean = false;
   @Prop showCustomCover: boolean = false;
   @Prop showBatchDownload: boolean = false;
+  @Prop showBatchCollect: boolean = false;
+  @Prop wide: boolean = false;
   @Prop showCollect: boolean = false;
   @Prop collected: boolean = false;
   @Prop collectLabel: string = '收藏到曲库';
@@ -22,7 +24,15 @@ export struct SongListTools {
   onCustomCover: () => void = () => {};
   onBatchDelete: () => void = () => {};
   onBatchDownload: () => void = () => {};
+  onBatchCollect: () => void = () => {};
   onCollect: () => void = () => {};
+
+  @Builder private batchMenu() {
+    Menu() {
+      MenuItem({ content: '批量收藏' }).enabled(!this.disabled).onClick(() => { setTimeout(() => this.onBatchCollect(), 220); })
+      MenuItem({ content: '批量下载' }).enabled(!this.disabled).onClick(() => { setTimeout(() => this.onBatchDownload(), 220); })
+    }
+  }
 
   @Builder private sortMenu() {
     Menu() {
@@ -61,9 +71,18 @@ export struct SongListTools {
           .fontColor(this.collected ? MUTED : ACCENT).backgroundColor(Color.Transparent)
           .enabled(!this.disabled).onClick(() => this.onCollect())
       }
-      if (this.showBatchDownload) {
-        Button('批量下载').attributeModifier(musicButtonPress).buttonStyle(ButtonStyleMode.TEXTUAL).fontSize(13).fontColor(ACCENT).backgroundColor(Color.Transparent)
-          .enabled(!this.disabled).onClick(() => this.onBatchDownload())
+      if (!this.wide && this.showBatchCollect && this.showBatchDownload) {
+        Button('批量').attributeModifier(musicButtonPress).buttonStyle(ButtonStyleMode.TEXTUAL).fontSize(13).fontColor(ACCENT).backgroundColor(Color.Transparent)
+          .enabled(!this.disabled).bindMenu(this.batchMenu())
+      } else {
+        if (this.showBatchCollect) {
+          Button('批量收藏').attributeModifier(musicButtonPress).buttonStyle(ButtonStyleMode.TEXTUAL).fontSize(13).fontColor(ACCENT).backgroundColor(Color.Transparent)
+            .enabled(!this.disabled).onClick(() => this.onBatchCollect())
+        }
+        if (this.showBatchDownload) {
+          Button('批量下载').attributeModifier(musicButtonPress).buttonStyle(ButtonStyleMode.TEXTUAL).fontSize(13).fontColor(ACCENT).backgroundColor(Color.Transparent)
+            .enabled(!this.disabled).onClick(() => this.onBatchDownload())
+        }
       }
       Button('排列').attributeModifier(musicButtonPress).buttonStyle(ButtonStyleMode.TEXTUAL).fontSize(13).fontColor(ACCENT).backgroundColor(Color.Transparent)
         .bindMenu(this.sortMenu())

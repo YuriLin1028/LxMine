@@ -13,11 +13,14 @@ export struct SongListView {
   @Prop contentBottom: number = 180;
   @Prop showRemove: boolean = false;
   @Prop showSwitchPlatform: boolean = false;
+  @Prop showPlayNext: boolean = true;
+  @Prop hidePlayNextOnActive: boolean = false;
   @Prop removeLabel: string = '从歌单移除';
   scroller: Scroller = new Scroller();
   @BuilderParam header: () => void = this.emptyHeader;
   likedSong: (song: Song) => boolean = () => false;
   onPlay: (song: Song, context: Song[]) => void = () => {};
+  onPlayNext: (song: Song) => void = () => {};
   onLike: (song: Song) => void = () => {};
   onMore: (song: Song) => void = () => {};
   onDownload: (song: Song) => void = () => {};
@@ -53,7 +56,9 @@ export struct SongListView {
           SongRow({ song, index, wide: this.wide, active: songKey(song) === this.selectedKey,
             liked: this.likedSong(song), showRemove: this.showRemove, removeLabel: this.removeLabel,
             showSwitchPlatform: this.showSwitchPlatform,
+            showPlayNext: this.showPlayNext && !(this.hidePlayNextOnActive && songKey(song) === this.selectedKey),
             onPlay: () => this.onPlay(song, this.songs),
+            onPlayNext: () => this.onPlayNext(song),
             onLike: () => this.onLike(song), onMore: () => this.onMore(song),
             onDownload: () => this.onDownload(song), onRemove: () => this.onRemove(song),
             onSwitchPlatform: () => this.onSwitchPlatform(song) })

@@ -182,7 +182,7 @@ object HomeFeedApi {
             addSong(song, if (index < 12) 3 else 2)
         }
         for (playlist in playlists) {
-            if (playlist.isFavorite || playlist.name == "我喜欢的" || playlist.name == "我的收藏") {
+            if (playlist.isFavorite) {
                 playlist.songs.forEach { addSong(it, 4) }
             } else if (playlist.kind == "lx") {
                 playlist.songs.take(40).forEach { addSong(it, 1) }

@@ -94,9 +94,9 @@ var parentOverlayBurstUntil = 0;
 var parentOverlayWasActive = false;
 var cachedThumbCoverEl = undefined;
 function isParentUiOverlayBurst(now) {
-  var t = Number(now) || performance.now();
-  isParentUiOverlayAnimating(t);
-  return t < parentOverlayBurstUntil;
+  // Never hard-freeze 100% of WebGL frames on detail-entering/leaving transitions:
+  // keep the stage animating smoothly instead of dropping frames for 760ms.
+  return false;
 }
 function isParentUiOverlayAnimating(now) {
   var t = Number(now) || performance.now();
@@ -106,30 +106,33 @@ function isParentUiOverlayAnimating(now) {
       if (window.parent && window.parent !== window) {
         var pDoc = window.parent.document;
         if (pDoc && pDoc.body) {
-          active = pDoc.body.classList.contains('detail-entering')
-            || pDoc.body.classList.contains('detail-leaving')
-            || pDoc.body.classList.contains('overlay-active');
+          active = pDoc.body.classList.contains('overlay-active');
         }
       }
     } catch (_) {}
   }
   if (active) {
-    if (!parentOverlayWasActive) parentOverlayBurstUntil = t + 760;
     parentOverlayWasActive = true;
-    parentOverlayHoldUntil = Math.max(parentOverlayHoldUntil, t + 520);
+    parentOverlayHoldUntil = Math.max(parentOverlayHoldUntil, t + 260);
     return true;
   }
   parentOverlayWasActive = false;
   parentOverlayBurstUntil = 0;
   return t < parentOverlayHoldUntil;
 }
+var stagePausedSince = 0;
 function getAdaptiveRenderFps(now) {
   if (isDeepBackgroundMode()) return 1;
   if (window.__lxmineStagePresentation && !window.__lxmineStagePresentation.detail) return 6;
   if (isLxMineDetailStageVisible()) {
-    if (isParentUiOverlayAnimating(now)) return 24;
-    if (!playing && !(typeof isRenderInteractionActive === 'function' && isRenderInteractionActive(now))) return 30;
-    // 播放详情页播放态/交互态全端满帧跟随原生 VSync（60/120Hz），由动态像素预算兜底负载不掉帧。
+    if (isParentUiOverlayAnimating(now)) return 60;
+    if (playing || (typeof isRenderInteractionActive === 'function' && isRenderInteractionActive(now))) {
+      stagePausedSince = 0;
+      return 0;
+    }
+    if (!stagePausedSince) stagePausedSince = Number(now) || performance.now();
+    // Only drop to 30fps after genuinely paused >2.5s; keep full VSync during track switch/buffering.
+    if (((Number(now) || performance.now()) - stagePausedSince) > 2500) return 30;
     return 0;
   }
   var mode = (typeof normalizeForegroundFpsMode === 'function') ? normalizeForegroundFpsMode(fx && fx.foregroundFpsMode) : 'adaptive';
@@ -212,12 +215,12 @@ function sampleRenderPerf(now, dt) {
   maybeTrimRuntimeCaches(now);
 }
 var mainFrameGates = {
-  audio: createFrameGate('main.audio', 45),
-  shelf: createFrameGate('main.shelf', 24),
-  lyricsParticles: createFrameGate('main.lyricsParticles', 60),
-  stageLyrics: createFrameGate('main.stageLyrics', 60),
-  skullParticles: createFrameGate('main.skullParticles', 50),
-  homeAudio: createFrameGate('main.homeAudio', 12),
+  audio: createFrameGate('main.audio', 60),
+  shelf: createFrameGate('main.shelf', 30),
+  lyricsParticles: createFrameGate('main.lyricsParticles', 120),
+  stageLyrics: createFrameGate('main.stageLyrics', 120),
+  skullParticles: createFrameGate('main.skullParticles', 120),
+  homeAudio: createFrameGate('main.homeAudio', 15),
   desktopOverlay: createFrameGate('main.desktopOverlay', 12)
 };
 window.__mineradioMainFrameGates = mainFrameGates;

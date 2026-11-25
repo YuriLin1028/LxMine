@@ -220,6 +220,7 @@
     ic_trash: '<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none"><g fill="currentColor" fill-rule="evenodd" clip-rule="evenodd"><path d="M9.5 3.25A1.75 1.75 0 0 1 11.25 1.5h1.5A1.75 1.75 0 0 1 14.5 3.25v.75h4.25a.9.9 0 1 1 0 1.8h-.92l-.68 11.63A2.75 2.75 0 0 1 14.4 20h-4.8a2.75 2.75 0 0 1-2.75-2.57L6.17 5.8h-.92a.9.9 0 1 1 0-1.8H9.5v-.75Zm1.8.25v.5h1.4v-.5a.25.25 0 0 0-.25-.25h-.9a.25.25 0 0 0-.25.25ZM7.98 5.8l.66 11.52c.03.49.44.88.96.88h4.8c.52 0 .93-.39.96-.88L16.02 5.8H7.98Zm2.27 2.95a.8.8 0 0 1 .8.8v5.2a.8.8 0 1 1-1.6 0v-5.2a.8.8 0 0 1 .8-.8Zm3.5 0a.8.8 0 0 1 .8.8v5.2a.8.8 0 1 1-1.6 0v-5.2a.8.8 0 0 1 .8-.8Z" transform="translate(0 1)"/></g></svg>',
     ic_edit: '<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none"><g fill="currentColor" fill-rule="evenodd" clip-rule="evenodd"><path d="M15.58 3.58a2.45 2.45 0 0 1 3.46 3.46l-8.95 8.95a2.2 2.2 0 0 1-1.02.58l-3.32.83a.9.9 0 0 1-1.09-1.09l.83-3.32c.1-.4.3-.75.58-1.02l8.95-8.95.56-.44Zm2.18 1.28a.65.65 0 0 0-.92 0l-.98.98.92.92.98-.98a.65.65 0 0 0 0-.92Zm-2.26 2.26-6.95 6.95a.5.5 0 0 0-.13.23l-.47 1.88 1.88-.47a.5.5 0 0 0 .23-.13l6.95-6.95-.92-.92-.59-.59ZM13.5 18.7a.9.9 0 0 1 .9-.9h5.35a.9.9 0 1 1 0 1.8H14.4a.9.9 0 0 1-.9-.9Z"/></g></svg>',
     ic_switch_platform: '<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none"><g fill="currentColor" fill-rule="evenodd" clip-rule="evenodd"><path d="M7.25 4.5a2.75 2.75 0 1 0 0 5.5 2.75 2.75 0 0 0 0-5.5Zm-1.15 2.75a1.15 1.15 0 1 1 2.3 0 1.15 1.15 0 0 1-2.3 0Zm10.65 6.75a2.75 2.75 0 1 0 0 5.5 2.75 2.75 0 0 0 0-5.5Zm-1.15 2.75a1.15 1.15 0 1 1 2.3 0 1.15 1.15 0 0 1-2.3 0ZM15.72 3.72a.88.88 0 0 1 1.24 0l2.32 2.32a.88.88 0 0 1 0 1.24l-2.32 2.32a.88.88 0 1 1-1.24-1.24l.82-.82h-4.29a.88.88 0 1 1 0-1.76h4.29l-.82-.82a.88.88 0 0 1 0-1.24ZM8.28 14.4a.88.88 0 0 1 0 1.24l-.82.82h4.29a.88.88 0 1 1 0 1.76H7.46l.82.82a.88.88 0 1 1-1.24 1.24l-2.32-2.32a.88.88 0 0 1 0-1.24l2.32-2.32a.88.88 0 0 1 1.24 0Z"/></g></svg>',
+    ic_play_next: '<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none"><g fill="currentColor" fill-rule="evenodd" clip-rule="evenodd"><path d="M8 3.25h8A4.75 4.75 0 0 1 20.75 8v8A4.75 4.75 0 0 1 16 20.75H8A4.75 4.75 0 0 1 3.25 16V8A4.75 4.75 0 0 1 8 3.25ZM8 5a3 3 0 0 0-3 3v8a3 3 0 0 0 3 3h8a3 3 0 0 0 3-3V8a3 3 0 0 0-3-3H8Zm.15 4.18c0-.68.74-1.1 1.33-.75l4.02 2.42c.57.34.57 1.16 0 1.5l-4.02 2.42c-.59.35-1.33-.07-1.33-.75V9.18Zm7.2-.83a.8.8 0 0 1 .8.8v5.7a.8.8 0 1 1-1.6 0v-5.7a.8.8 0 0 1 .8-.8Z"/></g></svg>',
     ic_music: '<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none"><g fill="currentColor" fill-rule="evenodd" clip-rule="evenodd"><path d="M18.88 3.28a1.1 1.1 0 0 1 1.37 1.07v10.9a3.5 3.5 0 1 1-1.9-3.11V7.02l-7.6 1.9v8.08a3.5 3.5 0 1 1-1.9-3.11V6.35a1.1 1.1 0 0 1 .83-1.07l9.2-2Z"/></g></svg>',
     ic_comment_official: '<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none"><g fill="currentColor" fill-rule="evenodd" clip-rule="evenodd"><path d="M5.5 4.25h13A2.75 2.75 0 0 1 21.25 7v8.25A2.75 2.75 0 0 1 18.5 18h-7.1l-3.95 2.63A.9.9 0 0 1 6.05 19.9V18H5.5a2.75 2.75 0 0 1-2.75-2.75V7A2.75 2.75 0 0 1 5.5 4.25Zm0 1.7A1.05 1.05 0 0 0 4.45 7v8.25c0 .58.47 1.05 1.05 1.05h1.4a.85.85 0 0 1 .85.85v1.18l2.8-1.86a.85.85 0 0 1 .47-.17h7.48c.58 0 1.05-.47 1.05-1.05V7c0-.58-.47-1.05-1.05-1.05h-13ZM8.5 11.1a1.15 1.15 0 1 1-2.3 0 1.15 1.15 0 0 1 2.3 0Zm4.65 0a1.15 1.15 0 1 1-2.3 0 1.15 1.15 0 0 1 2.3 0Zm3.5 1.15a1.15 1.15 0 1 0 0-2.3 1.15 1.15 0 0 0 0 2.3Z"/></g></svg>',
     ic_share_official: '<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none"><g fill="currentColor" fill-rule="evenodd" clip-rule="evenodd"><path d="M17.5 3.5a2.75 2.75 0 1 0 0 5.5 2.75 2.75 0 0 0 0-5.5Zm-11 5.75a2.75 2.75 0 1 0 0 5.5 2.75 2.75 0 0 0 0-5.5Zm11 5.75a2.75 2.75 0 1 0 0 5.5 2.75 2.75 0 0 0 0-5.5Zm-8.28-4.76 5.9-3.16a.85.85 0 1 1 .8 1.5l-5.9 3.16a.85.85 0 1 1-.8-1.5Zm0 3.52a.85.85 0 0 1 1.15-.35l5.9 3.16a.85.85 0 1 1-.8 1.5l-5.9-3.16a.85.85 0 0 1-.35-1.15Z"/></g></svg>',
@@ -249,7 +250,7 @@
     queue: 'ic_queue', heart: 'ic_heart', heartFill: 'ic_heart_fill', download: 'ic_download',
     search: 'ic_search', left: 'ic_back', back: 'ic_back', right: 'ic_forward', down: 'ic_down',
     close: 'ic_close', more: 'ic_more', plus: 'ic_plus', import: 'ic_import', refresh: 'refresh',
-    trash: 'ic_trash', edit: 'ic_edit', switchPlatform: 'ic_switch_platform', music: 'ic_music',
+    trash: 'ic_trash', edit: 'ic_edit', switchPlatform: 'ic_switch_platform', playNext: 'ic_play_next', music: 'ic_music',
     comment: 'ic_comment_official', share: 'ic_share_official', cast: 'ic_cast',
     styleWand: 'ic_style_wand', sparkle: 'ic_sparkle', scan: 'ic_sparkle',
     fullscreen: 'fullscreen', shrink: 'shrink', volume: 'ic_volume', mute: 'ic_mute', clock: 'symbol_clock',
@@ -336,7 +337,12 @@
     const eff = effectiveStyleName();
     return (MINE_STYLES.find(item => item[0] === eff) || [])[1] || '';
   }
-  function updateSmartStage(forceCommit) {
+  let smartStageSaveTimer = 0;
+  function scheduleSmartStageSave() {
+    clearTimeout(smartStageSaveTimer);
+    smartStageSaveTimer = setTimeout(() => { smartStageSaveTimer = 0; saveStore(); }, 1200);
+  }
+  function updateSmartStage(forceCommit, skipPush) {
     if (S.styleName !== SMART_MODE_ID || !window.LxMineSmartStage) return;
     const candidates = MINE_STYLES.map(item => item[0]).filter(id => id !== SMART_MODE_ID);
     const decision = window.LxMineSmartStage.selectSmartMode({
@@ -355,10 +361,10 @@
         S.smartStageCache.choices[decision.songKey] = S.resolvedStyleName;
         const keys = Object.keys(S.smartStageCache.choices);
         if (keys.length > 500) delete S.smartStageCache.choices[keys[0]];
-        saveStore();
+        scheduleSmartStageSave();
       }
     }
-    if (prev !== S.resolvedStyleName) pushStageMetadata();
+    if (!skipPush && prev !== S.resolvedStyleName) pushStageMetadata();
   }
   function openSmartStageInfoModal() {
     const backdrop = modal(null);
@@ -559,6 +565,7 @@
     };
     document.documentElement.style.setProperty('--lyric-detail-scale', String(scaleVal));
     const playingNow = stageClockPlaying();
+    const livePosMs = liveStagePositionMs();
     const isFoliaActive = String(effStyle || '').startsWith('folia-');
     if (effStyle !== 'off') {
       if (isFoliaActive) lastFoliaStyle = effStyle;
@@ -569,24 +576,24 @@
     const plainWin = document.getElementById('plain-stage-frame')?.contentWindow;
     if (mineWin?.lxmineStage && !isFoliaActive) {
       try {
-        mineWin.lxmineStage.clock({ positionMs: Math.max(0, Number(S.position) || 0), playing: playingNow });
-        mineWin.lxmineStage.metadata({ ...data, mode: lastMineStyle });
+        mineWin.lxmineStage.metadata({ ...data, mode: lastMineStyle, positionMs: livePosMs, playing: playingNow });
+        mineWin.lxmineStage.clock({ positionMs: livePosMs, playing: playingNow });
       } catch (error) { console.warn('[Stage] mine metadata', error); }
     }
     if (foliaWin?.lxmineStage && isFoliaActive) {
       try {
-        foliaWin.lxmineStage.clock({ positionMs: Math.max(0, Number(S.position) || 0), playing: playingNow });
-        foliaWin.lxmineStage.metadata({ ...data, mode: lastFoliaStyle });
+        foliaWin.lxmineStage.metadata({ ...data, mode: lastFoliaStyle, positionMs: livePosMs, playing: playingNow });
+        foliaWin.lxmineStage.clock({ positionMs: livePosMs, playing: playingNow });
       } catch (error) { console.warn('[Stage] folia metadata', error); }
     }
     if (plainWin?.lxmineStage && (effStyle === 'off' || S.stageGraphicsFailed || !S.dynamicStageReady)) {
       try {
-        plainWin.lxmineStage.clock({ positionMs: Math.max(0, Number(S.position) || 0), playing: playingNow });
-        plainWin.lxmineStage.metadata({ ...data, mode: 'off' });
+        plainWin.lxmineStage.metadata({ ...data, mode: 'off', positionMs: livePosMs, playing: playingNow });
+        plainWin.lxmineStage.clock({ positionMs: livePosMs, playing: playingNow });
       } catch (error) { console.warn('[Stage] plain metadata', error); }
     }
     S.wallpaperStage = data;
-    if (S.wallpaperMode) window.desktopWindow?.updateWallpaperMode?.({ stage: data, clock: { positionMs: S.position, playing: playingNow } }).catch(() => {});
+    if (S.wallpaperMode) window.desktopWindow?.updateWallpaperMode?.({ stage: data, clock: { positionMs: livePosMs, playing: playingNow } }).catch(() => {});
   }
   function applyStageFallbackBg(song) {
     const fallback = document.getElementById('stage-fallback');
@@ -721,34 +728,48 @@
     };
     input.click();
   }
-  function setStageSong(song) {
+  function liveStagePositionMs() {
+    if (audio && audio.readyState >= 1 && !S.resolving && !(typeof seekGuardUntil !== 'undefined' && seekGuardUntil > Date.now())) {
+      const live = Number(audio.currentTime);
+      if (Number.isFinite(live) && live >= 0) return live * 1000;
+    }
+    return Math.max(0, Number(S.position) || 0);
+  }
+  function setStageSong(song, skipPush) {
     refreshLyricPalette(S.stageBgImage || (song && song.cover));
     applyStageFallbackBg(song);
-    updateSmartStage(false);
-    pushStageMetadata();
+    updateSmartStage(false, true);
+    if (!skipPush) pushStageMetadata();
   }
   function stageClockPlaying() {
     // Keep the stage clock advancing smoothly during the 620ms pause fade-out while audio is still
-    // audible, instead of freezing at t=0 and jumping in 250ms timeupdate chunks.
-    if (playPauseFadeMode === 'out') return Boolean(audio && !audio.paused);
+    // audible, and immediately halt whenever the underlying <audio> element is actually paused.
+    if (audio && audio.paused) return false;
+    if (playPauseFadeMode === 'out') return true;
     return !!S.playing;
   }
   function pushStageClock(force) {
-    const posMs = Math.max(0, Number(S.position) || 0);
+    const posMs = liveStagePositionMs();
     const playingNow = stageClockPlaying();
     const now = performance.now();
     const expectedMs = (pushStageClock.lastPos || 0) + (pushStageClock.lastPlaying ? (now - (pushStageClock.lastAt || now)) : 0);
     const shouldPush = force
       || !pushStageClock.lastAt
       || pushStageClock.lastPlaying !== playingNow
-      || Math.abs(posMs - expectedMs) > 220
-      || (now - pushStageClock.lastAt) >= 3500;
+      || Math.abs(posMs - expectedMs) > 90
+      || (playingNow && (now - pushStageClock.lastAt) >= 1000);
     if (shouldPush) {
       pushStageClock.lastPos = posMs;
       pushStageClock.lastPlaying = playingNow;
       pushStageClock.lastAt = now;
-      for (const target of stageWindowsForUpdate()) {
-        try { target.lxmineStage.clock({ positionMs: posMs, playing: playingNow }); } catch (_) {}
+      const activeId = typeof activeStageFrameId === 'function' ? activeStageFrameId() : '';
+      const activeTarget = activeId ? document.getElementById(activeId)?.contentWindow : null;
+      if (activeTarget?.lxmineStage) {
+        try { activeTarget.lxmineStage.clock({ positionMs: posMs, playing: playingNow }); } catch (_) {}
+      } else {
+        for (const target of stageWindowsForUpdate()) {
+          try { target.lxmineStage.clock({ positionMs: posMs, playing: playingNow }); } catch (_) {}
+        }
       }
     }
     if (S.wallpaperMode && (force || Date.now() - (S.wallpaperClockAt || 0) > 1000)) {
@@ -987,7 +1008,7 @@
   async function hydrateFavoritesFromLibrary(playlists, forceOverwrite) {
     if (!window.desktopWindow || !window.desktopWindow.readBuiltInPlaylist) return;
     const list = Array.isArray(playlists) ? playlists : [];
-    const fav = list.find(item => item && (item.isFavorite === true || item.name === '我喜欢的' || item.name === '我的收藏'));
+    const fav = list.find(item => item && item.isFavorite === true);
     if (!fav) {
       if (forceOverwrite) {
         S.favorites = [];
@@ -1572,6 +1593,11 @@
     seekGuardTarget = -1;
     seekGuardUntil = 0;
     nextShuffleKey = '';
+    if (!fromAutoAdvance && Array.isArray(queue) && queue !== S.queue && !opts.preserveQueue) {
+      upNextKeys = [];
+    } else if (songKey) {
+      upNextKeys = upNextKeys.filter(k => k !== songKey);
+    }
     cancelPlayPauseFade(false);
     // Clear stale media source immediately so offline/failed switches NEVER replay the previous cached track.
     audio.pause();
@@ -1640,7 +1666,7 @@
     if (typeof cancelAutoMix === 'function') cancelAutoMix();
     S.currentAutoMixPlan = null;
     S.autoMixPreview = '';
-    setStageSong(song); updateDock();
+    setStageSong(song, true); updateDock();
     if (typeof updateProgress === 'function') updateProgress(S.position);
     renderDetailLyrics(); pushStageMetadata(); pushStageClock(true); pushDesktopLyrics(true); syncWallpaperUi();
     // 立即并发预拉歌词（不再干等音频直链解析完才拉歌词，消除切歌后歌词慢半拍）
@@ -1791,11 +1817,60 @@
       pauseWithFade();
     }
   }
+  let upNextKeys = [];
+  function resolveUpNextIndex() {
+    if (!upNextKeys.length || !Array.isArray(S.queue) || !S.queue.length) return -1;
+    const curKey = S.current ? identity(S.current) : '';
+    const cleaned = [];
+    let foundIdx = -1;
+    for (const key of upNextKeys) {
+      if (!key || key === curKey) continue;
+      const idx = S.queue.findIndex(item => identity(item) === key);
+      if (idx >= 0) {
+        if (foundIdx < 0) foundIdx = idx;
+        cleaned.push(key);
+      }
+    }
+    upNextKeys = cleaned;
+    return foundIdx;
+  }
+  function playNextSong(song) {
+    if (!song) return;
+    const key = identity(song);
+    if (!S.current || !Array.isArray(S.queue) || !S.queue.length) {
+      playSong(song, [song]);
+      return;
+    }
+    const curKey = identity(S.current);
+    if (key && key === curKey) {
+      notify('当前正在播放「' + (song.name || '此歌曲') + '」');
+      return;
+    }
+    const nextQueue = S.queue.filter(item => identity(item) !== key);
+    let curIdx = nextQueue.findIndex(item => identity(item) === curKey);
+    if (curIdx < 0) curIdx = Math.max(0, Math.min(S.queueIndex, nextQueue.length - 1));
+    nextQueue.splice(curIdx + 1, 0, song);
+    S.queue = nextQueue;
+    S.queueIndex = curIdx;
+    if (key) {
+      upNextKeys = [key, ...upNextKeys.filter(k => k !== key)];
+      nextShuffleKey = key;
+    }
+    if (typeof cancelAutoMix === 'function') cancelAutoMix();
+    if (typeof refreshAutoMixPlan === 'function') refreshAutoMixPlan();
+    saveStore();
+    notify('已设为下一首播放「' + (song.name || '歌曲') + '」');
+  }
   function nextSong(step, options) {
     if (!S.queue.length) return;
     const opts = options || {};
     let index = S.queueIndex;
-    if (S.mode === '随机播放' && S.queue.length > 1) {
+    const upNextIdx = step > 0 ? resolveUpNextIndex() : -1;
+    if (upNextIdx >= 0) {
+      index = upNextIdx;
+      const chosenKey = identity(S.queue[index]);
+      upNextKeys = upNextKeys.filter(k => k !== chosenKey);
+    } else if (S.mode === '随机播放' && S.queue.length > 1) {
       const cachedIdx = step > 0 && nextShuffleKey
         ? S.queue.findIndex(item => identity(item) === nextShuffleKey && (!S.current || identity(item) !== identity(S.current)))
         : -1;
@@ -1853,7 +1928,7 @@
     if (!next || next.localUrl || next.source === 'local' || next.provider === 'local') return;
     preloadNextTimer = setTimeout(() => {
       window.lxMusic.resolve(next, S.quality, { raceAll: true }).catch(() => {});
-    }, 1800);
+    }, 4500);
   }
   function playableUrlForFx(url) {
     const raw = String(url || '');
@@ -2744,8 +2819,16 @@
   }
   function peekNextQueueSong() {
     if (!S.current || !Array.isArray(S.queue) || S.queue.length <= 1 || S.mode === '单曲循环') return null;
-    if (S.mode === '顺序播放' && S.queueIndex >= S.queue.length - 1) return null;
     const curKey = identity(S.current);
+    const upNextIdx = resolveUpNextIndex();
+    if (upNextIdx >= 0) {
+      const cand = S.queue[upNextIdx];
+      if (cand && identity(cand) !== curKey) {
+        nextShuffleKey = identity(cand);
+        return cand;
+      }
+    }
+    if (S.mode === '顺序播放' && S.queueIndex >= S.queue.length - 1) return null;
     if (S.mode === '随机播放') {
       const cached = nextShuffleKey ? S.queue.find(item => identity(item) === nextShuffleKey && identity(item) !== curKey) : null;
       if (cached) return cached;
@@ -5037,7 +5120,7 @@
     node.appendChild(h('h3', '', song.name || '未知歌曲'));
     node.appendChild(h('p', '', (song.artist || song.singer || platformName(song))));
     node.onclick = () => playSong(song, Array.isArray(queue) && queue.length ? queue : [song], { preserveQueue: true });
-    node.oncontextmenu = event => { event.preventDefault(); openAddMenu(song); };
+    node.oncontextmenu = event => { event.preventDefault(); openSongContextMenu(event, song, { onPlay: () => playSong(song, Array.isArray(queue) && queue.length ? queue : [song], { preserveQueue: true }) }); };
     return node;
   }
   function forYouCard(song, queue) {
@@ -5062,7 +5145,7 @@
     copy.appendChild(h('span', 'for-you-sub', (song.artist || song.singer || platformName(song)) + (song.album ? ' · ' + song.album : '')));
     node.append(art, copy);
     node.onclick = () => playSong(song, Array.isArray(queue) && queue.length ? queue : [song], { preserveQueue: true });
-    node.oncontextmenu = event => { event.preventDefault(); openAddMenu(song); };
+    node.oncontextmenu = event => { event.preventDefault(); openSongContextMenu(event, song, { onPlay: () => playSong(song, Array.isArray(queue) && queue.length ? queue : [song], { preserveQueue: true }) }); };
     return node;
   }
   function localPlaylistCard(playlist) {
@@ -5241,7 +5324,9 @@
       play.onclick = () => { const list = arrangeSongs(S.feed.newSongs, tools); if (list.length) playSong(list[0], list); };
       const sort = h('button', 'list-tools-sort', '排列');
       sort.onclick = () => openListSortMenu(sort, S.feed.newSongs, tools, () => refreshNewSongs());
-      bar.node.prepend(play, sort);
+      const batchCol = h('button', 'list-tools-sort', '批量收藏');
+      batchCol.onclick = () => openBatchCollectModal(arrangeSongs(S.feed.newSongs, tools), '新歌速递');
+      bar.node.prepend(play, sort, batchCol);
       const host = h('div', 'list-tools-host');
       block.append(bar.node, host);
       refreshNewSongs = () => {
@@ -5311,7 +5396,9 @@
       play.onclick = () => { const list = arrangeSongs(items, tools); if (list.length) playSong(list[0], list); };
       const sort = h('button', 'list-tools-sort', '排列');
       sort.onclick = () => openListSortMenu(sort, items, tools, () => refreshList());
-      bar.node.prepend(play, sort);
+      const batchCol = h('button', 'list-tools-sort', '批量收藏');
+      batchCol.onclick = () => openBatchCollectModal(arrangeSongs(items, tools), view.title || sectionTitle(view.section));
+      bar.node.prepend(play, sort, batchCol);
       const host = h('div', 'list-tools-host');
       root.append(bar.node, host);
       refreshList = () => {
@@ -5428,13 +5515,19 @@
     like.type = 'button';
     if (songKey) like.dataset.likeKey = songKey;
     renderLikeButton(like, isFavorite(song), false);
+    const playNextBtn = h('button', 'row-act row-play-next');
+    playNextBtn.type = 'button';
+    playNextBtn.setAttribute('aria-label', '下一首播放');
+    playNextBtn.title = '下一首播放';
+    playNextBtn.appendChild(svgIcon('playNext'));
+    playNextBtn.onclick = event => { event.stopPropagation(); playNextSong(song); };
     const add = h('button', 'row-act row-add');
     add.type = 'button'; add.setAttribute('aria-label', '添加到歌单');
     add.appendChild(svgIcon('plus'));
     add.onclick = event => { event.stopPropagation(); openAddMenu(song, opts); };
     const actions = h('div', 'row-actions');
-    if (!isOnline) actions.append(like, add);
-    else actions.append(dl, like, add);
+    if (!isOnline) actions.append(like, playNextBtn, add);
+    else actions.append(dl, like, playNextBtn, add);
     if (isOnline && typeof opts.onSwitchPlatform === 'function') {
       const switchBtn = h('button', 'row-act row-switch');
       switchBtn.type = 'button';
@@ -5452,27 +5545,20 @@
       removeBtn.onclick = event => { event.stopPropagation(); opts.onRemove(song, index); };
       actions.appendChild(removeBtn);
     }
-    // 展开面板按需创建：宽窗永远不展开，搜索几千行时不再为每行预建两份隐藏按钮。
+    // 展开面板按需创建：宽窗永远不展开，窄窗主行直接露出收藏与下一首播放，展开显示其余操作与时长。
     const panel = h('div', 'song-expand');
     let panelBuilt = false;
-    let panelLike = null;
     const toggleLike = event => {
       event.stopPropagation();
       toggleFavorite(song);
       const nowLiked = isFavorite(song);
       renderLikeButton(like, nowLiked, true);
-      if (panelLike) renderLikeButton(panelLike, nowLiked, true);
       if (typeof opts.onLikeChanged === 'function') opts.onLikeChanged(song, nowLiked);
     };
     like.onclick = toggleLike;
     const buildPanel = () => {
       if (panelBuilt) return;
       panelBuilt = true;
-      panelLike = h('button', 'row-act row-like');
-      panelLike.type = 'button';
-      if (songKey) panelLike.dataset.likeKey = songKey;
-      renderLikeButton(panelLike, isFavorite(song), false);
-      panelLike.onclick = toggleLike;
       if (isOnline && typeof opts.onSwitchPlatform === 'function') {
         const panelSwitch = h('button', 'row-act row-switch');
         panelSwitch.type = 'button';
@@ -5486,7 +5572,7 @@
       panelAdd.type = 'button'; panelAdd.setAttribute('aria-label', '添加到歌单');
       panelAdd.appendChild(svgIcon('plus'));
       panelAdd.onclick = event => { event.stopPropagation(); openAddMenu(song, opts); };
-      panel.append(panelLike, panelAdd);
+      panel.append(panelAdd);
       if (typeof opts.onRemove === 'function') {
         const panelRemove = h('button', 'row-act row-remove');
         panelRemove.type = 'button'; panelRemove.setAttribute('aria-label', opts.removeLabel || '从歌单移除');
@@ -5503,7 +5589,7 @@
     expand.onclick = event => { event.stopPropagation(); buildPanel(); item.classList.toggle('open'); };
     row.append(art, main, album, actions, expand);
     row.onclick = () => { playSong(song, context || [song], { fromSearch: !!opts.fromSearch, preserveQueue: !!opts.preserveQueue }); if (opts.openDetail) openDetail(); };
-    row.oncontextmenu = event => { event.preventDefault(); openAddMenu(song, opts); };
+    row.oncontextmenu = event => { event.preventDefault(); openSongContextMenu(event, song, opts); };
     if (S.current && identity(S.current) === songKey) row.classList.add('playing');
     item.append(row, panel);
     return item;
@@ -5666,9 +5752,8 @@
     if (deferPageRefresh()) return;
     S.tab = 'library';
     setBodyMode('tab');
-    // 内置“我喜欢的”是收藏夹的镜像（旧数据 isFavorite=true），已由顶部收藏卡代表，必须过滤；
-    // 名称兜底兼容没有 isFavorite 字段的旧缓存。
-    const libraryItems = (S.library || []).filter(playlist => playlist.isFavorite !== true && playlist.name !== '我喜欢的' && playlist.name !== '我的收藏');
+    // 内置收藏夹（isFavorite=true）已由顶部收藏卡代表，这里仅过滤内置收藏，保留所有导入/自建的同名歌单（方案 B）。
+    const libraryItems = (S.library || []).filter(playlist => playlist.isFavorite !== true);
     setHeader('曲库', (libraryItems.length + ' 个歌单'), {
       actions: [
         { icon: 'refresh', label: '随机排列', onClick: refreshMosaic },
@@ -5679,7 +5764,7 @@
     });
     const root = mainRoot();
     const grid = h('div', 'playlist-mosaic');
-    const favBuiltIn = (S.library || []).find(p => p && (p.isFavorite === true || p.name === '我喜欢的' || p.name === '我的收藏'));
+    const favBuiltIn = (S.library || []).find(p => p && p.isFavorite === true);
     const favCover = (favBuiltIn && (favBuiltIn.customCover || favBuiltIn.cover)) || S.favoriteCustomCover || rawCoverOf(S.favorites.find(s => rawCoverOf(s)));
     const recentCover = rawCoverOf(S.recentlyPlayed.find(s => rawCoverOf(s)));
     const localCover = rawCoverOf(S.localTracks.find(s => rawCoverOf(s)));
@@ -5930,6 +6015,190 @@
     box.appendChild(actions);
     backdrop.appendChild(box);
   }
+  async function executeBatchCollect(songs, target) {
+    const clean = [];
+    const seen = new Set();
+    for (const s of (Array.isArray(songs) ? songs : [])) {
+      if (!s) continue;
+      const k = identity(s);
+      if (k && seen.has(k)) continue;
+      if (k) seen.add(k);
+      clean.push(s);
+    }
+    if (!clean.length) return;
+    if (!target || target.type === 'favorites') {
+      const existing = new Set((S.favorites || []).map(identity));
+      const fresh = clean.filter(s => !existing.has(identity(s)));
+      const skipped = clean.length - fresh.length;
+      if (fresh.length) {
+        S.favorites = [...fresh, ...(S.favorites || [])];
+        saveStore();
+        syncLikeButtons();
+        await persistFavoritesToLibrary(true);
+        if (S.currentView && S.currentView.name === 'playlist' && S.currentView.kind === 'favorites') {
+          S.currentView.tracks = S.favorites.slice();
+          renderPlaylist(S.currentView);
+        }
+      }
+      notify(fresh.length ? (`已收藏 ${fresh.length} 首到「我的收藏」` + (skipped ? `（跳过 ${skipped} 首重复）` : '')) : '所选歌曲均已在「我的收藏」中');
+      return;
+    }
+    try {
+      let targetId = target.id;
+      let targetName = target.name || '歌单';
+      if (target.type === 'new') {
+        const cleanName = String(target.name || '').trim();
+        if (!cleanName) { notify('请输入新歌单名称'); return; }
+        const created = await window.desktopWindow.createBuiltInPlaylist(cleanName);
+        if (!created || created.ok === false || !created.playlist?.id) {
+          notify('新建歌单失败：' + (created?.error || '请稍后重试'));
+          return;
+        }
+        targetId = created.playlist.id;
+        targetName = created.playlist.name || cleanName;
+      }
+      let added = 0;
+      let skipped = 0;
+      if (window.desktopWindow?.addBuiltInPlaylistTracks) {
+        const res = await window.desktopWindow.addBuiltInPlaylistTracks(targetId, clean);
+        if (res && res.ok === false) { notify('收藏失败：' + res.error); return; }
+        added = Number(res?.addedCount) || 0;
+        skipped = Number(res?.skippedCount) || 0;
+      } else {
+        for (const s of clean) {
+          const r = await window.desktopWindow.addBuiltInPlaylistTrack(targetId, s);
+          if (r?.added) added += 1;
+          else skipped += 1;
+        }
+      }
+      window.lxMusic?.syncTriggerAuto?.().catch?.(() => {});
+      await loadHome(true);
+      if (S.currentView && S.currentView.name === 'playlist' && S.currentView.id === targetId) {
+        const refreshed = await window.desktopWindow.readBuiltInPlaylist(targetId, { offset: 0, limit: 10000 });
+        if (refreshed && refreshed.ok !== false && Array.isArray(refreshed.tracks)) {
+          S.currentView.tracks = refreshed.tracks;
+          renderPlaylist(S.currentView);
+        }
+      }
+      notify(added > 0 ? (`已收藏 ${added} 首到「${targetName}」` + (skipped ? `（跳过 ${skipped} 首重复）` : '')) : `所选歌曲均已在「${targetName}」中`);
+    } catch (error) {
+      notify('批量收藏失败：' + (error?.message || '请稍后重试'));
+    }
+  }
+  function openBatchCollectModal(songs, title) {
+    const items = [];
+    const seen = new Set();
+    for (const item of (Array.isArray(songs) ? songs : [])) {
+      if (!item) continue;
+      const k = identity(item);
+      if (k && seen.has(k)) continue;
+      if (k) seen.add(k);
+      items.push(item);
+    }
+    if (!items.length) return notify('当前列表没有可收藏的歌曲');
+    const selected = new Set(items.map((s, idx) => identity(s) || ('idx-' + idx)));
+    const favKeys = new Set((S.favorites || []).map(identity));
+    const customLists = (S.library || []).filter(item => item && item.isFavorite !== true);
+    let targetMode = 'favorites';
+    let targetPlaylistId = '';
+    let targetPlaylistName = '我的收藏';
+    const backdrop = modal(null);
+    const box = h('div', 'modal glass');
+    box.appendChild(h('h2', '', '批量收藏' + (title ? ' · ' + title : '')));
+    const targetWrap = h('div', 'batch-collect-targets');
+    const newRow = h('div', 'batch-collect-new-row');
+    newRow.style.display = 'none';
+    const newInput = h('input');
+    newInput.type = 'text';
+    newInput.placeholder = '输入新歌单名称';
+    newInput.maxLength = 40;
+    newRow.appendChild(newInput);
+    const targetChips = [];
+    const syncTargetUi = () => {
+      targetChips.forEach(c => c.btn.classList.toggle('accent', c.isActive()));
+      newRow.style.display = targetMode === 'new' ? 'flex' : 'none';
+      if (targetMode === 'new') setTimeout(() => newInput.focus(), 30);
+      syncBar();
+    };
+    const addChip = (label, isActive, onClick) => {
+      const btn = h('button', 'pill-btn' + (isActive() ? ' accent' : ''), label);
+      btn.type = 'button';
+      btn.onclick = () => { onClick(); syncTargetUi(); };
+      targetWrap.appendChild(btn);
+      targetChips.push({ btn, isActive });
+    };
+    addChip('我的收藏', () => targetMode === 'favorites', () => { targetMode = 'favorites'; targetPlaylistId = ''; targetPlaylistName = '我的收藏'; });
+    customLists.forEach(pl => {
+      addChip(pl.name || '未命名歌单', () => targetMode === 'builtin' && targetPlaylistId === pl.id, () => {
+        targetMode = 'builtin'; targetPlaylistId = pl.id; targetPlaylistName = pl.name || '歌单';
+      });
+    });
+    addChip('+ 新建歌单', () => targetMode === 'new', () => { targetMode = 'new'; targetPlaylistId = ''; targetPlaylistName = ''; });
+    box.append(targetWrap, newRow);
+
+    const bar = h('div', 'batch-dl-bar');
+    const allLabel = h('label', '');
+    allLabel.style.display = 'inline-flex'; allLabel.style.alignItems = 'center'; allLabel.style.gap = '8px'; allLabel.style.cursor = 'pointer';
+    const allCheck = h('input'); allCheck.type = 'checkbox'; allCheck.checked = true;
+    const allSpan = h('span', '', `全选（已选 ${selected.size} / ${items.length} 首）`);
+    allLabel.append(allCheck, allSpan);
+    const invertBtn = h('button', 'pill-btn', '反选'); invertBtn.type = 'button';
+    bar.append(allLabel, invertBtn);
+    box.appendChild(bar);
+
+    const listWrap = h('div', 'batch-dl-list');
+    const checks = [];
+    const actions = h('div', 'modal-actions');
+    const cancelBtn = h('button', 'pill-btn', '取消'); cancelBtn.type = 'button'; cancelBtn.onclick = () => closeModal(backdrop);
+    const confirmBtn = h('button', 'pill-btn accent', `收藏所选 (${selected.size})`); confirmBtn.type = 'button';
+    const syncBar = () => {
+      allSpan.textContent = `全选（已选 ${selected.size} / ${items.length} 首）`;
+      allCheck.checked = selected.size === items.length;
+      const label = targetMode === 'new' ? '新建并收藏' : (targetMode === 'favorites' ? '收藏到我喜欢的' : `收藏到「${targetPlaylistName}」`);
+      confirmBtn.textContent = `${label} (${selected.size})`;
+      confirmBtn.disabled = selected.size === 0;
+    };
+    items.forEach((song, idx) => {
+      const k = identity(song) || ('idx-' + idx);
+      const row = h('label', 'batch-dl-row');
+      const ck = h('input'); ck.type = 'checkbox'; ck.checked = true;
+      ck.onchange = () => { if (ck.checked) selected.add(k); else selected.delete(k); syncBar(); };
+      const copy = h('div', 'copy');
+      copy.append(h('strong', '', song.name || '未知歌曲'), h('small', '', (song.artist || song.singer || '未知歌手') + (song.album || song.albumName ? ' · ' + (song.album || song.albumName) : '')));
+      row.append(ck, copy);
+      if (favKeys.has(k)) row.appendChild(h('span', 'dup-tag', '已收藏'));
+      listWrap.appendChild(row);
+      checks.push({ k, ck });
+    });
+    allCheck.onchange = () => {
+      checks.forEach(({ k, ck }) => { ck.checked = allCheck.checked; if (allCheck.checked) selected.add(k); else selected.delete(k); });
+      syncBar();
+    };
+    invertBtn.onclick = () => {
+      checks.forEach(({ k, ck }) => { ck.checked = !ck.checked; if (ck.checked) selected.add(k); else selected.delete(k); });
+      syncBar();
+    };
+    confirmBtn.onclick = () => {
+      const chosen = items.filter((song, idx) => selected.has(identity(song) || ('idx-' + idx)));
+      if (!chosen.length) return;
+      if (targetMode === 'new' && !String(newInput.value || '').trim()) {
+        notify('请输入新歌单名称');
+        newInput.focus();
+        return;
+      }
+      const target = targetMode === 'favorites'
+        ? { type: 'favorites', name: '我的收藏' }
+        : (targetMode === 'new'
+          ? { type: 'new', name: String(newInput.value || '').trim() }
+          : { type: 'builtin', id: targetPlaylistId, name: targetPlaylistName });
+      closeModal(backdrop);
+      void executeBatchCollect(chosen, target);
+    };
+    actions.append(cancelBtn, confirmBtn);
+    box.append(listWrap, actions);
+    backdrop.appendChild(box);
+    syncBar();
+  }
   function openPlaylistCoverPicker(view, onUpdated) {
     const backdrop = modal(null);
     const box = h('div', 'modal glass');
@@ -5945,7 +6214,7 @@
           S.favoriteCustomCover = coverVal || '';
           saveStore();
           await persistFavoritesToLibrary(false);
-          const favBuiltIn = (S.library || []).find(p => p && (p.isFavorite === true || p.name === '我喜欢的' || p.name === '我的收藏'));
+          const favBuiltIn = (S.library || []).find(p => p && p.isFavorite === true);
           if (favBuiltIn && favBuiltIn.id) targetId = favBuiltIn.id;
         }
         if (targetId && targetId !== 'favorites' && window.desktopWindow?.setBuiltInPlaylistCover) {
@@ -6332,7 +6601,7 @@
       return done;
     }
     const hero = h('div', 'playlist-hero');
-    const favBuiltInHero = view.kind === 'favorites' ? (S.library || []).find(p => p && (p.isFavorite === true || p.name === '我喜欢的' || p.name === '我的收藏')) : null;
+    const favBuiltInHero = view.kind === 'favorites' ? (S.library || []).find(p => p && p.isFavorite === true) : null;
     const heroCover = view.cover || (favBuiltInHero && (favBuiltInHero.customCover || favBuiltInHero.cover)) || (view.kind === 'favorites' ? (S.favoriteCustomCover || '') : '') || rawCoverOf(view.tracks.find(t => rawCoverOf(t))) || '';
     if (heroCover) {
       hero.style.setProperty('--hero-cover', 'url("' + coverUrl(heroCover).replace(/"/g, '%22') + '")');
@@ -6384,6 +6653,11 @@
     const sortBtn = h('button', 'pill-btn', '排列');
     sortBtn.onclick = () => openListSortMenu(sortBtn, view.tracks, tools, () => refreshList(), persistManual);
     actions.appendChild(sortBtn);
+    if (view.tracks.length) {
+      const batchCol = h('button', 'pill-btn', '批量收藏');
+      batchCol.onclick = () => openBatchCollectModal(arrangeSongs(view.tracks, tools), view.title);
+      actions.appendChild(batchCol);
+    }
     if (view.kind !== 'local' && view.tracks.some(item => item && item.source !== 'local' && item.provider !== 'local')) {
       const batchDl = h('button', 'pill-btn', '批量下载');
       batchDl.onclick = () => downloadBatchSongs(arrangeSongs(view.tracks, tools), view.title);
@@ -6666,7 +6940,7 @@
     ));
     systemCard.appendChild(settingLinkRow(
       '局域网同步',
-      S.lanAutoSync ? '已开启自动同步 · 手机、平板与电脑双向合并' : '手机、平板与电脑之间双向同步歌单、音源与设置',
+      S.lanAutoSync ? '已开启信任圈自动同步 · 手机、平板与电脑双向合并' : '设备信任圈 · 手机、平板与电脑之间双向同步歌单、音源与设置',
       '管理',
       openSyncPanel
     ));
@@ -7181,11 +7455,11 @@
     wpAllOpRow.append(wpAllCopy, wpAllCtrl);
     card.appendChild(wpAllOpRow);
 
-    card.appendChild(settingSwitch('同局域网自动同步歌单', '发现同网络下同样开启自动同步的手机/电脑时，歌单与收藏变动自动合并同步', S.lanAutoSync === true, async value => {
+    card.appendChild(settingSwitch('同局域网自动同步歌单', '仅与已加入「设备信任圈」且开启自动同步的设备双向合并歌单与收藏', S.lanAutoSync === true, async value => {
       S.lanAutoSync = value; saveStore();
       if (value) await persistFavoritesToLibrary(false);
       window.lxMusic?.syncSetAuto?.(value).catch?.(() => {});
-      notify(value ? '已开启同局域网歌单自动同步' : '已关闭同局域网歌单自动同步');
+      notify(value ? '已开启同局域网歌单自动同步（仅限信任圈）' : '已关闭同局域网歌单自动同步');
     }));
     const disCount = (S.dislikedKeys || []).length;
     card.appendChild(settingLinkRow(
@@ -8256,7 +8530,9 @@
     };
     const sort = h('button', 'list-tools-sort', '排列');
     sort.onclick = () => openListSortMenu(sort, S.localTracks, tools, () => refreshList());
-    bar.node.prepend(play, sort);
+    const batchCol = h('button', 'list-tools-sort', '批量收藏');
+    batchCol.onclick = () => openBatchCollectModal(arrangeSongs(S.localTracks, tools), '本地音乐');
+    bar.node.prepend(play, sort, batchCol);
     const host = h('div', 'list-tools-host');
     root.append(bar.node, host);
     refreshList = () => {
@@ -8549,7 +8825,9 @@
       play.onclick = () => { if (displayed.length) playSong(displayed[0], displayed, { fromSearch: true, playAllSearch: true }); };
       const sort = h('button', 'list-tools-sort', '排列');
       sort.onclick = () => openListSortMenu(sort, all, tools, refreshMusicRows);
-      bar.node.prepend(play, sort);
+      const batchCol = h('button', 'list-tools-sort', '批量收藏');
+      batchCol.onclick = () => openBatchCollectModal(arrangeSongs(all, tools), '搜索结果');
+      bar.node.prepend(play, sort, batchCol);
       resultsRoot.append(bar.node, musicList);
     }
     const settled=await Promise.allSettled(sourceIds.map(source=>window.LxPagination.collectAll(
@@ -8833,6 +9111,7 @@
   }
   function closeModal(backdrop) {
     if (!backdrop || !backdrop.parentNode || backdrop.classList.contains('closing')) return;
+    backdrop.style.pointerEvents = 'none';
     backdrop.classList.add('closing');
     setTimeout(() => { if (backdrop.parentNode) backdrop.remove(); }, 250);
   }
@@ -9231,6 +9510,19 @@
             renderLikeButton(likeBtn, isFavorite(song), true);
           };
           rowActs.appendChild(likeBtn);
+          if (index !== S.queueIndex) {
+            const nextBtn = h('button', 'row-act row-play-next');
+            nextBtn.type = 'button';
+            nextBtn.setAttribute('aria-label', '下一首播放');
+            nextBtn.title = '下一首播放';
+            nextBtn.appendChild(svgIcon('playNext'));
+            nextBtn.onclick = event => {
+              event.stopPropagation();
+              playNextSong(song);
+              if (backdrop.isConnected) renderQueueList();
+            };
+            rowActs.appendChild(nextBtn);
+          }
         }
         const delBtn = h('button', 'row-act');
         delBtn.type = 'button';
@@ -9244,6 +9536,15 @@
         rowActs.appendChild(delBtn);
         row.append(art, copy, rowActs);
         row.onclick = () => { if (sortMode) return; S.queueIndex = index; playSong(song, S.queue); closeModal(backdrop); };
+        row.oncontextmenu = event => {
+          event.preventDefault();
+          openSongContextMenu(event, song, {
+            hidePlayNext: index === S.queueIndex,
+            removeLabel: '从队列移除',
+            onRemove: () => removeQueueItem(index),
+            onPlay: () => { S.queueIndex = index; playSong(song, S.queue); closeModal(backdrop); }
+          });
+        };
         listWrap.appendChild(row);
       });
     };
@@ -9255,11 +9556,64 @@
       if (currentRow) currentRow.scrollIntoView({ block: 'center', behavior: 'smooth' });
     });
   }
+  let activeSongCtxCleanup = null;
+  function closeSongContextMenu() {
+    if (typeof activeSongCtxCleanup === 'function') {
+      const fn = activeSongCtxCleanup;
+      activeSongCtxCleanup = null;
+      fn();
+    }
+  }
+  function openSongContextMenu(event, song, opts) {
+    closeSongContextMenu();
+    if (!song) return;
+    const isOnline = song.source !== 'local' && song.provider !== 'local';
+    const menu = h('div', 'song-ctx-menu glass popover');
+    const addItem = (label, fn, extraClass) => {
+      const btn = h('button', 'song-ctx-item' + (extraClass ? ' ' + extraClass : ''), label);
+      btn.type = 'button';
+      btn.onclick = e => { e.stopPropagation(); closeSongContextMenu(); fn(); };
+      menu.appendChild(btn);
+    };
+    if (typeof opts?.onPlay === 'function') addItem('立即播放', opts.onPlay);
+    if (!opts?.hidePlayNext) addItem('下一首播放', () => playNextSong(song));
+    addItem(isFavorite(song) ? '取消收藏' : '收藏到我喜欢的', () => {
+      toggleFavorite(song);
+      if (typeof opts?.onLikeChanged === 'function') opts.onLikeChanged(song, isFavorite(song));
+    });
+    addItem('添加到歌单…', () => openAddMenu(song, opts));
+    if (isOnline) addItem('下载歌曲', () => downloadCurrent(song));
+    if (typeof opts?.onRemove === 'function') addItem(opts.removeLabel || '从歌单移除', () => opts.onRemove(song), 'danger');
+    document.body.appendChild(menu);
+    const rect = menu.getBoundingClientRect();
+    const x = Math.max(8, Math.min(window.innerWidth - rect.width - 8, (event?.clientX || 120)));
+    const y = Math.max(8, Math.min(window.innerHeight - rect.height - 8, (event?.clientY || 120)));
+    menu.style.left = x + 'px';
+    menu.style.top = y + 'px';
+    const onPointerDown = e => { if (!menu.contains(e.target)) closeSongContextMenu(); };
+    const onKeyDown = e => { if (e.key === 'Escape') closeSongContextMenu(); };
+    setTimeout(() => {
+      document.addEventListener('pointerdown', onPointerDown, true);
+      document.addEventListener('keydown', onKeyDown, true);
+    }, 0);
+    activeSongCtxCleanup = () => {
+      document.removeEventListener('pointerdown', onPointerDown, true);
+      document.removeEventListener('keydown', onKeyDown, true);
+      menu.remove();
+    };
+  }
   function openAddMenu(song, opts) {
     const backdrop = modal(null);
     const box = h('div', 'modal glass');
     box.appendChild(h('h2', '', '添加至歌单'));
-    const lists = (S.library || []).filter(item => !item.isFavorite && item.name !== '我喜欢的' && item.name !== '我的收藏');
+    const lists = (S.library || []).filter(item => item && item.isFavorite !== true);
+    if (!opts?.hidePlayNext) {
+      const nextRow = h('div', 'queue-row');
+      const nextCopy = h('div', 'copy'); nextCopy.appendChild(h('strong', '', '下一首播放'));
+      nextRow.appendChild(nextCopy);
+      nextRow.onclick = () => { closeModal(backdrop); playNextSong(song); };
+      box.appendChild(nextRow);
+    }
     if (typeof opts?.onRemove === 'function') {
       const rem = h('div', 'queue-row');
       const remCopy = h('div', 'copy'); remCopy.appendChild(h('strong', '', opts.removeLabel || '从当前歌单移除'));
@@ -9687,65 +10041,220 @@
     backdrop.appendChild(box);
   }
   function openPlaybackMenu() { openPlaybackMoreSheet(); }
+  function generateSyncPairCode() {
+    try {
+      const arr = new Uint32Array(1);
+      crypto.getRandomValues(arr);
+      return String(100000 + (arr[0] % 900000));
+    } catch (_) {
+      return String(100000 + Math.floor(Math.random() * 900000));
+    }
+  }
+  function formatSyncPairCode(code) {
+    const clean = String(code || '').replace(/\D/g, '');
+    return clean.length === 6 ? clean.slice(0, 3) + ' ' + clean.slice(3) : clean;
+  }
+  function syncPlatformLabel(platform) {
+    if (platform === 'harmony') return 'HarmonyOS';
+    if (platform === 'android') return 'Android';
+    if (platform === 'win32' || platform === 'windows') return 'Windows';
+    if (platform === 'darwin' || platform === 'macos') return 'macOS';
+    if (platform === 'linux') return 'Linux';
+    return platform || '设备';
+  }
   function openSyncPanel() {
     const backdrop = modal(null);
     const box = h('div', 'modal glass');
     box.appendChild(h('h2', '', '局域网同步'));
-    box.appendChild(h('p', 'muted', '同一 Wi-Fi 下的手机、平板和电脑会出现在这里（包含「我的收藏」与全部歌单）。若路由器开启了广播隔离，可输入对端 IP:端口直连发送。'));
-    const autoRow = settingSwitch('同局域网自动同步歌单', '双方均开启时，歌单和收藏变动自动合并同步', S.lanAutoSync === true, async value => {
+    box.appendChild(h('p', 'muted', '仅已加入「设备信任圈」的设备可互相发送或自动同步数据，防止同 Wi-Fi 下陌生设备误同步。'));
+    const autoRow = settingSwitch('同局域网自动同步歌单', '仅与信任圈内同样开启此项的设备自动合并歌单与收藏', S.lanAutoSync === true, async value => {
       S.lanAutoSync = value; saveStore();
       if (value) await persistFavoritesToLibrary(false);
       window.lxMusic?.syncSetAuto?.(value).catch?.(() => {});
     });
-    box.appendChild(autoRow);
+    const transitiveRow = settingSwitch(
+      '信任圈成员互通',
+      '开启后，配对新设备时自动同步对方信任圈里的设备并互相引荐；关闭则仅拉入当前配对设备',
+      true,
+      async value => {
+        try {
+          await window.lxMusic?.syncSetTransitive?.(value);
+          notify(value ? '已开启信任圈成员互通' : '已关闭信任圈成员互通（仅拉入当前配对设备）');
+        } catch (_) {}
+      }
+    );
+    const transitiveInput = transitiveRow.querySelector('input[type="checkbox"]');
+    box.append(autoRow, transitiveRow);
     const status = h('p', 'muted', '正在读取设备…');
+    const trustedHead = h('div', 'sync-section-head');
+    const trustedList = h('div', '');
+    const nearbyHead = h('div', 'sync-section-head');
+    nearbyHead.appendChild(h('span', '', '附近未信任设备'));
     const list = h('div', '');
     const directRow = h('div', 'sync-direct-row');
-    const directInput = h('input'); directInput.type = 'text'; directInput.placeholder = '手动直连：输入对端 IP:端口（如 192.168.1.20:41300）';
-    const directBtn = h('button', 'pill-btn', '直连发送');
+    const directInput = h('input'); directInput.type = 'text'; directInput.placeholder = '广播隔离时手动直连：输入对端 IP:端口（如 192.168.1.20:41300）';
+    const directBtn = h('button', 'pill-btn', '直连');
     directBtn.onclick = async () => {
       const target = directInput.value.trim();
       if (!target) return notify('请输入对端 IP 地址');
-      directBtn.disabled = true; directBtn.textContent = '等待确认…';
+      const code = generateSyncPairCode();
+      directBtn.disabled = true; directBtn.textContent = '连接中…';
+      status.textContent = '正在连接 ' + target + '（若未信任将请求加入信任圈，验证码：' + formatSyncPairCode(code) + '）…';
       try {
         await persistFavoritesToLibrary();
-        const result = await window.lxMusic.syncSendDirect(target);
-        status.textContent = result?.accepted ? '已直连同步到 ' + target : '对方未接受：' + (result?.message || '已拒绝');
+        const result = await window.lxMusic.syncSendDirect(target, code);
+        if (result?.mode === 'pair') {
+          const extra = result.introducedCount > 0 ? `，并同步加入对方信任圈内 ${result.introducedCount} 台设备` : '';
+          status.textContent = result.accepted
+            ? '已将「' + (result.peerName || target) + '」加入信任圈' + extra + '，请在上方信任圈中发送同步'
+            : '对方未接受信任请求：' + (result.message || '已拒绝');
+          if (result.accepted) refresh();
+        } else {
+          status.textContent = result?.accepted
+            ? '已直连同步到「' + (result.peerName || target) + '」'
+            : '对方未接受：' + (result?.message || '已拒绝');
+        }
       } catch (error) { status.textContent = '直连失败：' + error.message; }
-      directBtn.disabled = false; directBtn.textContent = '直连发送';
+      directBtn.disabled = false; directBtn.textContent = '直连';
     };
     directRow.append(directInput, directBtn);
-    box.append(status, list, directRow);
+    box.append(status, trustedHead, trustedList, nearbyHead, list, directRow);
     backdrop.appendChild(box);
+    const confirmRemoveTrusted = (item) => {
+      const confirmBackdrop = modal(null);
+      const confirmBox = h('div', 'modal glass');
+      confirmBox.appendChild(h('h2', '', '移出信任圈'));
+      confirmBox.appendChild(h('p', 'muted', '确定将「' + (item.name || '设备') + '」移出设备信任圈吗？移出后双方将无法手动发送或自动同步数据。'));
+      const actions = h('div', 'modal-actions');
+      const cancelBtn = h('button', 'pill-btn', '取消');
+      const okBtn = h('button', 'pill-btn accent', '确认移出');
+      cancelBtn.onclick = () => closeModal(confirmBackdrop);
+      okBtn.onclick = async () => {
+        cancelBtn.disabled = okBtn.disabled = true;
+        try {
+          await window.lxMusic.syncRemoveTrusted(item.id);
+          closeModal(confirmBackdrop);
+          notify('已将「' + (item.name || '设备') + '」移出信任圈');
+          refresh();
+        } catch (error) {
+          closeModal(confirmBackdrop);
+          status.textContent = '移除失败：' + error.message;
+        }
+      };
+      actions.append(cancelBtn, okBtn);
+      confirmBox.appendChild(actions);
+      confirmBackdrop.appendChild(confirmBox);
+    };
+    let refreshSeq = 0;
     const refresh = async () => {
+      const seq = ++refreshSeq;
       try {
-        const state = await window.lxMusic.syncStatus();
+        const [state, devices, trusted] = await Promise.all([
+          window.lxMusic.syncStatus(),
+          window.lxMusic.syncDevices(),
+          window.lxMusic.syncTrusted ? window.lxMusic.syncTrusted() : Promise.resolve([]),
+        ]);
+        if (seq !== refreshSeq || !box.isConnected) return;
+        if (transitiveInput && typeof state?.trustCircleTransitive === 'boolean') {
+          transitiveInput.checked = state.trustCircleTransitive;
+        }
         const addrText = Array.isArray(state.addresses) && state.addresses.length && state.port
           ? `（${state.addresses[0]}:${state.port}）`
           : '';
         status.textContent = '本机：' + (state.deviceName || 'LxMine PC') + addrText;
-        const devices = await window.lxMusic.syncDevices();
+        const trustedArr = Array.isArray(trusted) ? trusted : [];
+        const trustedIds = new Set(trustedArr.map(item => item.id));
+        const onlineMap = new Map((devices || []).map(item => [item.id, item]));
+
+        trustedHead.replaceChildren(h('span', '', '设备信任圈（' + trustedArr.length + ' 台）'));
+        trustedList.replaceChildren();
+        if (!trustedArr.length) {
+          trustedList.appendChild(h('p', 'muted', '当前信任圈为空：请先在下方「附近未信任设备」点击「加入信任圈」，对方确认验证码后即可在此发送同步。'));
+        } else {
+          trustedArr.forEach(item => {
+            const online = onlineMap.get(item.id);
+            const row = h('div', 'queue-row sync-device-row');
+            const copy = h('div', 'copy');
+            const title = h('strong', '', item.name || '设备');
+            const badge = h('span', 'sync-trust-tag ' + (online ? 'trusted' : 'untrusted'), online ? '在线' : '离线');
+            title.appendChild(badge);
+            const meta = [syncPlatformLabel(item.platform)];
+            if (online) meta.push(online.address + ':' + online.port);
+            if (online?.autoSyncPlaylists) meta.push('自动同步已开启');
+            copy.append(title, h('small', '', meta.join(' · ')));
+            const actions = h('div', 'sync-row-actions');
+            const sendBtn = h('button', 'pill-btn' + (online ? ' accent' : ''), online ? '发送同步' : '离线');
+            sendBtn.disabled = !online;
+            sendBtn.onclick = async () => {
+              if (!online) return;
+              sendBtn.disabled = true; sendBtn.textContent = '等待对方确认…';
+              try {
+                await persistFavoritesToLibrary();
+                const result = await window.lxMusic.syncSend(online.id);
+                if (result?.code === 'UNTRUSTED') {
+                  status.textContent = '「' + item.name + '」已将本机移出信任圈，请先移除再重新加入信任圈';
+                } else {
+                  status.textContent = result?.accepted ? '已保存到「' + item.name + '」' : '对方未接受：' + (result?.message || '已拒绝');
+                }
+              } catch (error) { status.textContent = '同步失败：' + error.message; }
+              sendBtn.disabled = false; sendBtn.textContent = '发送同步';
+            };
+            const removeBtn = h('button', 'pill-btn', '移除');
+            removeBtn.onclick = () => confirmRemoveTrusted(item);
+            actions.append(sendBtn, removeBtn);
+            row.append(copy, actions);
+            trustedList.appendChild(row);
+          });
+        }
+
         list.replaceChildren();
-        if (!devices.length) list.appendChild(h('p', 'muted', '还没有自动发现其他设备，确认连接同一 Wi-Fi 或使用下方 IP 直连。'));
-        devices.forEach(device => {
-          const row = h('div', 'queue-row');
-          const copy = h('div', 'copy'); copy.appendChild(h('strong', '', device.name || '设备')); copy.appendChild(h('small', '', (device.platform || '') + ' · ' + (device.address || '') + (device.port ? ':' + device.port : '')));
-          const send = h('button', 'pill-btn', '发送本机数据');
-          send.onclick = async () => {
-            send.disabled = true; send.textContent = '等待对方确认…';
-            try {
-              await persistFavoritesToLibrary();
-              const result = await window.lxMusic.syncSend(device.id);
-              status.textContent = result.accepted ? '已保存到「' + device.name + '」' : '对方未接受：' + (result.message || '已拒绝');
-            } catch (error) { status.textContent = '同步失败：' + error.message; }
-            send.disabled = false; send.textContent = '发送本机数据';
-          };
-          row.append(copy, send);
-          list.appendChild(row);
-        });
+        const allDevices = Array.isArray(devices) ? devices : [];
+        const untrustedDevices = allDevices
+          .filter(device => !trustedIds.has(device.id))
+          .sort((a, b) => String(a.name || '').localeCompare(String(b.name || '')));
+        if (!allDevices.length) {
+          list.appendChild(h('p', 'muted', '还没有自动发现其他设备，确认连接同一 Wi-Fi 或使用下方 IP 直连。'));
+        } else if (!untrustedDevices.length) {
+          list.appendChild(h('p', 'muted', '附近发现的 ' + allDevices.length + ' 台设备均已在上方信任圈内，请在信任圈中发送或管理。'));
+        } else {
+          untrustedDevices.forEach(device => {
+            const row = h('div', 'queue-row sync-device-row');
+            const metaParts = [syncPlatformLabel(device.platform), (device.address || '') + (device.port ? ':' + device.port : '')];
+            if (device.autoSyncPlaylists) metaParts.push('自动同步已开启');
+            const copy = h('div', 'copy');
+            const title = h('strong', '', device.name || '设备');
+            title.appendChild(h('span', 'sync-trust-tag untrusted', '未信任'));
+            copy.append(title, h('small', '', metaParts.filter(Boolean).join(' · ')));
+            const pairBtn = h('button', 'pill-btn accent', '加入信任圈');
+            pairBtn.onclick = async () => {
+              const code = generateSyncPairCode();
+              pairBtn.disabled = true; pairBtn.textContent = '等待确认…';
+              status.textContent = '等待「' + device.name + '」确认加入信任圈（核对验证码：' + formatSyncPairCode(code) + '）…';
+              try {
+                const result = await window.lxMusic.syncPair(device.id, code);
+                const extra = result?.introducedCount > 0 ? `（并同步加入对方信任圈内 ${result.introducedCount} 台设备）` : '';
+                status.textContent = result?.accepted
+                  ? '已将「' + (result.peerName || device.name) + '」加入信任圈' + extra
+                  : '对方未接受：' + (result?.message || '已拒绝');
+                if (result?.accepted) refresh();
+              } catch (error) { status.textContent = '加入信任圈失败：' + error.message; }
+              pairBtn.disabled = false; pairBtn.textContent = '加入信任圈';
+            };
+            row.append(copy, pairBtn);
+            list.appendChild(row);
+          });
+        }
       } catch (error) { status.textContent = '读取失败：' + error.message; }
     };
     refresh();
+    const unsubDevices = window.lxMusic?.onSyncEvent?.('devices-changed', () => {
+      if (!box.isConnected) { unsubDevices?.(); return; }
+      refresh();
+    });
+    const unsubTrusted = window.lxMusic?.onSyncEvent?.('trusted-changed', () => {
+      if (!box.isConnected) { unsubTrusted?.(); return; }
+      refresh();
+    });
     const refreshBtn = h('button', 'pill-btn', '刷新设备');
     refreshBtn.onclick = refresh;
     box.appendChild(h('div', 'modal-actions')).appendChild(refreshBtn);
@@ -9763,27 +10272,42 @@
       if (existing) { existing.classList.remove('sync-incoming-modal'); closeModal(existing.parentElement); }
       if (!pending || !pending.length) return;
       const incoming = pending[0];
+      const isPair = incoming.kind === 'pair';
       const backdrop = modal(null);
       const box = h('div', 'modal glass sync-incoming-modal');
       box.dataset.pendingId = incoming.pendingId;
-      box.appendChild(h('h2', '', '接收同步'));
-      const summary = incoming.summary || {};
-      box.appendChild(h('p', 'muted', '「' + (incoming.peer && incoming.peer.name || '另一台设备') + '」将发送 ' +
-        (summary.playlists || 0) + ' 个歌单、' + (summary.sources || 0) + ' 个音源及设置，覆盖本机数据。'));
+      const peerName = (incoming.peer && incoming.peer.name) || '另一台设备';
+      if (isPair) {
+        box.appendChild(h('h2', '', '信任圈加入请求'));
+        box.appendChild(h('p', 'muted', '「' + peerName + '」（' + syncPlatformLabel(incoming.peer?.platform) + '）请求加入您的设备信任圈。请核对对方屏幕上的验证码，确认后可与本机互相发送及自动同步歌单：'));
+        box.appendChild(h('div', 'sync-pair-code', formatSyncPairCode(incoming.code)));
+        if (incoming.transitive) {
+          box.appendChild(h('p', 'muted', '对方已开启「信任圈成员互通」：若本机也开启此开关，确认后双方信任圈内已有设备将自动互相加入。'));
+        }
+      } else {
+        box.appendChild(h('h2', '', '接收同步'));
+        const summary = incoming.summary || {};
+        box.appendChild(h('p', 'muted', '已信任设备「' + peerName + '」将发送 ' +
+          (summary.playlists || 0) + ' 个歌单、' + (summary.sources || 0) + ' 个音源及设置，覆盖本机数据。'));
+      }
       const status = h('p', 'muted', incoming.lastError || '');
       const actions = h('div', 'modal-actions');
       const reject = h('button', 'pill-btn', '拒绝');
-      const accept = h('button', 'pill-btn accent', '接收并覆盖');
+      const accept = h('button', 'pill-btn accent', isPair ? '信任此设备' : '接收并覆盖');
       const respond = async accepted => {
-        reject.disabled = accept.disabled = true; status.textContent = accepted ? '正在保存…' : '正在拒绝…';
+        reject.disabled = accept.disabled = true;
+        status.textContent = accepted ? (isPair ? '正在加入信任圈…' : '正在保存…') : '正在拒绝…';
         try {
           const result = await window.lxMusic.syncRespond(incoming.pendingId, accepted);
           if (!result || result.ok !== true) {
             if (result?.code === 'PENDING_NOT_FOUND') { closeModal(backdrop); notify(result.message); checkPendingSync(); return; }
-            throw new Error(result?.message || '同步未能保存，请重试');
+            throw new Error(result?.message || '操作未能保存，请重试');
           }
           closeModal(backdrop);
-          if (accepted) await refreshSyncedLibrary();
+          if (accepted) {
+            if (isPair) notify('已将「' + peerName + '」加入设备信任圈');
+            else await refreshSyncedLibrary();
+          }
         } catch (error) { status.textContent = error.message; reject.disabled = accept.disabled = false; }
       };
       reject.onclick = () => respond(false); accept.onclick = () => respond(true);

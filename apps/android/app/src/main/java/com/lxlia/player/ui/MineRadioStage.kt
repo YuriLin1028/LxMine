@@ -176,10 +176,6 @@ fun MineRadioStage(
 
     fun push(target: WebView?, metadata: Boolean, clock: Boolean, clockPosMs: Long = positionMsProvider()) {
         if (target == null || !ready) return
-        if (clock) {
-            val clockJson = JSONObject().put("positionMs", clockPosMs).put("playing", playing)
-            target.evaluateJavascript(stageBridgeCall("clock", clockJson), null)
-        }
         if (metadata) {
             if (lastSongKey != song.key) {
                 lastSongKey = song.key
@@ -216,9 +212,15 @@ fun MineRadioStage(
                 data.put("resetCameraOnSong", resetCameraOnSong)
                 data.put("topInset", topInset)
                 data.put("bottomInset", bottomInset)
+                data.put("positionMs", clockPosMs)
+                data.put("playing", playing)
                 lastPushKey = metaSig
                 target.evaluateJavascript("window.lxmineStage?.metadata(${data})", null)
             }
+        }
+        if (clock) {
+            val clockJson = JSONObject().put("positionMs", clockPosMs).put("playing", playing)
+            target.evaluateJavascript(stageBridgeCall("clock", clockJson), null)
         }
         target.evaluateJavascript(stageBridgeCall("presentation", JSONObject().put("visible", visible).put("detail", visible && seekable)), null)
     }
@@ -226,9 +228,10 @@ fun MineRadioStage(
     // current presentation/metadata when a cached page finishes loading late.
     val latestPush = rememberUpdatedState<(WebView?, Boolean, Boolean) -> Unit> { target, metadata, clock -> push(target, metadata, clock) }
 
-    // 元数据变化（换歌/换词/换配色/字号）时仅在当前舞台可见时下发；隐藏槽位零开销休眠，唤醒时立即同步。
+    // 元数据变化（换歌/换词/换配色/字号）时仅在当前舞台可见时下发；同歌非换曲波次合并 16ms 防止切歌风暴。
     LaunchedEffect(ready, visible, song.key, audioUrl, lines, translationLines, lyricColorMode, lyricPrimary, lyricSecondary, lyricScale, lyricLineSpacing, lyricMaxLines, resetCameraOnSong, mode, light, bgImage, bgOpacity, duration, lyricOffset) {
         if (!ready || !visible) return@LaunchedEffect
+        if (lastSongKey == song.key) delay(16)
         push(webView, metadata = true, clock = true)
     }
     // 横竖屏/沉浸切换只轻量同步安全区边距，不重新序列化整首歌词数组。
@@ -245,7 +248,7 @@ fun MineRadioStage(
             val now = android.os.SystemClock.elapsedRealtime()
             val expected = lastPosition + if (lastPlaying && lastClockAt > 0L) (now - lastClockAt) else 0L
             val drift = kotlin.math.abs(posMs - expected)
-            val changed = lastClockAt == 0L || lastPlaying != playing || drift > 240L || (playing && now - lastClockAt >= 4500L)
+            val changed = lastClockAt == 0L || lastPlaying != playing || drift > 90L || (playing && now - lastClockAt >= 1000L)
             val pausedSeek = !playing && kotlin.math.abs(posMs - lastPosition) > 40L
             if (changed || pausedSeek) {
                 lastPlaying = playing
@@ -272,8 +275,8 @@ fun MineRadioStage(
     LaunchedEffect(visible, seekable, playing, plain, webView) {
         val view = webView ?: return@LaunchedEffect
         if (android.os.Build.VERSION.SDK_INT >= 35) {
-            // 播放态维持高帧率，暂停或隐藏态交还系统 VRR 节能降频。
-            view.requestedFrameRate = if (visible && seekable && playing && !plain) android.view.View.REQUESTED_FRAME_RATE_CATEGORY_NORMAL else 0f
+            // 播放态请求高刷新率（120Hz），暂停或隐藏态交还系统 VRR 节能降频。
+            view.requestedFrameRate = if (visible && seekable && playing && !plain) android.view.View.REQUESTED_FRAME_RATE_CATEGORY_HIGH else 0f
         }
     }
     LaunchedEffect(backgroundBlur, webView) {
@@ -295,7 +298,7 @@ fun MineRadioStage(
                     .put("waveform", android.util.Base64.encodeToString(frame.waveform, flags))
                 view.evaluateJavascript(stageBridgeCall("spectrum", data), null)
             }
-            delay(100)
+            delay(36)
         }
     }
 

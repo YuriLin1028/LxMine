@@ -45,6 +45,33 @@ export async function loadDeviceId(): Promise<string> {
   }
   return id;
 }
+
+// 局域网设备信任圈：独立于 appData 存储，接收同步覆盖设置/歌单时绝不会被清空。
+export async function loadTrustedDevices(): Promise<string> {
+  return read('trustedDevices', '[]');
+}
+export async function saveTrustedDevices(value: string): Promise<void> {
+  if (!prefs) return;
+  await prefs.put('trustedDevices', value);
+  await prefs.flush();
+}
+export async function loadTrustCircleTransitive(): Promise<boolean> {
+  const raw = await read('trustCircleTransitive', '1');
+  return raw !== '0' && raw !== 'false';
+}
+export async function saveTrustCircleTransitive(value: boolean): Promise<void> {
+  if (!prefs) return;
+  await prefs.put('trustCircleTransitive', value ? '1' : '0');
+  await prefs.flush();
+}
+export async function loadPendingVouches(): Promise<string> {
+  return read('trustedPendingVouches', '[]');
+}
+export async function savePendingVouches(value: string): Promise<void> {
+  if (!prefs) return;
+  await prefs.put('trustedPendingVouches', value);
+  await prefs.flush();
+}
 export async function saveUiDiagnostics(value: string): Promise<void> {
   if (runtimePrefs) { await runtimePrefs.put('uiDiagnostics', value); await runtimePrefs.flush(); }
 }

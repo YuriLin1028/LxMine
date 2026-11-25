@@ -16,9 +16,10 @@ export interface LanDevice {
   ssid?: string;
   receiveMode?: string;
   autoSyncPlaylists?: boolean;
+  syncDigest?: string;
 }
 
-export interface PullSyncRequest { id: string; receiverId: string; }
+export interface PullSyncRequest { id: string; receiverId: string; kind?: string; }
 
 interface AnnounceMessage {
   protocol?: string;
@@ -30,6 +31,7 @@ interface AnnounceMessage {
   ssid?: string;
   receiveMode?: string;
   autoSyncPlaylists?: boolean;
+  syncDigest?: string;
 }
 
 const PROTOCOL = 'lxlia-lansync/1';
@@ -54,6 +56,7 @@ export class LanDiscovery {
   private broadcasts: string[] = ['255.255.255.255'];
   private lastNetworkRefresh: number = 0;
   pendingRequests: () => PullSyncRequest[] = () => [];
+  syncDigestProvider: () => string = () => '';
 
   constructor(deviceId: string, deviceName: string) {
     this.deviceId = deviceId;
@@ -108,7 +111,16 @@ export class LanDiscovery {
     const udp = this.udp; this.udp = null;
     return udp;
   }
-  stop(): void { this.detach()?.close().catch(() => {}); }
+  stop(): void {
+    const udp = this.detach();
+    if (!udp) return;
+    const bye = JSON.stringify({ protocol: PROTOCOL, type: 'bye', id: this.deviceId });
+    for (const host of this.broadcasts) {
+      const target: socket.NetAddress = { address: host, port: DISCOVERY_PORT, family: 1 };
+      udp.send({ data: bye, address: target }).catch(() => {});
+    }
+    udp.close().catch(() => {});
+  }
   async restart(): Promise<void> {
     if (this.restarting) return this.restarting;
     this.restarting = this.resume();
@@ -122,27 +134,39 @@ export class LanDiscovery {
     await this.start();
   }
 
+  private isExcludedLanInterface(iface: string): boolean {
+    if (!iface) return false;
+    const lower = iface.toLowerCase();
+    return lower.startsWith('ancowlan') || lower.startsWith('p2p') ||
+      lower.startsWith('rmnet') || lower.startsWith('ccmni') ||
+      lower.startsWith('tun') || lower.startsWith('ppp') ||
+      lower === 'lo' || lower.startsWith('docker') ||
+      lower.startsWith('virbr') || lower.startsWith('veth');
+  }
+
   private async refreshNetworks(): Promise<void> {
     this.lastNetworkRefresh = Date.now();
     const targets: Set<string> = new Set();
+    let resolvedIp = '';
     try {
       for (const net of await connection.getAllNets()) {
         const properties = await connection.getConnectionProperties(net);
         const iface = properties.interfaceName ?? '';
-        // Wi-Fi Direct (ancowlan0) and cellular/VPN interfaces must not receive
-        // LAN announcements; sending through them aborts the UDP socket.
-        if (iface && !iface.startsWith('wlan')) continue;
+        // Exclude Wi-Fi Direct (ancowlan0) and cellular/VPN/virtual interfaces,
+        // while allowing both wlan* and wired Ethernet (eth*/en*) on HarmonyOS 2in1 PC.
+        if (this.isExcludedLanInterface(iface)) continue;
         for (const link of properties.linkAddresses) {
           const parts = link.address.address.split('.').map((part: string) => Number(part));
-          if (parts.length !== 4 || parts[0] === 127 || link.prefixLength < 1 || link.prefixLength > 30) continue;
+          if (parts.length !== 4 || parts[0] === 127 || (parts[0] === 169 && parts[1] === 254) || link.prefixLength < 1 || link.prefixLength > 30) continue;
           if (parts[0] === 172 && parts[1] === 17) continue;
-          if (!this.localIp) this.localIp = link.address.address;
+          if (!resolvedIp) resolvedIp = link.address.address;
           const ip = ((parts[0] << 24) | (parts[1] << 16) | (parts[2] << 8) | parts[3]) >>> 0;
           const mask = (0xffffffff << (32 - link.prefixLength)) >>> 0;
           const broadcast = (ip | ~mask) >>> 0;
           targets.add([24, 16, 8, 0].map((shift: number) => (broadcast >>> shift) & 255).join('.'));
         }
       }
+      if (resolvedIp) this.localIp = resolvedIp;
       if (!targets.size) targets.add('255.255.255.255');
       this.broadcasts = Array.from(targets);
     } catch (_) {}
@@ -167,6 +191,7 @@ export class LanDiscovery {
       platform: 'harmony',
       port: this.port,
       autoSyncPlaylists: this.autoSyncPlaylists,
+      syncDigest: this.syncDigestProvider(),
       pullRequests: this.pendingRequests(),
       ssid: this.ssid,
       ts: Date.now(),
@@ -187,8 +212,14 @@ export class LanDiscovery {
     } catch (error) {
       return;
     }
-    if (parsed.protocol !== PROTOCOL || parsed.id === this.deviceId || !parsed.id || parsed.type !== 'announce' || !parsed.port || parsed.port < 1 || parsed.port > 65535) return;
-    const firstSeen = !this.devices.has(parsed.id);
+    if (parsed.protocol !== PROTOCOL || parsed.id === this.deviceId || !parsed.id) return;
+    if (parsed.type === 'bye') {
+      if (this.devices.delete(parsed.id)) this.emit();
+      return;
+    }
+    if (parsed.type !== 'announce' || !parsed.port || parsed.port < 1 || parsed.port > 65535) return;
+    const previous = this.devices.get(parsed.id);
+    const firstSeen = !previous;
     const device: LanDevice = {
       id: parsed.id,
       name: parsed.name ?? 'LxMine',
@@ -199,13 +230,22 @@ export class LanDiscovery {
       ssid: parsed.ssid ?? '',
       receiveMode: parsed.receiveMode === 'pull' ? 'pull' : 'direct',
       autoSyncPlaylists: parsed.autoSyncPlaylists === true,
+      syncDigest: typeof parsed.syncDigest === 'string' ? parsed.syncDigest : '',
     };
     this.devices.set(device.id, device);
     if (firstSeen) {
       console.info(`[LanDiscovery] seen ${device.name} ${device.address}:${device.port} ssid=${device.ssid || '-'}`);
       this.announce(info.remoteInfo.address);
     }
-    this.emit();
+    const changed = !previous ||
+      previous.name !== device.name ||
+      previous.address !== device.address ||
+      previous.port !== device.port ||
+      previous.ssid !== device.ssid ||
+      previous.receiveMode !== device.receiveMode ||
+      previous.autoSyncPlaylists !== device.autoSyncPlaylists ||
+      previous.syncDigest !== device.syncDigest;
+    if (changed) this.emit();
   }
 
   private prune(): void {

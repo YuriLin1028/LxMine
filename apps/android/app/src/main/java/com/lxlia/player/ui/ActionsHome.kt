@@ -104,7 +104,7 @@ fun AppViewModel.openEntity(entity: CatalogueEntity) {
             if (entity.kind == "songlist") {
                 val json = engine.importPlaylist(entity.id, entity.source)
                 if (openedEntity?.id != entity.id) return@launch
-                val lists = parsePlaylists(json)
+                val lists = parsePlaylists(json, imported = true)
                 val songs = lists.firstOrNull()?.songs.orEmpty()
                 entitySongs = songs
                 hydrateCoversFor(songs.take(40))
@@ -147,7 +147,7 @@ private fun AppViewModel.collectTasteSeed(seedOffset: Int = algoRefreshSeed): Tr
         maxArtists = 4,
         seedOffset = seedOffset,
     )
-    val favoriteSongs = playlists.firstOrNull { it.isFavorite || it.name == "我喜欢的" || it.name == "我的收藏" }?.songs.orEmpty()
+    val favoriteSongs = playlists.firstOrNull { it.isFavorite }?.songs.orEmpty()
     val known = buildSet {
         recentSongs.take(15).forEach { add(it.key) }
         favoriteSongs.take(20).forEach { add(it.key) }

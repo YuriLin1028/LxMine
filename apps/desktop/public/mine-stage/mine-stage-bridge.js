@@ -165,22 +165,74 @@
   enforceUprightStageLyrics();
   var isNativeMobileStage = typeof navigator !== 'undefined' && /Android|HarmonyOS|OpenHarmony|OHOS|Mobile|iPhone|iPad/i.test(navigator.userAgent || '');
   if (isNativeMobileStage) {
-    fx.foregroundFpsMode = '50';
+    fx.foregroundFpsMode = 'vsync';
     fx.performanceQuality = 'balanced';
-    RENDER_DPR_CAP = 1.65;
-    RENDER_PIXEL_BUDGET = 1500000;
+    RENDER_DPR_CAP = 1.25;
+    RENDER_PIXEL_BUDGET = 950000;
     if (typeof applyRendererPowerMode === 'function') applyRendererPowerMode();
   } else {
     fx.foregroundFpsMode = 'adaptive';
-    RENDER_DPR_CAP = 1.50;
-    RENDER_PIXEL_BUDGET = 2200000;
+    RENDER_DPR_CAP = 1.35;
+    RENDER_PIXEL_BUDGET = 1850000;
     if (typeof applyRendererPowerMode === 'function') applyRendererPowerMode();
   }
   audio = new Audio(); audio.crossOrigin = 'anonymous'; audio.preload = 'auto';
   playQueue = [{ id: 'native', name: 'LxMine', artist: '', type: 'song' }]; currentIdx = 0;
   uniforms.uAlpha.value = 1;
   var nativeClockRate = 1;
-  function position() { return Math.max(0, nativeClock.position + (nativeClock.playing ? ((performance.now() - nativeClock.at) / 1000) * nativeClockRate : 0)); }
+  var nativeClockRateUntil = 0;
+  function position() {
+    var now = performance.now();
+    if (nativeClock.playing) {
+      if (nativeClockRate !== 1 && nativeClockRateUntil > 0 && now >= nativeClockRateUntil) {
+        nativeClock.position = nativeClock.position + ((nativeClockRateUntil - nativeClock.at) / 1000) * nativeClockRate;
+        nativeClock.at = nativeClockRateUntil;
+        nativeClockRate = 1;
+        nativeClockRateUntil = 0;
+      }
+      return Math.max(0, nativeClock.position + ((now - nativeClock.at) / 1000) * nativeClockRate);
+    }
+    return Math.max(0, nativeClock.position);
+  }
+  function applyNativeClockSample(inMs, nextPlaying, snapImmediate) {
+    var now = performance.now();
+    var curSec = position();
+    var inSec = Math.max(0, Number(inMs) || 0) / 1000;
+    var diffSec = inSec - curSec;
+    if (!snapImmediate && nativeClock.playing && nextPlaying) {
+      if (Math.abs(diffSec) > 0.45 || nativeClock.at <= 0) {
+        nativeClock.position = inSec;
+        nativeClock.at = now;
+        nativeClockRate = 1;
+        nativeClockRateUntil = 0;
+      } else if (Math.abs(diffSec) < 0.018) {
+        nativeClock.position = curSec;
+        nativeClock.at = now;
+        nativeClockRate = 1;
+        nativeClockRateUntil = 0;
+      } else {
+        var catchupMs = Math.min(850, Math.max(220, Math.abs(diffSec) * 2400));
+        var rate = Math.max(0.90, Math.min(1.10, 1 + (diffSec * 1000) / catchupMs));
+        var windowMs = Math.abs(rate - 1) > 0.0005 ? Math.min(1200, Math.abs((diffSec * 1000) / (rate - 1))) : 0;
+        nativeClock.position = curSec;
+        nativeClock.at = now;
+        nativeClockRate = rate;
+        nativeClockRateUntil = windowMs > 0 ? now + windowMs : 0;
+      }
+    } else if (!snapImmediate && nativeClock.playing && !nextPlaying && Math.abs(diffSec) < 0.40) {
+      nativeClock.position = curSec;
+      nativeClock.at = now;
+      nativeClockRate = 1;
+      nativeClockRateUntil = 0;
+    } else {
+      nativeClock.position = inSec;
+      nativeClock.at = now;
+      nativeClockRate = 1;
+      nativeClockRateUntil = 0;
+    }
+    nativeClock.playing = !!nextPlaying;
+    playing = nativeClock.playing;
+  }
   function visualReady() {
     if (visualReadyPending || !presentation.visible || !presentation.detail) return;
     if (lyricsLines.length && fx.particleLyrics && (!stageLyrics.current || stageLyrics.currentIdx === -1)) {
@@ -237,17 +289,11 @@
     vocalCancelNodes.sidePreserve.gain.setTargetAtTime(sideGain, now, 0.025);
     vocalCancelNodes.outGain.gain.setTargetAtTime(active ? trim : 0.0, now, 0.025);
   }
-  function readyGraph() {
-    if (graphReady) return;
+  function ensureVocalCancelChain() {
+    if (vocalCancelNodes || !audioCtx || !source) return;
     try {
-      audioCtx = new (window.AudioContext || window.webkitAudioContext)();
-      source = audioCtx.createMediaElementSource(audio);
-      audioSourceMedia = audio;
-      analyser = audioCtx.createAnalyser(); analyser.fftSize = FFT_SIZE; analyser.smoothingTimeConstant = 0.58;
-      beatAnalyser = audioCtx.createAnalyser(); beatAnalyser.fftSize = BEAT_FFT_SIZE;
-      gainNode = audioCtx.createGain(); gainNode.gain.value = 0.000001;
-      source.connect(analyser); source.connect(beatAnalyser); analyser.connect(gainNode); gainNode.connect(audioCtx.destination);
-      // 4th-Order Sub-Bass (105Hz) + Mid-Side Vocal Suppressor / Zero-Clip Vocal Booster
+      // Lazy 4th-Order Sub-Bass (105Hz) + Mid-Side Vocal Suppressor / Zero-Clip Vocal Booster:
+      // Only constructed when ear-monitor / vocal-cancel is actually enabled so normal playback incurs zero DSP cost.
       var vcSplit = audioCtx.createChannelSplitter(2);
       var vcMerge = audioCtx.createChannelMerger(2);
       var lToMid = audioCtx.createGain(); lToMid.gain.value = 0.5;
@@ -282,7 +328,25 @@
       midOut.connect(vcMerge, 0, 1); sideInvert.connect(vcMerge, 0, 1);
       vcMerge.connect(outGain); outGain.connect(limiter); limiter.connect(shaper); shaper.connect(audioCtx.destination);
       vocalCancelNodes = { midVocalDirect: midVocalDirect, midLowPreserve: midLowPreserve, midVocalBoostEq: midVocalBoostEq, sideVocalNotch: sideVocalNotch, sidePreserve: sidePreserve, outGain: outGain };
-      applyVocalCancelGains();
+    } catch (error) { console.warn('[LxMineStage] vocal-cancel chain unavailable', error.message); }
+  }
+  function readyGraph() {
+    if (graphReady) {
+      if (vocalCancelState.active) { ensureVocalCancelChain(); applyVocalCancelGains(); }
+      return;
+    }
+    try {
+      audioCtx = new (window.AudioContext || window.webkitAudioContext)();
+      source = audioCtx.createMediaElementSource(audio);
+      audioSourceMedia = audio;
+      analyser = audioCtx.createAnalyser(); analyser.fftSize = FFT_SIZE; analyser.smoothingTimeConstant = 0.58;
+      beatAnalyser = audioCtx.createAnalyser(); beatAnalyser.fftSize = BEAT_FFT_SIZE;
+      gainNode = audioCtx.createGain(); gainNode.gain.value = 0.000001;
+      source.connect(analyser); source.connect(beatAnalyser); analyser.connect(gainNode); gainNode.connect(audioCtx.destination);
+      if (vocalCancelState.active) {
+        ensureVocalCancelChain();
+        applyVocalCancelGains();
+      }
       audioReady = true; graphReady = true;
     } catch (error) { console.warn('[LxMineStage] analysis unavailable', error.message); }
   }
@@ -440,19 +504,26 @@
         nativeAnalysis.receivedAt = 0;
         nativeAnalysis.frequency.fill(0);
         nativeAnalysis.waveform.fill(128);
-        nativeClock.position = 0;
-        nativeClock.at = performance.now();
-        nativeClock.playing = false;
-        playing = false;
+        if (data.positionMs !== undefined && data.positionMs !== null && isFinite(Number(data.positionMs))) {
+          applyNativeClockSample(Number(data.positionMs), data.playing === true, true);
+        } else {
+          nativeClock.position = 0;
+          nativeClock.at = performance.now();
+          nativeClockRate = 1;
+          nativeClockRateUntil = 0;
+          nativeClock.playing = data.playing === true;
+          playing = nativeClock.playing;
+        }
         lyricKey = '';
         if (typeof clearStageLyrics === 'function') clearStageLyrics();
         if (typeof stageLyrics !== 'undefined' && stageLyrics) stageLyrics.currentIdx = -1;
         songId = data.id; sourceUrl = ''; audio.pause(); audio.removeAttribute('src'); audio.load();
-        // A paused native track still belongs on the playback stage; never let
-        // the empty-home wallpaper replace it between tracks.
         document.body.classList.remove('home-wallpaper-preview');
         if (typeof homeWallpaperPrewarmStarted !== 'undefined') homeWallpaperPrewarmStarted = true;
         if (typeof switchPlaybackVisualToEmily === 'function') switchPlaybackVisualToEmily();
+        if (typeof markRenderInteraction === 'function') markRenderInteraction('track-switch', 1400);
+      } else if (data.positionMs !== undefined && data.positionMs !== null && isFinite(Number(data.positionMs))) {
+        applyNativeClockSample(Number(data.positionMs), data.playing !== undefined ? data.playing === true : nativeClock.playing, false);
       }
       var song = { id: data.id || data.name, name: data.name, artist: data.singer, cover: data.cover, durationMs: data.duration };
       playQueue[0] = song; currentIdx = 0;
@@ -573,25 +644,7 @@
       applyStageBackground();
     },
     clock: function (data) {
-      var now = performance.now();
-      var curSec = position();
-      var inSec = Math.max(0, Number(data.positionMs) || 0) / 1000;
-      var nextPlaying = data.playing === true;
-      var diffSec = inSec - curSec;
-      var finalSec = inSec;
-      if (nativeClock.playing && nextPlaying && Math.abs(diffSec) <= 0.65) {
-        finalSec = curSec;
-        nativeClockRate = Math.max(0.88, Math.min(1.12, 1 + diffSec * 0.35));
-      } else if (nativeClock.playing && !nextPlaying && Math.abs(diffSec) < 0.55) {
-        finalSec = curSec;
-        nativeClockRate = 1;
-      } else {
-        nativeClockRate = 1;
-      }
-      nativeClock.position = finalSec;
-      nativeClock.at = now;
-      nativeClock.playing = nextPlaying;
-      playing = nativeClock.playing;
+      applyNativeClockSample(Number(data && data.positionMs) || 0, !!(data && data.playing), false);
       syncAudio();
     },
     vocalCancel: function (cfg) {
@@ -601,6 +654,7 @@
       if (!isFinite(nextGain)) nextGain = 1.0;
       vocalCancelState.active = nextActive;
       vocalCancelState.vocalGain = Math.max(0, Math.min(1.5, nextGain));
+      if (nextActive && graphReady) ensureVocalCancelChain();
       applyVocalCancelGains();
       syncAudio();
     },

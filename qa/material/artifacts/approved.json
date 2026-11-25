@@ -1,6 +1,6 @@
 {
   "status": "PASS",
-  "capturedAt": "2026-11-24T02:11:00.974Z",
+  "capturedAt": "2026-11-25T01:09:01.745Z",
   "calibrationOverride": false,
   "thresholds": {
     "mae": 8,
@@ -1201,18 +1201,18 @@
   "hashes": {
     "apps/desktop/public/index.html": "dc0894fd1675e97d86744ee199edd32841f862f23d8864bc2c7f8173c4f43d3e",
     "apps/desktop/public/lxmine/material.js": "444e6988494eee12578975c25e135caf95e9a5d014ea106779409ed879f20c55",
-    "apps/desktop/public/lxmine/style.css": "df78aa8f22518c2d43b23e9bdc685ac75218076287613ca1ca02e9fb8b77e653",
-    "apps/desktop/public/lxmine/app.js": "dedff97ebadbe4769181f2107e7865e1fee2f4cfff5ab9970b346c9e1635a1a6",
+    "apps/desktop/public/lxmine/style.css": "cd1f460b1c1331129c72ced3c889846dad1189ee24f35ff674536feea0b10d03",
+    "apps/desktop/public/lxmine/app.js": "063c7c59927fb29e37e385e70447d124dbc926ee9174cf976fcc8fdf64c669f7",
     "apps/desktop/public/lxmine/pagination.js": "cbb6830eef81a8c54d1f4ff3cde5212dc8ed33d42ff6aac58ddcb535dff347f3",
     "apps/desktop/public/lxmine/popup-motion.js": "524189564cc12f1e21ebf8a16d2075e1961a3b14684a708a4d3077600cf0f7c6",
-    "apps/desktop/public/mine-stage/harmony-stage.html": "be007956ebf7afb39844102da42e1612e18d52e01632cd3f1cf82e99ef6ed960",
-    "apps/desktop/public/mine-stage/plain-stage.html": "d02743e403c97fe91bba41a15573cee6123b12dd34f5c8b30763bfc7d3409e36",
-    "apps/desktop/public/mine-stage/mine-stage-lyrics.js": "d2b7534bd28fca9954ebc0be1d8e52cc1d6ab9518d05b5407592b9a126ce3f04",
+    "apps/desktop/public/mine-stage/harmony-stage.html": "72d906ba5512c4b49fb7d4ccc51c0248140b50f2c9220ed12b97c8732bf4e5bd",
+    "apps/desktop/public/mine-stage/plain-stage.html": "2bd2b5333c42a2f7e5042b9d2023879fc079ae2a9b8ffd3a53fac1b33f5a964b",
+    "apps/desktop/public/mine-stage/mine-stage-lyrics.js": "3608f26e08e67c6fa9b46489bf67300c824c00db944524fa6a1a2d51da4dba3f",
     "apps/desktop/public/mine-stage/mine-stage-appearance.js": "92e8da37d5192d39be3840a703de2b07d4a24b36ad2292c04e288767b943171f",
     "apps/desktop/public/mine-stage/mine-stage-touch.js": "d37f62380429bacb2fa4a5ff1118e0040bc43a5975d6d7b2ef889d8d2c225758",
     "apps/desktop/public/mine-stage/mine-stage-gestures.js": "a9c8fefe75ba85cd880187a7504289dd3ff6e9d8a4ac1bcc1c9314466f2fefc5",
-    "apps/desktop/public/mine-stage/mine-stage-engine.js": "15c78fbb1fb98aebeecfa41c2bba70125e0aa7a0381c4a4039cb68e8f2a1cf68",
-    "apps/desktop/public/mine-stage/mine-stage-bridge.js": "2e211a7d1ddb57107f179973b9fef077129278ed768b45484e4be97455525005",
+    "apps/desktop/public/mine-stage/mine-stage-engine.js": "90ae552104157cdfd237e950870b980c613f631d838f720695bc25e853efe858",
+    "apps/desktop/public/mine-stage/mine-stage-bridge.js": "1e1df1f948af4da03eea1a1acca9cce1ef646c5a9accaeecab7639b75243399e",
     "apps/desktop/public/mine-stage/sonic-topography-preset.js": "0a6a01d34d9c80cffe633ccd08f5e4132a6f82c2a2b6eec73cd8214b930e8c21",
     "apps/desktop/public/mine-stage/sonic-workshop-preset.js": "321bea56ee90670e48db8dfbf3348dd966eee0bbc4d379a503ce5ccc9647f8ec",
     "apps/desktop/public/mine-stage/vendor/sonic-workshop/mineradio-bridge.html": "dedaec65ede2e1b8c11a597c53945e0f9098f826d9db255469f1b9355cdc44a2",
@@ -1256,9 +1256,9 @@
     "qa/material/control-press.cjs": "2984d76946233cf09bdc23dcc4b20a24fedfd12bfcf17ce9afe77cf8280313e7",
     "qa/material/stage-background.cjs": "fe502273ed56d42a542b77e8edd32d751b10ed84a7cc3eb06c1e881df9eed83d",
     "apps/desktop/build/verify-material.cjs": "52d41b52f04ef31f1b9aa5908ec2574e9b67d285f18d7d474e18e8cd86bfe786",
-    "apps/desktop/package.json": "87d60b93fd8007a242801fa9675af9d65c50a9e5ef5d5df51f37bed177bc52c2"
+    "apps/desktop/package.json": "3d9b2b8abc6f5501371272cec1ee3c4c192503f0e8c3a63b69f6ace0fc395ee3"
   },
-  "verifiedAt": "2026-11-24T02:15:27.539Z",
+  "verifiedAt": "2026-11-25T01:13:32.624Z",
   "systemMenus": {
     "status": "SOURCE_PARITY",
     "reference": "d:\\LxMine\\releases\\windows\\runtime\\bundle-eef7f60599fed7cb\\resources\\app\\public\\lxmine\\material.js",
@@ -1279,8 +1279,8 @@
           26,
           "control"
         ],
-        "referenceMs": 47.7924,
-        "currentMs": 46.1845,
+        "referenceMs": 48.7652,
+        "currentMs": 45.880300000000005,
         "bytes": 101504
       },
       {
@@ -1290,8 +1290,8 @@
           36,
           "control"
         ],
-        "referenceMs": 54.52040000000001,
-        "currentMs": 54.04320000000001,
+        "referenceMs": 57.6233,
+        "currentMs": 56.30409999999998,
         "bytes": 140544
       },
       {
@@ -1301,8 +1301,8 @@
           32,
           "control"
         ],
-        "referenceMs": 19.711900000000014,
-        "currentMs": 19.100400000000008,
+        "referenceMs": 20.753500000000003,
+        "currentMs": 21.473900000000015,
         "bytes": 32768
       },
       {
@@ -1312,8 +1312,8 @@
           28,
           "control"
         ],
-        "referenceMs": 54.03309999999999,
-        "currentMs": 54.383399999999995,
+        "referenceMs": 63.9461,
+        "currentMs": 56.07650000000001,
         "bytes": 189952
       },
       {
@@ -1323,8 +1323,8 @@
           22,
           "control"
         ],
-        "referenceMs": 9.999199999999973,
-        "currentMs": 10.418700000000001,
+        "referenceMs": 10.715499999999963,
+        "currentMs": 10.102600000000052,
         "bytes": 15488
       },
       {
@@ -1334,8 +1334,8 @@
           27,
           "control"
         ],
-        "referenceMs": 95.00779999999997,
-        "currentMs": 92.39680000000004,
+        "referenceMs": 93.37959999999993,
+        "currentMs": 96.30669999999998,
         "bytes": 233280
       },
       {
@@ -1345,8 +1345,8 @@
           22,
           "control"
         ],
-        "referenceMs": 198.20479999999998,
-        "currentMs": 203.03089999999997,
+        "referenceMs": 207.1638999999999,
+        "currentMs": 205.28239999999994,
         "bytes": 436480
       },
       {
@@ -1356,8 +1356,8 @@
           24,
           "control"
         ],
-        "referenceMs": 482.2215000000001,
-        "currentMs": 480.49070000000006,
+        "referenceMs": 503.72900000000004,
+        "currentMs": 490.39830000000006,
         "bytes": 5472000
       },
       {
@@ -1367,8 +1367,8 @@
           28,
           "control"
         ],
-        "referenceMs": 539.9144000000001,
-        "currentMs": 533.1343999999999,
+        "referenceMs": 558.1802,
+        "currentMs": 570.6059,
         "bytes": 6400000
       },
       {
@@ -1378,8 +1378,8 @@
           20,
           "popup"
         ],
-        "referenceMs": 49.92499999999973,
-        "currentMs": 50.985699999999724,
+        "referenceMs": 54.18759999999975,
+        "currentMs": 54.03660000000036,
         "bytes": 184832
       },
       {
@@ -1389,8 +1389,8 @@
           20,
           "popup"
         ],
-        "referenceMs": 140.83770000000004,
-        "currentMs": 142.38419999999996,
+        "referenceMs": 143.64100000000008,
+        "currentMs": 142.93359999999984,
         "bytes": 754272
       },
       {
@@ -1400,26 +1400,26 @@
           32,
           "sheet"
         ],
-        "referenceMs": 346.1455000000001,
-        "currentMs": 332.96540000000005,
+        "referenceMs": 347.90700000000015,
+        "currentMs": 344.15679999999975,
         "bytes": 3360000
       }
     ],
     "hashes": {
       "apps/desktop/public/index.html": "dc0894fd1675e97d86744ee199edd32841f862f23d8864bc2c7f8173c4f43d3e",
       "apps/desktop/public/lxmine/material.js": "444e6988494eee12578975c25e135caf95e9a5d014ea106779409ed879f20c55",
-      "apps/desktop/public/lxmine/style.css": "df78aa8f22518c2d43b23e9bdc685ac75218076287613ca1ca02e9fb8b77e653",
-      "apps/desktop/public/lxmine/app.js": "dedff97ebadbe4769181f2107e7865e1fee2f4cfff5ab9970b346c9e1635a1a6",
+      "apps/desktop/public/lxmine/style.css": "cd1f460b1c1331129c72ced3c889846dad1189ee24f35ff674536feea0b10d03",
+      "apps/desktop/public/lxmine/app.js": "063c7c59927fb29e37e385e70447d124dbc926ee9174cf976fcc8fdf64c669f7",
       "apps/desktop/public/lxmine/pagination.js": "cbb6830eef81a8c54d1f4ff3cde5212dc8ed33d42ff6aac58ddcb535dff347f3",
       "apps/desktop/public/lxmine/popup-motion.js": "524189564cc12f1e21ebf8a16d2075e1961a3b14684a708a4d3077600cf0f7c6",
-      "apps/desktop/public/mine-stage/harmony-stage.html": "be007956ebf7afb39844102da42e1612e18d52e01632cd3f1cf82e99ef6ed960",
-      "apps/desktop/public/mine-stage/plain-stage.html": "d02743e403c97fe91bba41a15573cee6123b12dd34f5c8b30763bfc7d3409e36",
-      "apps/desktop/public/mine-stage/mine-stage-lyrics.js": "d2b7534bd28fca9954ebc0be1d8e52cc1d6ab9518d05b5407592b9a126ce3f04",
+      "apps/desktop/public/mine-stage/harmony-stage.html": "72d906ba5512c4b49fb7d4ccc51c0248140b50f2c9220ed12b97c8732bf4e5bd",
+      "apps/desktop/public/mine-stage/plain-stage.html": "2bd2b5333c42a2f7e5042b9d2023879fc079ae2a9b8ffd3a53fac1b33f5a964b",
+      "apps/desktop/public/mine-stage/mine-stage-lyrics.js": "3608f26e08e67c6fa9b46489bf67300c824c00db944524fa6a1a2d51da4dba3f",
       "apps/desktop/public/mine-stage/mine-stage-appearance.js": "92e8da37d5192d39be3840a703de2b07d4a24b36ad2292c04e288767b943171f",
       "apps/desktop/public/mine-stage/mine-stage-touch.js": "d37f62380429bacb2fa4a5ff1118e0040bc43a5975d6d7b2ef889d8d2c225758",
       "apps/desktop/public/mine-stage/mine-stage-gestures.js": "a9c8fefe75ba85cd880187a7504289dd3ff6e9d8a4ac1bcc1c9314466f2fefc5",
-      "apps/desktop/public/mine-stage/mine-stage-engine.js": "15c78fbb1fb98aebeecfa41c2bba70125e0aa7a0381c4a4039cb68e8f2a1cf68",
-      "apps/desktop/public/mine-stage/mine-stage-bridge.js": "2e211a7d1ddb57107f179973b9fef077129278ed768b45484e4be97455525005",
+      "apps/desktop/public/mine-stage/mine-stage-engine.js": "90ae552104157cdfd237e950870b980c613f631d838f720695bc25e853efe858",
+      "apps/desktop/public/mine-stage/mine-stage-bridge.js": "1e1df1f948af4da03eea1a1acca9cce1ef646c5a9accaeecab7639b75243399e",
       "apps/desktop/public/mine-stage/sonic-topography-preset.js": "0a6a01d34d9c80cffe633ccd08f5e4132a6f82c2a2b6eec73cd8214b930e8c21",
       "apps/desktop/public/mine-stage/sonic-workshop-preset.js": "321bea56ee90670e48db8dfbf3348dd966eee0bbc4d379a503ce5ccc9647f8ec",
       "apps/desktop/public/mine-stage/vendor/sonic-workshop/mineradio-bridge.html": "dedaec65ede2e1b8c11a597c53945e0f9098f826d9db255469f1b9355cdc44a2",
@@ -1450,8 +1450,8 @@
           26,
           "control"
         ],
-        "referenceMs": 47.7924,
-        "currentMs": 46.1845,
+        "referenceMs": 48.7652,
+        "currentMs": 45.880300000000005,
         "bytes": 101504
       },
       {
@@ -1461,8 +1461,8 @@
           36,
           "control"
         ],
-        "referenceMs": 54.52040000000001,
-        "currentMs": 54.04320000000001,
+        "referenceMs": 57.6233,
+        "currentMs": 56.30409999999998,
         "bytes": 140544
       },
       {
@@ -1472,8 +1472,8 @@
           32,
           "control"
         ],
-        "referenceMs": 19.711900000000014,
-        "currentMs": 19.100400000000008,
+        "referenceMs": 20.753500000000003,
+        "currentMs": 21.473900000000015,
         "bytes": 32768
       },
       {
@@ -1483,8 +1483,8 @@
           28,
           "control"
         ],
-        "referenceMs": 54.03309999999999,
-        "currentMs": 54.383399999999995,
+        "referenceMs": 63.9461,
+        "currentMs": 56.07650000000001,
         "bytes": 189952
       },
       {
@@ -1494,8 +1494,8 @@
           22,
           "control"
         ],
-        "referenceMs": 9.999199999999973,
-        "currentMs": 10.418700000000001,
+        "referenceMs": 10.715499999999963,
+        "currentMs": 10.102600000000052,
         "bytes": 15488
       },
       {
@@ -1505,8 +1505,8 @@
           27,
           "control"
         ],
-        "referenceMs": 95.00779999999997,
-        "currentMs": 92.39680000000004,
+        "referenceMs": 93.37959999999993,
+        "currentMs": 96.30669999999998,
         "bytes": 233280
       },
       {
@@ -1516,8 +1516,8 @@
           22,
           "control"
         ],
-        "referenceMs": 198.20479999999998,
-        "currentMs": 203.03089999999997,
+        "referenceMs": 207.1638999999999,
+        "currentMs": 205.28239999999994,
         "bytes": 436480
       },
       {
@@ -1527,8 +1527,8 @@
           24,
           "control"
         ],
-        "referenceMs": 482.2215000000001,
-        "currentMs": 480.49070000000006,
+        "referenceMs": 503.72900000000004,
+        "currentMs": 490.39830000000006,
         "bytes": 5472000
       },
       {
@@ -1538,8 +1538,8 @@
           28,
           "control"
         ],
-        "referenceMs": 539.9144000000001,
-        "currentMs": 533.1343999999999,
+        "referenceMs": 558.1802,
+        "currentMs": 570.6059,
         "bytes": 6400000
       },
       {
@@ -1549,8 +1549,8 @@
           20,
           "popup"
         ],
-        "referenceMs": 49.92499999999973,
-        "currentMs": 50.985699999999724,
+        "referenceMs": 54.18759999999975,
+        "currentMs": 54.03660000000036,
         "bytes": 184832
       },
       {
@@ -1560,8 +1560,8 @@
           20,
           "popup"
         ],
-        "referenceMs": 140.83770000000004,
-        "currentMs": 142.38419999999996,
+        "referenceMs": 143.64100000000008,
+        "currentMs": 142.93359999999984,
         "bytes": 754272
       },
       {
@@ -1571,26 +1571,26 @@
           32,
           "sheet"
         ],
-        "referenceMs": 346.1455000000001,
-        "currentMs": 332.96540000000005,
+        "referenceMs": 347.90700000000015,
+        "currentMs": 344.15679999999975,
         "bytes": 3360000
       }
     ],
     "hashes": {
       "apps/desktop/public/index.html": "dc0894fd1675e97d86744ee199edd32841f862f23d8864bc2c7f8173c4f43d3e",
       "apps/desktop/public/lxmine/material.js": "444e6988494eee12578975c25e135caf95e9a5d014ea106779409ed879f20c55",
-      "apps/desktop/public/lxmine/style.css": "df78aa8f22518c2d43b23e9bdc685ac75218076287613ca1ca02e9fb8b77e653",
-      "apps/desktop/public/lxmine/app.js": "dedff97ebadbe4769181f2107e7865e1fee2f4cfff5ab9970b346c9e1635a1a6",
+      "apps/desktop/public/lxmine/style.css": "cd1f460b1c1331129c72ced3c889846dad1189ee24f35ff674536feea0b10d03",
+      "apps/desktop/public/lxmine/app.js": "063c7c59927fb29e37e385e70447d124dbc926ee9174cf976fcc8fdf64c669f7",
       "apps/desktop/public/lxmine/pagination.js": "cbb6830eef81a8c54d1f4ff3cde5212dc8ed33d42ff6aac58ddcb535dff347f3",
       "apps/desktop/public/lxmine/popup-motion.js": "524189564cc12f1e21ebf8a16d2075e1961a3b14684a708a4d3077600cf0f7c6",
-      "apps/desktop/public/mine-stage/harmony-stage.html": "be007956ebf7afb39844102da42e1612e18d52e01632cd3f1cf82e99ef6ed960",
-      "apps/desktop/public/mine-stage/plain-stage.html": "d02743e403c97fe91bba41a15573cee6123b12dd34f5c8b30763bfc7d3409e36",
-      "apps/desktop/public/mine-stage/mine-stage-lyrics.js": "d2b7534bd28fca9954ebc0be1d8e52cc1d6ab9518d05b5407592b9a126ce3f04",
+      "apps/desktop/public/mine-stage/harmony-stage.html": "72d906ba5512c4b49fb7d4ccc51c0248140b50f2c9220ed12b97c8732bf4e5bd",
+      "apps/desktop/public/mine-stage/plain-stage.html": "2bd2b5333c42a2f7e5042b9d2023879fc079ae2a9b8ffd3a53fac1b33f5a964b",
+      "apps/desktop/public/mine-stage/mine-stage-lyrics.js": "3608f26e08e67c6fa9b46489bf67300c824c00db944524fa6a1a2d51da4dba3f",
       "apps/desktop/public/mine-stage/mine-stage-appearance.js": "92e8da37d5192d39be3840a703de2b07d4a24b36ad2292c04e288767b943171f",
       "apps/desktop/public/mine-stage/mine-stage-touch.js": "d37f62380429bacb2fa4a5ff1118e0040bc43a5975d6d7b2ef889d8d2c225758",
       "apps/desktop/public/mine-stage/mine-stage-gestures.js": "a9c8fefe75ba85cd880187a7504289dd3ff6e9d8a4ac1bcc1c9314466f2fefc5",
-      "apps/desktop/public/mine-stage/mine-stage-engine.js": "15c78fbb1fb98aebeecfa41c2bba70125e0aa7a0381c4a4039cb68e8f2a1cf68",
-      "apps/desktop/public/mine-stage/mine-stage-bridge.js": "2e211a7d1ddb57107f179973b9fef077129278ed768b45484e4be97455525005",
+      "apps/desktop/public/mine-stage/mine-stage-engine.js": "90ae552104157cdfd237e950870b980c613f631d838f720695bc25e853efe858",
+      "apps/desktop/public/mine-stage/mine-stage-bridge.js": "1e1df1f948af4da03eea1a1acca9cce1ef646c5a9accaeecab7639b75243399e",
       "apps/desktop/public/mine-stage/sonic-topography-preset.js": "0a6a01d34d9c80cffe633ccd08f5e4132a6f82c2a2b6eec73cd8214b930e8c21",
       "apps/desktop/public/mine-stage/sonic-workshop-preset.js": "321bea56ee90670e48db8dfbf3348dd966eee0bbc4d379a503ce5ccc9647f8ec",
       "apps/desktop/public/mine-stage/vendor/sonic-workshop/mineradio-bridge.html": "dedaec65ede2e1b8c11a597c53945e0f9098f826d9db255469f1b9355cdc44a2",
@@ -1609,18 +1609,18 @@
       "sourceHashes": {
         "apps/desktop/public/index.html": "dc0894fd1675e97d86744ee199edd32841f862f23d8864bc2c7f8173c4f43d3e",
         "apps/desktop/public/lxmine/material.js": "444e6988494eee12578975c25e135caf95e9a5d014ea106779409ed879f20c55",
-        "apps/desktop/public/lxmine/style.css": "df78aa8f22518c2d43b23e9bdc685ac75218076287613ca1ca02e9fb8b77e653",
-        "apps/desktop/public/lxmine/app.js": "dedff97ebadbe4769181f2107e7865e1fee2f4cfff5ab9970b346c9e1635a1a6",
+        "apps/desktop/public/lxmine/style.css": "cd1f460b1c1331129c72ced3c889846dad1189ee24f35ff674536feea0b10d03",
+        "apps/desktop/public/lxmine/app.js": "063c7c59927fb29e37e385e70447d124dbc926ee9174cf976fcc8fdf64c669f7",
         "apps/desktop/public/lxmine/pagination.js": "cbb6830eef81a8c54d1f4ff3cde5212dc8ed33d42ff6aac58ddcb535dff347f3",
         "apps/desktop/public/lxmine/popup-motion.js": "524189564cc12f1e21ebf8a16d2075e1961a3b14684a708a4d3077600cf0f7c6",
-        "apps/desktop/public/mine-stage/harmony-stage.html": "be007956ebf7afb39844102da42e1612e18d52e01632cd3f1cf82e99ef6ed960",
-        "apps/desktop/public/mine-stage/plain-stage.html": "d02743e403c97fe91bba41a15573cee6123b12dd34f5c8b30763bfc7d3409e36",
-        "apps/desktop/public/mine-stage/mine-stage-lyrics.js": "d2b7534bd28fca9954ebc0be1d8e52cc1d6ab9518d05b5407592b9a126ce3f04",
+        "apps/desktop/public/mine-stage/harmony-stage.html": "72d906ba5512c4b49fb7d4ccc51c0248140b50f2c9220ed12b97c8732bf4e5bd",
+        "apps/desktop/public/mine-stage/plain-stage.html": "2bd2b5333c42a2f7e5042b9d2023879fc079ae2a9b8ffd3a53fac1b33f5a964b",
+        "apps/desktop/public/mine-stage/mine-stage-lyrics.js": "3608f26e08e67c6fa9b46489bf67300c824c00db944524fa6a1a2d51da4dba3f",
         "apps/desktop/public/mine-stage/mine-stage-appearance.js": "92e8da37d5192d39be3840a703de2b07d4a24b36ad2292c04e288767b943171f",
         "apps/desktop/public/mine-stage/mine-stage-touch.js": "d37f62380429bacb2fa4a5ff1118e0040bc43a5975d6d7b2ef889d8d2c225758",
         "apps/desktop/public/mine-stage/mine-stage-gestures.js": "a9c8fefe75ba85cd880187a7504289dd3ff6e9d8a4ac1bcc1c9314466f2fefc5",
-        "apps/desktop/public/mine-stage/mine-stage-engine.js": "15c78fbb1fb98aebeecfa41c2bba70125e0aa7a0381c4a4039cb68e8f2a1cf68",
-        "apps/desktop/public/mine-stage/mine-stage-bridge.js": "2e211a7d1ddb57107f179973b9fef077129278ed768b45484e4be97455525005",
+        "apps/desktop/public/mine-stage/mine-stage-engine.js": "90ae552104157cdfd237e950870b980c613f631d838f720695bc25e853efe858",
+        "apps/desktop/public/mine-stage/mine-stage-bridge.js": "1e1df1f948af4da03eea1a1acca9cce1ef646c5a9accaeecab7639b75243399e",
         "apps/desktop/public/mine-stage/sonic-topography-preset.js": "0a6a01d34d9c80cffe633ccd08f5e4132a6f82c2a2b6eec73cd8214b930e8c21",
         "apps/desktop/public/mine-stage/sonic-workshop-preset.js": "321bea56ee90670e48db8dfbf3348dd966eee0bbc4d379a503ce5ccc9647f8ec",
         "apps/desktop/public/mine-stage/vendor/sonic-workshop/mineradio-bridge.html": "dedaec65ede2e1b8c11a597c53945e0f9098f826d9db255469f1b9355cdc44a2",
@@ -1658,24 +1658,24 @@
       },
       "drag": {
         "rect": {
-          "x": 91.60635375976562,
-          "y": 298.9718322753906,
-          "width": 659.7547607421875,
-          "height": 92.64981079101562,
-          "top": 298.9718322753906,
-          "right": 751.3611145019531,
-          "bottom": 391.62164306640625,
-          "left": 91.60635375976562
+          "x": 91.67544555664062,
+          "y": 298.9818420410156,
+          "width": 659.622314453125,
+          "height": 92.63095092773438,
+          "top": 298.9818420410156,
+          "right": 751.2977600097656,
+          "bottom": 391.61279296875,
+          "left": 91.67544555664062
         },
         "content": {
-          "x": 291.9810791015625,
-          "y": 324.7078857421875,
-          "width": 259.00531005859375,
-          "height": 41.177703857421875,
-          "top": 324.7078857421875,
-          "right": 550.9863891601562,
-          "bottom": 365.8855895996094,
-          "left": 291.9810791015625
+          "x": 292.00994873046875,
+          "y": 324.712646484375,
+          "width": 258.95330810546875,
+          "height": 41.1693115234375,
+          "top": 324.712646484375,
+          "right": 550.9632568359375,
+          "bottom": 365.8819580078125,
+          "left": 292.00994873046875
         },
         "skin": "none",
         "filter": "url(#lm-lens-8)"
@@ -1683,72 +1683,72 @@
       "release": [
         {
           "rect": {
-            "x": 96.78216552734375,
-            "y": 299.6152648925781,
-            "width": 647.7572021484375,
-            "height": 91.03378295898438,
-            "top": 299.6152648925781,
-            "right": 744.5393676757812,
-            "bottom": 390.6490478515625,
-            "left": 96.78216552734375
+            "x": 96.05783081054688,
+            "y": 299.5286865234375,
+            "width": 649.50341796875,
+            "height": 91.2664794921875,
+            "top": 299.5286865234375,
+            "right": 745.5612487792969,
+            "bottom": 390.795166015625,
+            "left": 96.05783081054688
           },
           "content": {
-            "x": 293.51312255859375,
-            "y": 324.9024353027344,
-            "width": 254.2952880859375,
-            "height": 40.459442138671875,
-            "top": 324.9024353027344,
-            "right": 547.8084106445312,
-            "bottom": 365.36187744140625,
-            "left": 293.51312255859375
+            "x": 293.3191223144531,
+            "y": 324.8804931640625,
+            "width": 254.98080444335938,
+            "height": 40.5628662109375,
+            "top": 324.8804931640625,
+            "right": 548.2999267578125,
+            "bottom": 365.443359375,
+            "left": 293.3191223144531
           },
           "skin": "none",
           "filter": "url(#lm-lens-8)"
         },
         {
           "rect": {
-            "x": 99.44400024414062,
-            "y": 299.93353271484375,
-            "width": 641.34033203125,
-            "height": 90.17861938476562,
-            "top": 299.93353271484375,
-            "right": 740.7843322753906,
-            "bottom": 390.1121520996094,
-            "left": 99.44400024414062
+            "x": 99.343505859375,
+            "y": 299.9215087890625,
+            "width": 641.5825805664062,
+            "height": 90.21090698242188,
+            "top": 299.9215087890625,
+            "right": 740.9260864257812,
+            "bottom": 390.1324157714844,
+            "left": 99.343505859375
           },
           "content": {
-            "x": 294.22607421875,
-            "y": 324.983154296875,
-            "width": 251.77618408203125,
-            "height": 40.079376220703125,
-            "top": 324.983154296875,
-            "right": 546.0022583007812,
-            "bottom": 365.0625305175781,
-            "left": 294.22607421875
+            "x": 294.19915771484375,
+            "y": 324.9801025390625,
+            "width": 251.87127685546875,
+            "height": 40.093719482421875,
+            "top": 324.9801025390625,
+            "right": 546.0704345703125,
+            "bottom": 365.0738220214844,
+            "left": 294.19915771484375
           },
           "skin": "none",
           "filter": "url(#lm-lens-8)"
         },
         {
           "rect": {
-            "x": 99.99395751953125,
-            "y": 299.998779296875,
+            "x": 99.99325561523438,
+            "y": 299.9986572265625,
             "width": 640,
             "height": 90,
-            "top": 299.998779296875,
-            "right": 739.9939575195312,
-            "bottom": 389.998779296875,
-            "left": 99.99395751953125
+            "top": 299.9986572265625,
+            "right": 739.9932556152344,
+            "bottom": 389.9986572265625,
+            "left": 99.99325561523438
           },
           "content": {
-            "x": 294.36895751953125,
-            "y": 324.998779296875,
-            "width": 251.25,
+            "x": 294.3682556152344,
+            "y": 324.9986572265625,
+            "width": 251.25003051757812,
             "height": 40,
-            "top": 324.998779296875,
-            "right": 545.6189575195312,
-            "bottom": 364.998779296875,
-            "left": 294.36895751953125
+            "top": 324.9986572265625,
+            "right": 545.6182861328125,
+            "bottom": 364.9986572265625,
+            "left": 294.3682556152344
           },
           "skin": "none",
           "filter": "url(#lm-lens-8)"
@@ -1779,9 +1779,9 @@
         }
       ],
       "frames": {
-        "count": 271,
+        "count": 270,
         "p95": 6.300000000000182,
-        "max": 18.800000000000182,
+        "max": 18.799999999999272,
         "longTasks": [],
         "longTaskDetails": [],
         "slowFrames": []
@@ -1795,18 +1795,18 @@
       "sourceHashes": {
         "apps/desktop/public/index.html": "dc0894fd1675e97d86744ee199edd32841f862f23d8864bc2c7f8173c4f43d3e",
         "apps/desktop/public/lxmine/material.js": "444e6988494eee12578975c25e135caf95e9a5d014ea106779409ed879f20c55",
-        "apps/desktop/public/lxmine/style.css": "df78aa8f22518c2d43b23e9bdc685ac75218076287613ca1ca02e9fb8b77e653",
-        "apps/desktop/public/lxmine/app.js": "dedff97ebadbe4769181f2107e7865e1fee2f4cfff5ab9970b346c9e1635a1a6",
+        "apps/desktop/public/lxmine/style.css": "cd1f460b1c1331129c72ced3c889846dad1189ee24f35ff674536feea0b10d03",
+        "apps/desktop/public/lxmine/app.js": "063c7c59927fb29e37e385e70447d124dbc926ee9174cf976fcc8fdf64c669f7",
         "apps/desktop/public/lxmine/pagination.js": "cbb6830eef81a8c54d1f4ff3cde5212dc8ed33d42ff6aac58ddcb535dff347f3",
         "apps/desktop/public/lxmine/popup-motion.js": "524189564cc12f1e21ebf8a16d2075e1961a3b14684a708a4d3077600cf0f7c6",
-        "apps/desktop/public/mine-stage/harmony-stage.html": "be007956ebf7afb39844102da42e1612e18d52e01632cd3f1cf82e99ef6ed960",
-        "apps/desktop/public/mine-stage/plain-stage.html": "d02743e403c97fe91bba41a15573cee6123b12dd34f5c8b30763bfc7d3409e36",
-        "apps/desktop/public/mine-stage/mine-stage-lyrics.js": "d2b7534bd28fca9954ebc0be1d8e52cc1d6ab9518d05b5407592b9a126ce3f04",
+        "apps/desktop/public/mine-stage/harmony-stage.html": "72d906ba5512c4b49fb7d4ccc51c0248140b50f2c9220ed12b97c8732bf4e5bd",
+        "apps/desktop/public/mine-stage/plain-stage.html": "2bd2b5333c42a2f7e5042b9d2023879fc079ae2a9b8ffd3a53fac1b33f5a964b",
+        "apps/desktop/public/mine-stage/mine-stage-lyrics.js": "3608f26e08e67c6fa9b46489bf67300c824c00db944524fa6a1a2d51da4dba3f",
         "apps/desktop/public/mine-stage/mine-stage-appearance.js": "92e8da37d5192d39be3840a703de2b07d4a24b36ad2292c04e288767b943171f",
         "apps/desktop/public/mine-stage/mine-stage-touch.js": "d37f62380429bacb2fa4a5ff1118e0040bc43a5975d6d7b2ef889d8d2c225758",
         "apps/desktop/public/mine-stage/mine-stage-gestures.js": "a9c8fefe75ba85cd880187a7504289dd3ff6e9d8a4ac1bcc1c9314466f2fefc5",
-        "apps/desktop/public/mine-stage/mine-stage-engine.js": "15c78fbb1fb98aebeecfa41c2bba70125e0aa7a0381c4a4039cb68e8f2a1cf68",
-        "apps/desktop/public/mine-stage/mine-stage-bridge.js": "2e211a7d1ddb57107f179973b9fef077129278ed768b45484e4be97455525005",
+        "apps/desktop/public/mine-stage/mine-stage-engine.js": "90ae552104157cdfd237e950870b980c613f631d838f720695bc25e853efe858",
+        "apps/desktop/public/mine-stage/mine-stage-bridge.js": "1e1df1f948af4da03eea1a1acca9cce1ef646c5a9accaeecab7639b75243399e",
         "apps/desktop/public/mine-stage/sonic-topography-preset.js": "0a6a01d34d9c80cffe633ccd08f5e4132a6f82c2a2b6eec73cd8214b930e8c21",
         "apps/desktop/public/mine-stage/sonic-workshop-preset.js": "321bea56ee90670e48db8dfbf3348dd966eee0bbc4d379a503ce5ccc9647f8ec",
         "apps/desktop/public/mine-stage/vendor/sonic-workshop/mineradio-bridge.html": "dedaec65ede2e1b8c11a597c53945e0f9098f826d9db255469f1b9355cdc44a2",
@@ -1816,63 +1816,63 @@
       "captures": [
         {
           "name": "home",
-          "start": 6402.799999999814,
-          "end": 6588.0999999996275
+          "start": 6404.299999999814,
+          "end": 6616.799999999814
         },
         {
           "name": "detail",
-          "start": 14017.400000000373,
-          "end": 14227.400000000373
+          "start": 14041,
+          "end": 14248
         },
         {
           "name": "popover",
-          "start": 14882,
-          "end": 15118.200000000186
+          "start": 14905.600000000093,
+          "end": 15144
         },
         {
           "name": "queue",
-          "start": 22003.099999999627,
-          "end": 22154.900000000373
+          "start": 22029.299999999814,
+          "end": 22190.600000000093
         }
       ],
       "stage": {
         "error": "",
-        "build": "0b0fbbf3b6a20173",
+        "build": "eda03b36831b7ed9",
         "visible": true,
         "detail": true,
         "hidden": false,
         "deep": false,
-        "renderedFrames": 872,
-        "renderPixels": 812544,
-        "capturedAt": 1795486311309,
+        "renderedFrames": 833,
+        "renderPixels": 960000,
+        "capturedAt": 1795568992538,
         "prewarmed": true,
-        "directPeak": 214,
+        "directPeak": 224,
         "nativePlaying": true,
         "sourceMatches": true,
         "ready": true,
         "preset": 7,
         "playing": true,
-        "position": 9.575221456213978,
+        "position": 9.618420000000205,
         "analyser": true,
         "audioContext": "running",
         "nativeAnalysis": false,
         "nativeSpectrumAge": -1,
         "audioError": 0,
-        "frequencyPeak": 218,
-        "bass": 0.7991046546003231,
-        "beat": 0.12076243522203722,
+        "frequencyPeak": 231,
+        "bass": 0.801064567921517,
+        "beat": 0.11862252274122212,
         "particleLyrics": true,
         "lyricGroup": true,
         "lyricText": "LxMine 材质验收 - 本地测试节拍",
         "lyricIndex": 0,
         "lyricMesh": true,
         "camera": [
-          0.023244396016480814,
-          1.0300353187086844,
-          8.547578589460173
+          0.023431181829676226,
+          1.0300524341692059,
+          8.54752096213335
         ],
-        "signal": 0.6131395699267636,
-        "audioTime": 9.699209,
+        "signal": 0.6422001283719763,
+        "audioTime": 9.611069,
         "audioPaused": false,
         "lyrics": 1,
         "width": 1200,
@@ -1893,19 +1893,19 @@
         },
         "perf": {
           "mode": "vsync",
-          "fps": 150,
+          "fps": 147,
           "frames": 78,
           "skipped": 0,
-          "longFrames": 9,
+          "longFrames": 11,
           "targetFps": 0,
-          "displayHz": 159.1,
+          "displayHz": 160.6,
           "adaptiveDivisor": 0,
           "adaptiveKind": "",
           "adaptivePressure": 0,
-          "adaptiveFrameCostMs": 0.781,
+          "adaptiveFrameCostMs": 0.917,
           "adaptiveCadenceTick": 0,
-          "lastRenderAt": 13739.399999999441,
-          "lastSampleAt": 13220.599999999627,
+          "lastRenderAt": 13757.700000000186,
+          "lastSampleAt": 13238.899999999907,
           "foregroundFpsMode": "adaptive",
           "interactionBoost": false
         }
@@ -1944,44 +1944,44 @@
         }
       ],
       "frames": {
-        "count": 1420,
-        "p95": 12.399999999999636,
-        "max": 43.70000000000073,
+        "count": 1235,
+        "p95": 12.5,
+        "max": 37.5,
         "longTasks": [],
         "longTaskDetails": [],
         "slowFrames": [
           {
-            "at": 12709.8,
+            "at": 12729.9,
             "dt": 37.5,
             "phase": "detail-enter"
           },
           {
-            "at": 12784.7,
-            "dt": 43.70000000000073,
+            "at": 12879.9,
+            "dt": 37.5,
             "phase": "detail-enter"
           },
           {
-            "at": 14916,
+            "at": 14917.4,
             "dt": 25,
             "phase": "style-menu"
           },
           {
-            "at": 14978.5,
-            "dt": 31.299999999999272,
+            "at": 14942.4,
+            "dt": 25,
             "phase": "style-menu"
           },
           {
-            "at": 19903.6,
+            "at": 15004.9,
             "dt": 25,
-            "phase": "popup-cycle-4"
+            "phase": "style-menu"
           },
           {
-            "at": 22034.8,
+            "at": 22067.5,
             "dt": 25,
             "phase": "queue-sheet"
           },
           {
-            "at": 22103.5,
+            "at": 22117.4,
             "dt": 24.900000000001455,
             "phase": "queue-sheet"
           }
@@ -1995,18 +1995,18 @@
       "sourceHashes": {
         "apps/desktop/public/index.html": "dc0894fd1675e97d86744ee199edd32841f862f23d8864bc2c7f8173c4f43d3e",
         "apps/desktop/public/lxmine/material.js": "444e6988494eee12578975c25e135caf95e9a5d014ea106779409ed879f20c55",
-        "apps/desktop/public/lxmine/style.css": "df78aa8f22518c2d43b23e9bdc685ac75218076287613ca1ca02e9fb8b77e653",
-        "apps/desktop/public/lxmine/app.js": "dedff97ebadbe4769181f2107e7865e1fee2f4cfff5ab9970b346c9e1635a1a6",
+        "apps/desktop/public/lxmine/style.css": "cd1f460b1c1331129c72ced3c889846dad1189ee24f35ff674536feea0b10d03",
+        "apps/desktop/public/lxmine/app.js": "063c7c59927fb29e37e385e70447d124dbc926ee9174cf976fcc8fdf64c669f7",
         "apps/desktop/public/lxmine/pagination.js": "cbb6830eef81a8c54d1f4ff3cde5212dc8ed33d42ff6aac58ddcb535dff347f3",
         "apps/desktop/public/lxmine/popup-motion.js": "524189564cc12f1e21ebf8a16d2075e1961a3b14684a708a4d3077600cf0f7c6",
-        "apps/desktop/public/mine-stage/harmony-stage.html": "be007956ebf7afb39844102da42e1612e18d52e01632cd3f1cf82e99ef6ed960",
-        "apps/desktop/public/mine-stage/plain-stage.html": "d02743e403c97fe91bba41a15573cee6123b12dd34f5c8b30763bfc7d3409e36",
-        "apps/desktop/public/mine-stage/mine-stage-lyrics.js": "d2b7534bd28fca9954ebc0be1d8e52cc1d6ab9518d05b5407592b9a126ce3f04",
+        "apps/desktop/public/mine-stage/harmony-stage.html": "72d906ba5512c4b49fb7d4ccc51c0248140b50f2c9220ed12b97c8732bf4e5bd",
+        "apps/desktop/public/mine-stage/plain-stage.html": "2bd2b5333c42a2f7e5042b9d2023879fc079ae2a9b8ffd3a53fac1b33f5a964b",
+        "apps/desktop/public/mine-stage/mine-stage-lyrics.js": "3608f26e08e67c6fa9b46489bf67300c824c00db944524fa6a1a2d51da4dba3f",
         "apps/desktop/public/mine-stage/mine-stage-appearance.js": "92e8da37d5192d39be3840a703de2b07d4a24b36ad2292c04e288767b943171f",
         "apps/desktop/public/mine-stage/mine-stage-touch.js": "d37f62380429bacb2fa4a5ff1118e0040bc43a5975d6d7b2ef889d8d2c225758",
         "apps/desktop/public/mine-stage/mine-stage-gestures.js": "a9c8fefe75ba85cd880187a7504289dd3ff6e9d8a4ac1bcc1c9314466f2fefc5",
-        "apps/desktop/public/mine-stage/mine-stage-engine.js": "15c78fbb1fb98aebeecfa41c2bba70125e0aa7a0381c4a4039cb68e8f2a1cf68",
-        "apps/desktop/public/mine-stage/mine-stage-bridge.js": "2e211a7d1ddb57107f179973b9fef077129278ed768b45484e4be97455525005",
+        "apps/desktop/public/mine-stage/mine-stage-engine.js": "90ae552104157cdfd237e950870b980c613f631d838f720695bc25e853efe858",
+        "apps/desktop/public/mine-stage/mine-stage-bridge.js": "1e1df1f948af4da03eea1a1acca9cce1ef646c5a9accaeecab7639b75243399e",
         "apps/desktop/public/mine-stage/sonic-topography-preset.js": "0a6a01d34d9c80cffe633ccd08f5e4132a6f82c2a2b6eec73cd8214b930e8c21",
         "apps/desktop/public/mine-stage/sonic-workshop-preset.js": "321bea56ee90670e48db8dfbf3348dd966eee0bbc4d379a503ce5ccc9647f8ec",
         "apps/desktop/public/mine-stage/vendor/sonic-workshop/mineradio-bridge.html": "dedaec65ede2e1b8c11a597c53945e0f9098f826d9db255469f1b9355cdc44a2",
@@ -2016,28 +2016,28 @@
       "captures": [
         {
           "name": "layout-980x700",
-          "start": 8417.799999999814,
-          "end": 8554.299999999814
+          "start": 8425.299999999814,
+          "end": 8585.799999999814
         },
         {
           "name": "layout-900x700",
-          "start": 9260.199999999255,
-          "end": 9365.399999999441
+          "start": 9290.600000000093,
+          "end": 9415.69999999972
         },
         {
           "name": "layout-1440x900",
-          "start": 10071.899999999441,
-          "end": 10193.699999999255
+          "start": 10121.69999999972,
+          "end": 10293.799999999814
         },
         {
           "name": "layout-800x1100",
-          "start": 10899,
-          "end": 11014
+          "start": 10998.600000000093,
+          "end": 11127.399999999907
         },
         {
           "name": "layout-1200x800",
-          "start": 11718.599999999627,
-          "end": 11833.399999999441
+          "start": 11834.899999999907,
+          "end": 11969.899999999907
         }
       ],
       "composition": [
@@ -2051,7 +2051,7 @@
             "width": 980,
             "height": 700
           },
-          "idle": "active"
+          "idle": "idle"
         },
         {
           "visible": true,
@@ -2063,7 +2063,7 @@
             "width": 900,
             "height": 700
           },
-          "idle": "active"
+          "idle": "idle"
         },
         {
           "visible": true,
@@ -2075,7 +2075,7 @@
             "width": 1440,
             "height": 900
           },
-          "idle": "active"
+          "idle": "idle"
         },
         {
           "visible": true,
@@ -2087,7 +2087,7 @@
             "width": 800,
             "height": 1100
           },
-          "idle": "active"
+          "idle": "idle"
         },
         {
           "visible": true,
@@ -2099,7 +2099,7 @@
             "width": 1200,
             "height": 800
           },
-          "idle": "active"
+          "idle": "idle"
         },
         {
           "visible": true,
@@ -2111,7 +2111,7 @@
             "width": 980,
             "height": 700
           },
-          "idle": "active"
+          "idle": "idle"
         },
         {
           "visible": true,
@@ -2123,7 +2123,7 @@
             "width": 900,
             "height": 700
           },
-          "idle": "active"
+          "idle": "idle"
         },
         {
           "visible": true,
@@ -2135,7 +2135,7 @@
             "width": 1440,
             "height": 900
           },
-          "idle": "active"
+          "idle": "idle"
         },
         {
           "visible": true,
@@ -2147,7 +2147,7 @@
             "width": 800,
             "height": 1100
           },
-          "idle": "active"
+          "idle": "idle"
         },
         {
           "visible": true,
@@ -2159,7 +2159,7 @@
             "width": 1200,
             "height": 800
           },
-          "idle": "active"
+          "idle": "idle"
         }
       ],
       "layouts": [
@@ -2580,16 +2580,26 @@
         }
       ],
       "frames": {
-        "count": 629,
+        "count": 640,
         "p95": 6.399999999999636,
-        "max": 25,
+        "max": 37.5,
         "longTasks": [],
         "longTaskDetails": [],
         "slowFrames": [
           {
-            "at": 9545.6,
+            "at": 9615,
+            "dt": 37.5,
+            "phase": "resize-1440x900"
+          },
+          {
+            "at": 10202.5,
             "dt": 25,
             "phase": "resize-1440x900"
+          },
+          {
+            "at": 10321.2,
+            "dt": 25,
+            "phase": "resize-800x1100"
           }
         ]
       }
@@ -2600,18 +2610,18 @@
     "sourceHashes": {
       "apps/desktop/public/index.html": "dc0894fd1675e97d86744ee199edd32841f862f23d8864bc2c7f8173c4f43d3e",
       "apps/desktop/public/lxmine/material.js": "444e6988494eee12578975c25e135caf95e9a5d014ea106779409ed879f20c55",
-      "apps/desktop/public/lxmine/style.css": "df78aa8f22518c2d43b23e9bdc685ac75218076287613ca1ca02e9fb8b77e653",
-      "apps/desktop/public/lxmine/app.js": "dedff97ebadbe4769181f2107e7865e1fee2f4cfff5ab9970b346c9e1635a1a6",
+      "apps/desktop/public/lxmine/style.css": "cd1f460b1c1331129c72ced3c889846dad1189ee24f35ff674536feea0b10d03",
+      "apps/desktop/public/lxmine/app.js": "063c7c59927fb29e37e385e70447d124dbc926ee9174cf976fcc8fdf64c669f7",
       "apps/desktop/public/lxmine/pagination.js": "cbb6830eef81a8c54d1f4ff3cde5212dc8ed33d42ff6aac58ddcb535dff347f3",
       "apps/desktop/public/lxmine/popup-motion.js": "524189564cc12f1e21ebf8a16d2075e1961a3b14684a708a4d3077600cf0f7c6",
-      "apps/desktop/public/mine-stage/harmony-stage.html": "be007956ebf7afb39844102da42e1612e18d52e01632cd3f1cf82e99ef6ed960",
-      "apps/desktop/public/mine-stage/plain-stage.html": "d02743e403c97fe91bba41a15573cee6123b12dd34f5c8b30763bfc7d3409e36",
-      "apps/desktop/public/mine-stage/mine-stage-lyrics.js": "d2b7534bd28fca9954ebc0be1d8e52cc1d6ab9518d05b5407592b9a126ce3f04",
+      "apps/desktop/public/mine-stage/harmony-stage.html": "72d906ba5512c4b49fb7d4ccc51c0248140b50f2c9220ed12b97c8732bf4e5bd",
+      "apps/desktop/public/mine-stage/plain-stage.html": "2bd2b5333c42a2f7e5042b9d2023879fc079ae2a9b8ffd3a53fac1b33f5a964b",
+      "apps/desktop/public/mine-stage/mine-stage-lyrics.js": "3608f26e08e67c6fa9b46489bf67300c824c00db944524fa6a1a2d51da4dba3f",
       "apps/desktop/public/mine-stage/mine-stage-appearance.js": "92e8da37d5192d39be3840a703de2b07d4a24b36ad2292c04e288767b943171f",
       "apps/desktop/public/mine-stage/mine-stage-touch.js": "d37f62380429bacb2fa4a5ff1118e0040bc43a5975d6d7b2ef889d8d2c225758",
       "apps/desktop/public/mine-stage/mine-stage-gestures.js": "a9c8fefe75ba85cd880187a7504289dd3ff6e9d8a4ac1bcc1c9314466f2fefc5",
-      "apps/desktop/public/mine-stage/mine-stage-engine.js": "15c78fbb1fb98aebeecfa41c2bba70125e0aa7a0381c4a4039cb68e8f2a1cf68",
-      "apps/desktop/public/mine-stage/mine-stage-bridge.js": "2e211a7d1ddb57107f179973b9fef077129278ed768b45484e4be97455525005",
+      "apps/desktop/public/mine-stage/mine-stage-engine.js": "90ae552104157cdfd237e950870b980c613f631d838f720695bc25e853efe858",
+      "apps/desktop/public/mine-stage/mine-stage-bridge.js": "1e1df1f948af4da03eea1a1acca9cce1ef646c5a9accaeecab7639b75243399e",
       "apps/desktop/public/mine-stage/sonic-topography-preset.js": "0a6a01d34d9c80cffe633ccd08f5e4132a6f82c2a2b6eec73cd8214b930e8c21",
       "apps/desktop/public/mine-stage/sonic-workshop-preset.js": "321bea56ee90670e48db8dfbf3348dd966eee0bbc4d379a503ce5ccc9647f8ec",
       "apps/desktop/public/mine-stage/vendor/sonic-workshop/mineradio-bridge.html": "dedaec65ede2e1b8c11a597c53945e0f9098f826d9db255469f1b9355cdc44a2",
@@ -2631,14 +2641,14 @@
       },
       "diagnostics": {
         "error": "",
-        "build": "0b0fbbf3b6a20173",
+        "build": "eda03b36831b7ed9",
         "visible": false,
         "detail": false,
         "hidden": false,
         "deep": true,
         "renderedFrames": 0,
         "renderPixels": 1,
-        "capturedAt": 1795486359288,
+        "capturedAt": 1795569040764,
         "prewarmed": true,
         "directPeak": 0,
         "nativePlaying": true,
@@ -2646,7 +2656,7 @@
         "ready": true,
         "preset": 7,
         "playing": true,
-        "position": 3.320477664782599,
+        "position": 3.2690170000002796,
         "analyser": false,
         "audioContext": null,
         "nativeAnalysis": false,
@@ -2699,7 +2709,7 @@
           "adaptiveFrameCostMs": 0,
           "adaptiveCadenceTick": 0,
           "lastRenderAt": 0,
-          "lastSampleAt": 216.20000000018626
+          "lastSampleAt": 211.70000000018626
         }
       },
       "pixels": 1,
@@ -2711,7 +2721,7 @@
       },
       "parentPlaying": true
     },
-    "firstEntryMs": 452,
+    "firstEntryMs": 418,
     "detail": {
       "presentation": {
         "visible": true,
@@ -2719,14 +2729,14 @@
       },
       "diagnostics": {
         "error": "",
-        "build": "0b0fbbf3b6a20173",
+        "build": "eda03b36831b7ed9",
         "visible": true,
         "detail": true,
         "hidden": false,
         "deep": false,
         "renderedFrames": 861,
         "renderPixels": 960000,
-        "capturedAt": 1795486365264,
+        "capturedAt": 1795569046707,
         "prewarmed": true,
         "directPeak": 246,
         "nativePlaying": true,
@@ -2734,7 +2744,7 @@
         "ready": true,
         "preset": 7,
         "playing": true,
-        "position": 9.33273698107339,
+        "position": 9.212216999999999,
         "analyser": true,
         "audioContext": "running",
         "nativeAnalysis": false,
@@ -2742,19 +2752,19 @@
         "audioError": 0,
         "frequencyPeak": 246,
         "bass": 0.8049999999999999,
-        "beat": 0.0020108072225397786,
+        "beat": 0.0020621951670660244,
         "particleLyrics": true,
         "lyricGroup": true,
         "lyricText": "性能测试节拍 - LxMine",
         "lyricIndex": 0,
         "lyricMesh": true,
         "camera": [
-          0.02194307942358844,
-          1.029904767271015,
-          8.547972702496198
+          0.021825778937449063,
+          1.0298921165479356,
+          8.548008031727969
         ],
         "signal": 0.7199999999999814,
-        "audioTime": 9.292937,
+        "audioTime": 9.214473,
         "audioPaused": false,
         "lyrics": 1,
         "width": 1200,
@@ -2775,19 +2785,19 @@
         },
         "perf": {
           "mode": "vsync",
-          "fps": 161,
-          "frames": 136,
+          "fps": 160,
+          "frames": 131,
           "skipped": 0,
-          "longFrames": 7,
+          "longFrames": 6,
           "targetFps": 0,
-          "displayHz": 157.1,
+          "displayHz": 157.9,
           "adaptiveDivisor": 0,
           "adaptiveKind": "",
           "adaptivePressure": 0,
-          "adaptiveFrameCostMs": 0.255,
+          "adaptiveFrameCostMs": 0.43,
           "adaptiveCadenceTick": 0,
-          "lastRenderAt": 9285.400000000373,
-          "lastSampleAt": 8435.400000000373,
+          "lastRenderAt": 9292.700000000186,
+          "lastSampleAt": 8473.80000000028,
           "foregroundFpsMode": "adaptive",
           "interactionBoost": false
         }
@@ -2800,138 +2810,138 @@
         "textures": 8
       },
       "parentPlaying": true,
-      "observedFps": 159
+      "observedFps": 160
     },
     "presetWarmth": [
       {
         "index": 0,
-        "firstFrameMs": 185
+        "firstFrameMs": 203
       },
       {
         "index": 1,
-        "firstFrameMs": 182
+        "firstFrameMs": 181
       },
       {
         "index": 2,
-        "firstFrameMs": 187
+        "firstFrameMs": 180
       },
       {
         "index": 3,
-        "firstFrameMs": 187
+        "firstFrameMs": 174
       },
       {
         "index": 4,
-        "firstFrameMs": 179
+        "firstFrameMs": 181
       },
       {
         "index": 5,
-        "firstFrameMs": 185
+        "firstFrameMs": 180
       },
       {
         "index": 6,
-        "firstFrameMs": 180
-      },
-      {
-        "index": 7,
-        "firstFrameMs": 180
-      },
-      {
-        "index": 8,
-        "firstFrameMs": 182
-      },
-      {
-        "index": 9,
-        "firstFrameMs": 198
-      },
-      {
-        "index": 10,
         "firstFrameMs": 175
       },
       {
+        "index": 7,
+        "firstFrameMs": 175
+      },
+      {
+        "index": 8,
+        "firstFrameMs": 215
+      },
+      {
+        "index": 9,
+        "firstFrameMs": 215
+      },
+      {
+        "index": 10,
+        "firstFrameMs": 200
+      },
+      {
         "index": 11,
-        "firstFrameMs": 170
+        "firstFrameMs": 211
       },
       {
         "index": 12,
-        "firstFrameMs": 179
+        "firstFrameMs": 213
       }
     ],
     "workshopInput": {
-      "angle": -1544.0863318869165,
+      "angle": -1543.9554318869118,
       "clicks": 1
     },
     "pausedLyricUpdate": true,
     "pausedLyricSeek": true,
     "dynamicLyrics": {
       "mode": "cinema",
-      "position": 16.280330897370394,
+      "position": 16.187454999999964,
       "expected": 32,
       "index": 32,
       "target": 32,
-      "parentPosition": 16047.097999999998,
+      "parentPosition": 15907.376,
       "lineCount": 15,
       "residentRows": 23,
       "height": 800,
       "rows": [
         {
           "index": 25,
-          "y": -278.1200135191819
+          "y": -248.7971569372836
         },
         {
           "index": 26,
-          "y": -180.12864225227457
+          "y": -154.4481592937996
         },
         {
           "index": 27,
-          "y": -83.46842405422575
+          "y": -60.88111370569793
         },
         {
           "index": 28,
-          "y": 10.320071219910032
+          "y": 29.625515551929205
         },
         {
           "index": 29,
-          "y": 99.38604233049446
+          "y": 115.38011900106673
         },
         {
           "index": 30,
-          "y": 184.11242463848373
+          "y": 196.78847070988508
         },
         {
           "index": 31,
-          "y": 264.93772168120006
+          "y": 274.3577205343991
         },
         {
           "index": 32,
-          "y": 346.3408865140689
+          "y": 353.22367373694885
         },
         {
           "index": 33,
-          "y": 417.94013513628545
+          "y": 421.60539463593807
         },
         {
           "index": 34,
-          "y": 492.91633372437593
+          "y": 494.2738274256163
         },
         {
           "index": 35,
-          "y": 567.1123988138379
+          "y": 566.4949471838917
         },
         {
           "index": 36,
-          "y": 640.5627506281093
+          "y": 638.2972631251831
         },
         {
           "index": 37,
-          "y": 713.2223675640763
+          "y": 709.5145817618805
         },
         {
           "index": 38,
-          "y": 782.7017768411805
+          "y": 777.0688309411627
         },
         {
           "index": 39,
-          "y": 848.6959225516367
+          "y": 841.3234787195569
         }
       ],
       "edgeMask": true
@@ -2946,8 +2956,8 @@
         {
           "type": "pointerdown",
           "target": "CANVAS",
-          "x": 432.6365051269531,
-          "y": 432.7341003417969
+          "x": 432.3390197753906,
+          "y": 409.05230712890625
         },
         {
           "type": "touchstart",
@@ -2956,14 +2966,14 @@
         {
           "type": "pointermove",
           "target": "CANVAS",
-          "x": 432.6365051269531,
-          "y": 420.2341003417969
+          "x": 432.3390197753906,
+          "y": 396.55230712890625
         },
         {
           "type": "pointermove",
           "target": "CANVAS",
-          "x": 432.6365051269531,
-          "y": 407.7341003417969
+          "x": 432.3390197753906,
+          "y": 384.05230712890625
         },
         {
           "type": "touchmove",
@@ -2972,8 +2982,8 @@
         {
           "type": "pointermove",
           "target": "CANVAS",
-          "x": 432.6365051269531,
-          "y": 395.2341003417969
+          "x": 432.3390197753906,
+          "y": 371.55230712890625
         },
         {
           "type": "touchmove",
@@ -2982,8 +2992,8 @@
         {
           "type": "pointermove",
           "target": "CANVAS",
-          "x": 432.6365051269531,
-          "y": 382.7341003417969
+          "x": 432.3390197753906,
+          "y": 359.05230712890625
         },
         {
           "type": "touchmove",
@@ -2992,8 +3002,8 @@
         {
           "type": "pointermove",
           "target": "CANVAS",
-          "x": 432.6365051269531,
-          "y": 370.2341003417969
+          "x": 432.3390197753906,
+          "y": 346.55230712890625
         },
         {
           "type": "touchmove",
@@ -3002,8 +3012,8 @@
         {
           "type": "pointermove",
           "target": "CANVAS",
-          "x": 432.6365051269531,
-          "y": 357.7341003417969
+          "x": 432.3390197753906,
+          "y": 334.05230712890625
         },
         {
           "type": "touchmove",
@@ -3012,8 +3022,8 @@
         {
           "type": "pointermove",
           "target": "CANVAS",
-          "x": 432.6365051269531,
-          "y": 345.2341003417969
+          "x": 432.3390197753906,
+          "y": 321.55230712890625
         },
         {
           "type": "touchmove",
@@ -3022,8 +3032,8 @@
         {
           "type": "pointermove",
           "target": "CANVAS",
-          "x": 432.6365051269531,
-          "y": 332.7341003417969
+          "x": 432.3390197753906,
+          "y": 309.05230712890625
         },
         {
           "type": "touchmove",
@@ -3032,8 +3042,8 @@
         {
           "type": "pointerup",
           "target": "CANVAS",
-          "x": 432.6365051269531,
-          "y": 332.7341003417969
+          "x": 432.3390197753906,
+          "y": 309.05230712890625
         },
         {
           "type": "touchend",
@@ -3075,14 +3085,14 @@
       },
       "diagnostics": {
         "error": "",
-        "build": "0b0fbbf3b6a20173",
+        "build": "eda03b36831b7ed9",
         "visible": false,
         "detail": false,
         "hidden": false,
         "deep": true,
-        "renderedFrames": 4163,
+        "renderedFrames": 3878,
         "renderPixels": 1,
-        "capturedAt": 1795486392297,
+        "capturedAt": 1795569075051,
         "prewarmed": true,
         "directPeak": 246,
         "nativePlaying": true,
@@ -3090,7 +3100,7 @@
         "ready": true,
         "preset": 7,
         "playing": true,
-        "position": 23.35347618387964,
+        "position": 23.207659000000188,
         "analyser": true,
         "audioContext": "suspended",
         "nativeAnalysis": false,
@@ -3098,16 +3108,16 @@
         "audioError": 0,
         "frequencyPeak": 246,
         "bass": 0.8049999999999999,
-        "beat": 8.686686876192863e-178,
+        "beat": 2.5317731727438932e-138,
         "particleLyrics": true,
         "lyricGroup": true,
         "lyricText": "屏幕上下连续渐隐歌词 43",
         "lyricIndex": 43,
         "lyricMesh": true,
         "camera": [
-          -7.2888643905805175,
-          2.834021525307964,
-          1.9572840987083497
+          -7.3175401569121785,
+          2.8573448047755807,
+          1.894135628942966
         ],
         "signal": 0.7199999999999996,
         "audioTime": 0,
@@ -3131,25 +3141,25 @@
         },
         "perf": {
           "mode": "vsync",
-          "fps": 82,
-          "frames": 15,
+          "fps": 85,
+          "frames": 38,
           "skipped": 0,
           "longFrames": 11,
           "targetFps": 0,
-          "displayHz": 157.1,
+          "displayHz": 157.9,
           "adaptiveDivisor": 0,
           "adaptiveKind": "",
           "adaptivePressure": 0,
-          "adaptiveFrameCostMs": 0.5,
+          "adaptiveFrameCostMs": 0.502,
           "adaptiveCadenceTick": 0,
-          "lastRenderAt": 34685.800000000745,
-          "lastSampleAt": 34525.800000000745,
+          "lastRenderAt": 36065,
+          "lastSampleAt": 35645.200000000186,
           "foregroundFpsMode": "adaptive",
           "interactionBoost": false
         }
       },
       "pixels": 1,
-      "renderedFrames": 4163,
+      "renderedFrames": 3878,
       "analysisSource": null,
       "buffers": {
         "geometries": 47,
@@ -3168,24 +3178,24 @@
       "ready": true,
       "plain": true,
       "lyrics": 60,
-      "lyricIndex": 58,
+      "lyricIndex": 56,
       "playing": true,
       "analyser": false,
       "audioContext": null,
       "webgl": false,
       "anchorY": 0.5,
       "viewportHeight": 800,
-      "glyphY": 399.656005859375,
-      "positionMs": 29173.147850350455,
-      "capturedAt": 1795486398056,
+      "glyphY": 399.531005859375,
+      "positionMs": 28298.135999999908,
+      "capturedAt": 1795569080145,
       "scrolling": false,
       "scrollVelocity": 0,
-      "scrollGoal": 4917.656005859375,
-      "scrollTop": 4918,
+      "scrollGoal": 4749.531005859375,
+      "scrollTop": 4750,
       "karaokeChars": 13,
       "karaokeBuilds": 1,
       "layoutHeight": 800,
-      "karaokeProgress": 0.15093171252567164,
+      "karaokeProgress": 0.35504695637047917,
       "karaokeFeather": 0.055,
       "canvases": 0,
       "audio": 0,
@@ -3219,7 +3229,7 @@
       },
       "wakeAnchor": {
         "index": 15,
-        "error": 0.03131103515625
+        "error": 0.03125
       },
       "focusScales": [
         0.9189,
@@ -3255,7 +3265,7 @@
       "mask": "linear-gradient(rgba(0, 0, 0, 0), rgb(0, 0, 0) 68px, rgb(0, 0, 0) calc(100% - 176px), rgba(0, 0, 0, 0))",
       "background": "rgba(0, 0, 0, 0)"
     },
-    "wakeMs": 178,
+    "wakeMs": 206,
     "background": {
       "src": "/mine-stage/harmony-stage.html",
       "engine": true,
@@ -3270,14 +3280,14 @@
       },
       "diagnostics": {
         "error": "",
-        "build": "0b0fbbf3b6a20173",
+        "build": "eda03b36831b7ed9",
         "visible": false,
         "detail": false,
         "hidden": false,
         "deep": true,
-        "renderedFrames": 4701,
+        "renderedFrames": 4372,
         "renderPixels": 1,
-        "capturedAt": 1795486409664,
+        "capturedAt": 1795569091849,
         "prewarmed": true,
         "directPeak": 246,
         "nativePlaying": true,
@@ -3285,7 +3295,7 @@
         "ready": true,
         "preset": 7,
         "playing": true,
-        "position": 6.094279773279865,
+        "position": 6.100721999999628,
         "analyser": true,
         "audioContext": "suspended",
         "nativeAnalysis": false,
@@ -3293,18 +3303,18 @@
         "audioError": 0,
         "frequencyPeak": 246,
         "bass": 0.8049999999999999,
-        "beat": 0.014064700483413467,
+        "beat": 0.013479465517294172,
         "particleLyrics": true,
         "lyricGroup": true,
         "lyricText": "逐字色彩跟随",
         "lyricIndex": 0,
         "lyricMesh": true,
         "camera": [
-          -7.29045239551339,
-          2.8221082947151275,
-          1.9439398784858855
+          -7.319429563491862,
+          2.845250669560812,
+          1.8799953309578563
         ],
-        "signal": 0.7199999999728243,
+        "signal": 0.7199999999838927,
         "audioTime": 0,
         "audioPaused": true,
         "lyrics": 2,
@@ -3327,24 +3337,24 @@
         "perf": {
           "mode": "vsync",
           "fps": 158,
-          "frames": 132,
+          "frames": 134,
           "skipped": 0,
           "longFrames": 14,
           "targetFps": 0,
-          "displayHz": 157.3,
+          "displayHz": 158.7,
           "adaptiveDivisor": 0,
           "adaptiveKind": "",
           "adaptivePressure": 0,
-          "adaptiveFrameCostMs": 0.376,
+          "adaptiveFrameCostMs": 0.432,
           "adaptiveCadenceTick": 0,
-          "lastRenderAt": 50979.5,
-          "lastSampleAt": 50160.800000000745,
+          "lastRenderAt": 51730.40000000037,
+          "lastSampleAt": 50899.10000000009,
           "foregroundFpsMode": "adaptive",
           "interactionBoost": false
         }
       },
       "pixels": 1,
-      "renderedFrames": 4701,
+      "renderedFrames": 4372,
       "analysisSource": null,
       "buffers": {
         "geometries": 10,
@@ -3366,18 +3376,18 @@
     "sourceHashes": {
       "apps/desktop/public/index.html": "dc0894fd1675e97d86744ee199edd32841f862f23d8864bc2c7f8173c4f43d3e",
       "apps/desktop/public/lxmine/material.js": "444e6988494eee12578975c25e135caf95e9a5d014ea106779409ed879f20c55",
-      "apps/desktop/public/lxmine/style.css": "df78aa8f22518c2d43b23e9bdc685ac75218076287613ca1ca02e9fb8b77e653",
-      "apps/desktop/public/lxmine/app.js": "dedff97ebadbe4769181f2107e7865e1fee2f4cfff5ab9970b346c9e1635a1a6",
+      "apps/desktop/public/lxmine/style.css": "cd1f460b1c1331129c72ced3c889846dad1189ee24f35ff674536feea0b10d03",
+      "apps/desktop/public/lxmine/app.js": "063c7c59927fb29e37e385e70447d124dbc926ee9174cf976fcc8fdf64c669f7",
       "apps/desktop/public/lxmine/pagination.js": "cbb6830eef81a8c54d1f4ff3cde5212dc8ed33d42ff6aac58ddcb535dff347f3",
       "apps/desktop/public/lxmine/popup-motion.js": "524189564cc12f1e21ebf8a16d2075e1961a3b14684a708a4d3077600cf0f7c6",
-      "apps/desktop/public/mine-stage/harmony-stage.html": "be007956ebf7afb39844102da42e1612e18d52e01632cd3f1cf82e99ef6ed960",
-      "apps/desktop/public/mine-stage/plain-stage.html": "d02743e403c97fe91bba41a15573cee6123b12dd34f5c8b30763bfc7d3409e36",
-      "apps/desktop/public/mine-stage/mine-stage-lyrics.js": "d2b7534bd28fca9954ebc0be1d8e52cc1d6ab9518d05b5407592b9a126ce3f04",
+      "apps/desktop/public/mine-stage/harmony-stage.html": "72d906ba5512c4b49fb7d4ccc51c0248140b50f2c9220ed12b97c8732bf4e5bd",
+      "apps/desktop/public/mine-stage/plain-stage.html": "2bd2b5333c42a2f7e5042b9d2023879fc079ae2a9b8ffd3a53fac1b33f5a964b",
+      "apps/desktop/public/mine-stage/mine-stage-lyrics.js": "3608f26e08e67c6fa9b46489bf67300c824c00db944524fa6a1a2d51da4dba3f",
       "apps/desktop/public/mine-stage/mine-stage-appearance.js": "92e8da37d5192d39be3840a703de2b07d4a24b36ad2292c04e288767b943171f",
       "apps/desktop/public/mine-stage/mine-stage-touch.js": "d37f62380429bacb2fa4a5ff1118e0040bc43a5975d6d7b2ef889d8d2c225758",
       "apps/desktop/public/mine-stage/mine-stage-gestures.js": "a9c8fefe75ba85cd880187a7504289dd3ff6e9d8a4ac1bcc1c9314466f2fefc5",
-      "apps/desktop/public/mine-stage/mine-stage-engine.js": "15c78fbb1fb98aebeecfa41c2bba70125e0aa7a0381c4a4039cb68e8f2a1cf68",
-      "apps/desktop/public/mine-stage/mine-stage-bridge.js": "2e211a7d1ddb57107f179973b9fef077129278ed768b45484e4be97455525005",
+      "apps/desktop/public/mine-stage/mine-stage-engine.js": "90ae552104157cdfd237e950870b980c613f631d838f720695bc25e853efe858",
+      "apps/desktop/public/mine-stage/mine-stage-bridge.js": "1e1df1f948af4da03eea1a1acca9cce1ef646c5a9accaeecab7639b75243399e",
       "apps/desktop/public/mine-stage/sonic-topography-preset.js": "0a6a01d34d9c80cffe633ccd08f5e4132a6f82c2a2b6eec73cd8214b930e8c21",
       "apps/desktop/public/mine-stage/sonic-workshop-preset.js": "321bea56ee90670e48db8dfbf3348dd966eee0bbc4d379a503ce5ccc9647f8ec",
       "apps/desktop/public/mine-stage/vendor/sonic-workshop/mineradio-bridge.html": "dedaec65ede2e1b8c11a597c53945e0f9098f826d9db255469f1b9355cdc44a2",
@@ -3394,7 +3404,7 @@
     },
     "hideMid": {
       "immersive": true,
-      "alpha": 0.316514,
+      "alpha": 0.316817,
       "inert": true,
       "pointer": "none"
     },
@@ -3406,7 +3416,7 @@
     },
     "showMid": {
       "immersive": false,
-      "alpha": 0.68345,
+      "alpha": 0.683212,
       "inert": false,
       "pointer": "auto"
     },
@@ -3439,18 +3449,18 @@
     "sourceHashes": {
       "apps/desktop/public/index.html": "dc0894fd1675e97d86744ee199edd32841f862f23d8864bc2c7f8173c4f43d3e",
       "apps/desktop/public/lxmine/material.js": "444e6988494eee12578975c25e135caf95e9a5d014ea106779409ed879f20c55",
-      "apps/desktop/public/lxmine/style.css": "df78aa8f22518c2d43b23e9bdc685ac75218076287613ca1ca02e9fb8b77e653",
-      "apps/desktop/public/lxmine/app.js": "dedff97ebadbe4769181f2107e7865e1fee2f4cfff5ab9970b346c9e1635a1a6",
+      "apps/desktop/public/lxmine/style.css": "cd1f460b1c1331129c72ced3c889846dad1189ee24f35ff674536feea0b10d03",
+      "apps/desktop/public/lxmine/app.js": "063c7c59927fb29e37e385e70447d124dbc926ee9174cf976fcc8fdf64c669f7",
       "apps/desktop/public/lxmine/pagination.js": "cbb6830eef81a8c54d1f4ff3cde5212dc8ed33d42ff6aac58ddcb535dff347f3",
       "apps/desktop/public/lxmine/popup-motion.js": "524189564cc12f1e21ebf8a16d2075e1961a3b14684a708a4d3077600cf0f7c6",
-      "apps/desktop/public/mine-stage/harmony-stage.html": "be007956ebf7afb39844102da42e1612e18d52e01632cd3f1cf82e99ef6ed960",
-      "apps/desktop/public/mine-stage/plain-stage.html": "d02743e403c97fe91bba41a15573cee6123b12dd34f5c8b30763bfc7d3409e36",
-      "apps/desktop/public/mine-stage/mine-stage-lyrics.js": "d2b7534bd28fca9954ebc0be1d8e52cc1d6ab9518d05b5407592b9a126ce3f04",
+      "apps/desktop/public/mine-stage/harmony-stage.html": "72d906ba5512c4b49fb7d4ccc51c0248140b50f2c9220ed12b97c8732bf4e5bd",
+      "apps/desktop/public/mine-stage/plain-stage.html": "2bd2b5333c42a2f7e5042b9d2023879fc079ae2a9b8ffd3a53fac1b33f5a964b",
+      "apps/desktop/public/mine-stage/mine-stage-lyrics.js": "3608f26e08e67c6fa9b46489bf67300c824c00db944524fa6a1a2d51da4dba3f",
       "apps/desktop/public/mine-stage/mine-stage-appearance.js": "92e8da37d5192d39be3840a703de2b07d4a24b36ad2292c04e288767b943171f",
       "apps/desktop/public/mine-stage/mine-stage-touch.js": "d37f62380429bacb2fa4a5ff1118e0040bc43a5975d6d7b2ef889d8d2c225758",
       "apps/desktop/public/mine-stage/mine-stage-gestures.js": "a9c8fefe75ba85cd880187a7504289dd3ff6e9d8a4ac1bcc1c9314466f2fefc5",
-      "apps/desktop/public/mine-stage/mine-stage-engine.js": "15c78fbb1fb98aebeecfa41c2bba70125e0aa7a0381c4a4039cb68e8f2a1cf68",
-      "apps/desktop/public/mine-stage/mine-stage-bridge.js": "2e211a7d1ddb57107f179973b9fef077129278ed768b45484e4be97455525005",
+      "apps/desktop/public/mine-stage/mine-stage-engine.js": "90ae552104157cdfd237e950870b980c613f631d838f720695bc25e853efe858",
+      "apps/desktop/public/mine-stage/mine-stage-bridge.js": "1e1df1f948af4da03eea1a1acca9cce1ef646c5a9accaeecab7639b75243399e",
       "apps/desktop/public/mine-stage/sonic-topography-preset.js": "0a6a01d34d9c80cffe633ccd08f5e4132a6f82c2a2b6eec73cd8214b930e8c21",
       "apps/desktop/public/mine-stage/sonic-workshop-preset.js": "321bea56ee90670e48db8dfbf3348dd966eee0bbc4d379a503ce5ccc9647f8ec",
       "apps/desktop/public/mine-stage/vendor/sonic-workshop/mineradio-bridge.html": "dedaec65ede2e1b8c11a597c53945e0f9098f826d9db255469f1b9355cdc44a2",
@@ -3464,7 +3474,7 @@
         "classes": "control-pressed",
         "scale": 1.0296,
         "width": 47.361572265625,
-        "height": 35.006317138671875,
+        "height": 35.00634002685547,
         "active": 1,
         "contentGroups": 1,
         "contentFollowedDrag": true
@@ -3476,7 +3486,7 @@
         "classes": "control-pressed",
         "scale": 1.0296,
         "width": 47.361572265625,
-        "height": 35.006317138671875,
+        "height": 35.00633239746094,
         "active": 1,
         "contentGroups": 1,
         "contentFollowedDrag": true
@@ -3487,8 +3497,8 @@
         "id": "win-maximize",
         "classes": "control-pressed",
         "scale": 1.0296,
-        "width": 47.3614501953125,
-        "height": 35.006309509277344,
+        "width": 47.361572265625,
+        "height": 35.00633239746094,
         "active": 1,
         "contentGroups": 1,
         "contentFollowedDrag": true
@@ -3499,8 +3509,8 @@
         "id": "win-close",
         "classes": "win-close control-pressed",
         "scale": 1.0296,
-        "width": 47.361572265625,
-        "height": 35.00634765625,
+        "width": 47.361328125,
+        "height": 35.006256103515625,
         "active": 1,
         "contentGroups": 1,
         "contentFollowedDrag": true
@@ -3510,9 +3520,9 @@
         "label": "搜索",
         "id": "search-node",
         "classes": "search-entry glass light control-pressed light-active material-dragging",
-        "scale": 1.02953,
-        "width": 350.0400390625,
-        "height": 51.476470947265625,
+        "scale": 1.02957,
+        "width": 350.0546875,
+        "height": 51.478633880615234,
         "active": 1,
         "contentGroups": 2,
         "contentFollowedDrag": true
@@ -3523,7 +3533,7 @@
         "id": "",
         "classes": "home-chip glass light control-pressed light-active material-dragging",
         "scale": 1.0295,
-        "width": 238.84446716308594,
+        "width": 238.844482421875,
         "height": 41.180084228515625,
         "active": 1,
         "contentGroups": 2,
@@ -3547,8 +3557,8 @@
         "id": "",
         "classes": "home-chip glass light control-pressed light-active material-dragging",
         "scale": 1.0295,
-        "width": 238.844970703125,
-        "height": 41.18017578125,
+        "width": 238.843994140625,
+        "height": 41.17999267578125,
         "active": 1,
         "contentGroups": 2,
         "contentFollowedDrag": true
@@ -3570,21 +3580,21 @@
         "label": "分类",
         "id": "",
         "classes": "home-chip glass light control-pressed light-active material-dragging",
-        "scale": 1.0295,
-        "width": 238.844482421875,
-        "height": 41.180084228515625,
+        "scale": 1.02955,
+        "width": 238.8568115234375,
+        "height": 41.18218994140625,
         "active": 1,
         "contentGroups": 2,
         "contentFollowedDrag": true
       },
       {
         "scope": "home",
-        "label": "每日三十首11月24日 · 融合推荐 4 首",
+        "label": "每日三十首11月25日 · 融合推荐 4 首",
         "id": "",
         "classes": "banner-card control-pressed",
         "scale": 1.0296,
-        "width": 473.6148681640625,
-        "height": 255.34019470214844,
+        "width": 473.6143798828125,
+        "height": 255.3399658203125,
         "active": 1,
         "contentGroups": 2,
         "contentFollowedDrag": true
@@ -3595,8 +3605,8 @@
         "id": "",
         "classes": "banner-card control-pressed",
         "scale": 1.0296,
-        "width": 473.6148681640625,
-        "height": 255.34019470214844,
+        "width": 473.6143798828125,
+        "height": 255.33993530273438,
         "active": 1,
         "contentGroups": 3,
         "contentFollowedDrag": true
@@ -3606,9 +3616,9 @@
         "label": "向左滑动",
         "id": "",
         "classes": "row-btn glass light left control-pressed light-active material-dragging",
-        "scale": 1.02956,
-        "width": 41.18232727050781,
-        "height": 41.182342529296875,
+        "scale": 1.02962,
+        "width": 41.18473815917969,
+        "height": 41.184722900390625,
         "active": 1,
         "contentGroups": 1,
         "contentFollowedDrag": true
@@ -3620,7 +3630,7 @@
         "classes": "row-btn glass light right control-pressed light-active material-dragging",
         "scale": 1.0295,
         "width": 41.1800537109375,
-        "height": 41.1800537109375,
+        "height": 41.180084228515625,
         "active": 1,
         "contentGroups": 1,
         "contentFollowedDrag": true
@@ -3631,8 +3641,8 @@
         "id": "",
         "classes": "more-ball glass light control-pressed light-active material-dragging",
         "scale": 1.0295,
-        "width": 39.1209716796875,
-        "height": 39.1209716796875,
+        "width": 39.12109375,
+        "height": 39.12109375,
         "active": 1,
         "contentGroups": 1,
         "contentFollowedDrag": true
@@ -3643,7 +3653,7 @@
         "id": "",
         "classes": "list-tools-play control-pressed",
         "scale": 1.0296,
-        "width": 80.30865478515625,
+        "width": 80.30868530273438,
         "height": 35.00634765625,
         "active": 1,
         "contentGroups": 1,
@@ -3655,7 +3665,19 @@
         "id": "",
         "classes": "list-tools-sort control-pressed",
         "scale": 1.0296,
-        "width": 55.59827423095703,
+        "width": 55.59820556640625,
+        "height": 35.0062255859375,
+        "active": 1,
+        "contentGroups": 1,
+        "contentFollowedDrag": true
+      },
+      {
+        "scope": "home",
+        "label": "批量收藏",
+        "id": "",
+        "classes": "list-tools-sort control-pressed",
+        "scale": 1.0296,
+        "width": 80.30873107910156,
         "height": 35.00634765625,
         "active": 1,
         "contentGroups": 1,
@@ -3680,7 +3702,7 @@
         "classes": "row-act row-download control-pressed",
         "scale": 1.0296,
         "width": 37.0654296875,
-        "height": 37.0654296875,
+        "height": 37.0655517578125,
         "active": 1,
         "contentGroups": 1,
         "contentFollowedDrag": true
@@ -3690,6 +3712,18 @@
         "label": "收藏",
         "id": "",
         "classes": "row-act row-like control-pressed",
+        "scale": 1.0296,
+        "width": 37.0654296875,
+        "height": 37.0655517578125,
+        "active": 1,
+        "contentGroups": 1,
+        "contentFollowedDrag": true
+      },
+      {
+        "scope": "home",
+        "label": "下一首播放",
+        "id": "",
+        "classes": "row-act row-play-next control-pressed",
         "scale": 1.0296,
         "width": 37.0654296875,
         "height": 37.0654296875,
@@ -3704,7 +3738,7 @@
         "classes": "row-act row-add control-pressed",
         "scale": 1.0296,
         "width": 37.0654296875,
-        "height": 37.0655517578125,
+        "height": 37.0654296875,
         "active": 1,
         "contentGroups": 1,
         "contentFollowedDrag": true
@@ -3726,18 +3760,6 @@
         "label": "收藏",
         "id": "",
         "classes": "row-act row-like control-pressed",
-        "scale": 1.0296,
-        "width": 37.0654296875,
-        "height": 37.0655517578125,
-        "active": 1,
-        "contentGroups": 1,
-        "contentFollowedDrag": true
-      },
-      {
-        "scope": "home",
-        "label": "添加到歌单",
-        "id": "",
-        "classes": "row-act row-add control-pressed",
         "scale": 1.0296,
         "width": 37.0654296875,
         "height": 37.06549072265625,
@@ -3747,23 +3769,11 @@
       },
       {
         "scope": "home",
-        "label": "下载歌曲",
+        "label": "下一首播放",
         "id": "",
-        "classes": "row-act row-download control-pressed",
+        "classes": "row-act row-play-next control-pressed",
         "scale": 1.0296,
         "width": 37.0654296875,
-        "height": 37.0655517578125,
-        "active": 1,
-        "contentGroups": 1,
-        "contentFollowedDrag": true
-      },
-      {
-        "scope": "home",
-        "label": "收藏",
-        "id": "",
-        "classes": "row-act row-like control-pressed",
-        "scale": 1.0296,
-        "width": 37.065673828125,
         "height": 37.0655517578125,
         "active": 1,
         "contentGroups": 1,
@@ -3776,7 +3786,7 @@
         "classes": "row-act row-add control-pressed",
         "scale": 1.0296,
         "width": 37.0654296875,
-        "height": 37.0654296875,
+        "height": 37.0655517578125,
         "active": 1,
         "contentGroups": 1,
         "contentFollowedDrag": true
@@ -3788,7 +3798,55 @@
         "classes": "row-act row-download control-pressed",
         "scale": 1.0296,
         "width": 37.0654296875,
+        "height": 37.0655517578125,
+        "active": 1,
+        "contentGroups": 1,
+        "contentFollowedDrag": true
+      },
+      {
+        "scope": "home",
+        "label": "收藏",
+        "id": "",
+        "classes": "row-act row-like control-pressed",
+        "scale": 1.0296,
+        "width": 37.0654296875,
         "height": 37.0654296875,
+        "active": 1,
+        "contentGroups": 1,
+        "contentFollowedDrag": true
+      },
+      {
+        "scope": "home",
+        "label": "下一首播放",
+        "id": "",
+        "classes": "row-act row-play-next control-pressed",
+        "scale": 1.0296,
+        "width": 37.0654296875,
+        "height": 37.0655517578125,
+        "active": 1,
+        "contentGroups": 1,
+        "contentFollowedDrag": true
+      },
+      {
+        "scope": "home",
+        "label": "添加到歌单",
+        "id": "",
+        "classes": "row-act row-add control-pressed",
+        "scale": 1.02999,
+        "width": 37.07958984375,
+        "height": 37.07958984375,
+        "active": 1,
+        "contentGroups": 1,
+        "contentFollowedDrag": true
+      },
+      {
+        "scope": "home",
+        "label": "下载歌曲",
+        "id": "",
+        "classes": "row-act row-download control-pressed",
+        "scale": 1.0296,
+        "width": 37.0654296875,
+        "height": 37.0655517578125,
         "active": 1,
         "contentGroups": 1,
         "contentFollowedDrag": true
@@ -3801,6 +3859,18 @@
         "scale": 1.0296,
         "width": 37.0654296875,
         "height": 37.0655517578125,
+        "active": 1,
+        "contentGroups": 1,
+        "contentFollowedDrag": true
+      },
+      {
+        "scope": "home",
+        "label": "下一首播放",
+        "id": "",
+        "classes": "row-act row-play-next control-pressed",
+        "scale": 1.0296,
+        "width": 37.0654296875,
+        "height": 37.06549072265625,
         "active": 1,
         "contentGroups": 1,
         "contentFollowedDrag": true
@@ -3822,9 +3892,9 @@
         "label": "推荐歌单，更多",
         "id": "",
         "classes": "more-ball glass light control-pressed light-active material-dragging",
-        "scale": 1.02955,
-        "width": 39.123046875,
-        "height": 39.123046875,
+        "scale": 1.02956,
+        "width": 39.1231689453125,
+        "height": 39.1231689453125,
         "active": 1,
         "contentGroups": 1,
         "contentFollowedDrag": true
@@ -3835,8 +3905,8 @@
         "id": "",
         "classes": "row-btn glass light left control-pressed light-active material-dragging",
         "scale": 1.0295,
-        "width": 41.17999267578125,
-        "height": 41.179931640625,
+        "width": 41.180084228515625,
+        "height": 41.1800537109375,
         "active": 1,
         "contentGroups": 1,
         "contentFollowedDrag": true
@@ -3848,7 +3918,7 @@
         "classes": "row-btn glass light right control-pressed light-active material-dragging",
         "scale": 1.0295,
         "width": 41.1800537109375,
-        "height": 41.1800537109375,
+        "height": 41.179931640625,
         "active": 1,
         "contentGroups": 1,
         "contentFollowedDrag": true
@@ -3872,7 +3942,7 @@
         "classes": "control-pressed",
         "scale": 1.0296,
         "width": 47.361572265625,
-        "height": 35.00634765625,
+        "height": 35.006317138671875,
         "active": 1,
         "contentGroups": 1,
         "contentFollowedDrag": true
@@ -3884,7 +3954,7 @@
         "classes": "control-pressed",
         "scale": 1.0296,
         "width": 47.361572265625,
-        "height": 35.00633239746094,
+        "height": 35.00634765625,
         "active": 1,
         "contentGroups": 1,
         "contentFollowedDrag": true
@@ -3895,8 +3965,8 @@
         "id": "win-close",
         "classes": "win-close control-pressed",
         "scale": 1.0296,
-        "width": 47.361572265625,
-        "height": 35.00634002685547,
+        "width": 47.3614501953125,
+        "height": 35.006309509277344,
         "active": 1,
         "contentGroups": 1,
         "contentFollowedDrag": true
@@ -3907,8 +3977,8 @@
         "id": "back-btn",
         "classes": "icon-btn glass light control-pressed light-active material-dragging",
         "scale": 1.02955,
-        "width": 43.241275787353516,
-        "height": 43.241275787353516,
+        "width": 43.241188049316406,
+        "height": 43.241188049316406,
         "active": 1,
         "contentGroups": 1,
         "contentFollowedDrag": true
@@ -3956,7 +4026,7 @@
         "classes": "bg-opacity-slider control-pressed",
         "scale": 1.0296,
         "width": 133.84759521484375,
-        "height": 28.82867431640625,
+        "height": 28.8287353515625,
         "active": 1,
         "contentGroups": 0,
         "contentFollowedDrag": true
@@ -3968,7 +4038,7 @@
         "classes": "slider-reset-btn modified control-pressed",
         "scale": 1.0296,
         "width": 28.82861328125,
-        "height": 28.8287353515625,
+        "height": 28.82867431640625,
         "active": 1,
         "contentGroups": 1,
         "contentFollowedDrag": true
@@ -3992,7 +4062,7 @@
         "classes": "menu-row control-pressed",
         "scale": 1.0296,
         "width": 146.202880859375,
-        "height": 49.42071533203125,
+        "height": 49.42070007324219,
         "active": 1,
         "contentGroups": 1,
         "contentFollowedDrag": true
@@ -4003,8 +4073,8 @@
         "id": "",
         "classes": "menu-row control-pressed",
         "scale": 1.0296,
-        "width": 146.202880859375,
-        "height": 49.42071533203125,
+        "width": 146.203125,
+        "height": 49.420745849609375,
         "active": 1,
         "contentGroups": 1,
         "contentFollowedDrag": true
@@ -4015,8 +4085,8 @@
         "id": "",
         "classes": "menu-row checked control-pressed",
         "scale": 1.0296,
-        "width": 146.203125,
-        "height": 49.4207763671875,
+        "width": 146.20263671875,
+        "height": 49.420654296875,
         "active": 1,
         "contentGroups": 1,
         "contentFollowedDrag": true
@@ -4028,7 +4098,7 @@
         "classes": "control-pressed",
         "scale": 1.0296,
         "width": 47.361572265625,
-        "height": 35.00636291503906,
+        "height": 35.006317138671875,
         "active": 1,
         "contentGroups": 1,
         "contentFollowedDrag": true
@@ -4052,7 +4122,7 @@
         "classes": "control-pressed",
         "scale": 1.0296,
         "width": 47.361572265625,
-        "height": 35.00636291503906,
+        "height": 35.006317138671875,
         "active": 1,
         "contentGroups": 1,
         "contentFollowedDrag": true
@@ -4063,8 +4133,8 @@
         "id": "win-close",
         "classes": "win-close control-pressed",
         "scale": 1.0296,
-        "width": 47.361328125,
-        "height": 35.00628662109375,
+        "width": 47.361572265625,
+        "height": 35.006378173828125,
         "active": 1,
         "contentGroups": 1,
         "contentFollowedDrag": true
@@ -4075,8 +4145,8 @@
         "id": "detail-back",
         "classes": "icon-btn glass light control-pressed light-active material-dragging",
         "scale": 1.02955,
-        "width": 43.24128723144531,
-        "height": 43.24128723144531,
+        "width": 43.241302490234375,
+        "height": 43.241302490234375,
         "active": 1,
         "contentGroups": 1,
         "contentFollowedDrag": true
@@ -4088,7 +4158,7 @@
         "classes": "icon-btn glass light control-pressed light-active material-dragging",
         "scale": 1.0295,
         "width": 43.2391357421875,
-        "height": 43.23918151855469,
+        "height": 43.239105224609375,
         "active": 1,
         "contentGroups": 1,
         "contentFollowedDrag": true
@@ -4100,7 +4170,7 @@
         "classes": "icon-btn glass light control-pressed light-active material-dragging",
         "scale": 1.0295,
         "width": 43.2391357421875,
-        "height": 43.23908996582031,
+        "height": 43.239078521728516,
         "active": 1,
         "contentGroups": 1,
         "contentFollowedDrag": true
@@ -4112,7 +4182,7 @@
         "classes": "icon-btn glass light control-pressed light-active material-dragging",
         "scale": 1.0295,
         "width": 43.2391357421875,
-        "height": 43.239105224609375,
+        "height": 43.23908996582031,
         "active": 1,
         "contentGroups": 1,
         "contentFollowedDrag": true
@@ -4123,7 +4193,7 @@
         "id": "seek",
         "classes": "control-pressed",
         "scale": 1.0296,
-        "width": 728.95458984375,
+        "width": 728.9560546875,
         "height": 30.887939453125,
         "active": 1,
         "contentGroups": 0,
@@ -4135,7 +4205,7 @@
         "id": "",
         "classes": "control-pressed",
         "scale": 1.0296,
-        "width": 164.73562622070312,
+        "width": 164.73556518554688,
         "height": 25.73992919921875,
         "active": 1,
         "contentGroups": 1,
@@ -4182,7 +4252,7 @@
       {
         "scope": "home",
         "id": "dock-cover",
-        "scale": 1.0299999237060546,
+        "scale": 1.0299997927348084,
         "contentScale": 1.03,
         "synchronized": true,
         "heldInkMAE": null,
@@ -4191,7 +4261,7 @@
       {
         "scope": "home",
         "id": "播放顺序：列表循环",
-        "scale": 1.0300000546773345,
+        "scale": 1.0299997927348084,
         "contentScale": 1.03,
         "synchronized": true,
         "heldInkMAE": null,
@@ -4263,7 +4333,7 @@
       {
         "scope": "settings",
         "id": "播放顺序：列表循环",
-        "scale": 1.0300001213259904,
+        "scale": 1.0300000446598705,
         "contentScale": 1.03,
         "synchronized": true,
         "heldInkMAE": null,
@@ -4281,7 +4351,7 @@
       {
         "scope": "settings",
         "id": "play-btn",
-        "scale": 1.0300001213259904,
+        "scale": 1.029999967993762,
         "contentScale": 1.03,
         "synchronized": true,
         "heldInkMAE": null,
@@ -4299,7 +4369,7 @@
       {
         "scope": "settings",
         "id": "播放队列",
-        "scale": 1.0300001213259904,
+        "scale": 1.0300000446598705,
         "contentScale": 1.03,
         "synchronized": true,
         "heldInkMAE": null,
@@ -4308,7 +4378,7 @@
       {
         "scope": "settings",
         "id": "更多播放操作",
-        "scale": 1.0300001213259904,
+        "scale": 1.0300000446598705,
         "contentScale": 1.03,
         "synchronized": true,
         "heldInkMAE": null,
@@ -4335,6 +4405,42 @@
       {
         "scope": "single-row",
         "id": "播放顺序：列表循环",
+        "scale": 1.0300001213259904,
+        "contentScale": 1.03,
+        "synchronized": true,
+        "heldInkMAE": null,
+        "returnedInkMAE": null
+      },
+      {
+        "scope": "single-row",
+        "id": "上一首",
+        "scale": 1.0300000446598705,
+        "contentScale": 1.03,
+        "synchronized": true,
+        "heldInkMAE": null,
+        "returnedInkMAE": null
+      },
+      {
+        "scope": "single-row",
+        "id": "play-btn",
+        "scale": 1.0300000446598705,
+        "contentScale": 1.03,
+        "synchronized": true,
+        "heldInkMAE": null,
+        "returnedInkMAE": null
+      },
+      {
+        "scope": "single-row",
+        "id": "下一首",
+        "scale": 1.0300000446598705,
+        "contentScale": 1.03,
+        "synchronized": true,
+        "heldInkMAE": null,
+        "returnedInkMAE": null
+      },
+      {
+        "scope": "single-row",
+        "id": "播放队列",
         "scale": 1.029999967993762,
         "contentScale": 1.03,
         "synchronized": true,
@@ -4343,42 +4449,6 @@
       },
       {
         "scope": "single-row",
-        "id": "上一首",
-        "scale": 1.0300000446598705,
-        "contentScale": 1.03,
-        "synchronized": true,
-        "heldInkMAE": null,
-        "returnedInkMAE": null
-      },
-      {
-        "scope": "single-row",
-        "id": "play-btn",
-        "scale": 1.0300000446598705,
-        "contentScale": 1.03,
-        "synchronized": true,
-        "heldInkMAE": null,
-        "returnedInkMAE": null
-      },
-      {
-        "scope": "single-row",
-        "id": "下一首",
-        "scale": 1.0300000446598705,
-        "contentScale": 1.03,
-        "synchronized": true,
-        "heldInkMAE": null,
-        "returnedInkMAE": null
-      },
-      {
-        "scope": "single-row",
-        "id": "播放队列",
-        "scale": 1.029999967993762,
-        "contentScale": 1.03,
-        "synchronized": true,
-        "heldInkMAE": null,
-        "returnedInkMAE": null
-      },
-      {
-        "scope": "single-row",
         "id": "更多播放操作",
         "scale": 1.0300000446598705,
         "contentScale": 1.03,
@@ -4416,7 +4486,7 @@
       {
         "scope": "player",
         "id": "上一首",
-        "scale": 1.0300001213259904,
+        "scale": 1.0300000446598705,
         "contentScale": 1.03,
         "synchronized": true,
         "heldInkMAE": null,
@@ -4425,7 +4495,7 @@
       {
         "scope": "player",
         "id": "play-btn",
-        "scale": 1.0300000446598705,
+        "scale": 1.0300001213259904,
         "contentScale": 1.03,
         "synchronized": true,
         "heldInkMAE": null,
@@ -4443,7 +4513,7 @@
       {
         "scope": "player",
         "id": "播放队列",
-        "scale": 1.0300001213259904,
+        "scale": 1.0300000446598705,
         "contentScale": 1.03,
         "synchronized": true,
         "heldInkMAE": null,
@@ -4467,18 +4537,18 @@
     "sourceHashes": {
       "apps/desktop/public/index.html": "dc0894fd1675e97d86744ee199edd32841f862f23d8864bc2c7f8173c4f43d3e",
       "apps/desktop/public/lxmine/material.js": "444e6988494eee12578975c25e135caf95e9a5d014ea106779409ed879f20c55",
-      "apps/desktop/public/lxmine/style.css": "df78aa8f22518c2d43b23e9bdc685ac75218076287613ca1ca02e9fb8b77e653",
-      "apps/desktop/public/lxmine/app.js": "dedff97ebadbe4769181f2107e7865e1fee2f4cfff5ab9970b346c9e1635a1a6",
+      "apps/desktop/public/lxmine/style.css": "cd1f460b1c1331129c72ced3c889846dad1189ee24f35ff674536feea0b10d03",
+      "apps/desktop/public/lxmine/app.js": "063c7c59927fb29e37e385e70447d124dbc926ee9174cf976fcc8fdf64c669f7",
       "apps/desktop/public/lxmine/pagination.js": "cbb6830eef81a8c54d1f4ff3cde5212dc8ed33d42ff6aac58ddcb535dff347f3",
       "apps/desktop/public/lxmine/popup-motion.js": "524189564cc12f1e21ebf8a16d2075e1961a3b14684a708a4d3077600cf0f7c6",
-      "apps/desktop/public/mine-stage/harmony-stage.html": "be007956ebf7afb39844102da42e1612e18d52e01632cd3f1cf82e99ef6ed960",
-      "apps/desktop/public/mine-stage/plain-stage.html": "d02743e403c97fe91bba41a15573cee6123b12dd34f5c8b30763bfc7d3409e36",
-      "apps/desktop/public/mine-stage/mine-stage-lyrics.js": "d2b7534bd28fca9954ebc0be1d8e52cc1d6ab9518d05b5407592b9a126ce3f04",
+      "apps/desktop/public/mine-stage/harmony-stage.html": "72d906ba5512c4b49fb7d4ccc51c0248140b50f2c9220ed12b97c8732bf4e5bd",
+      "apps/desktop/public/mine-stage/plain-stage.html": "2bd2b5333c42a2f7e5042b9d2023879fc079ae2a9b8ffd3a53fac1b33f5a964b",
+      "apps/desktop/public/mine-stage/mine-stage-lyrics.js": "3608f26e08e67c6fa9b46489bf67300c824c00db944524fa6a1a2d51da4dba3f",
       "apps/desktop/public/mine-stage/mine-stage-appearance.js": "92e8da37d5192d39be3840a703de2b07d4a24b36ad2292c04e288767b943171f",
       "apps/desktop/public/mine-stage/mine-stage-touch.js": "d37f62380429bacb2fa4a5ff1118e0040bc43a5975d6d7b2ef889d8d2c225758",
       "apps/desktop/public/mine-stage/mine-stage-gestures.js": "a9c8fefe75ba85cd880187a7504289dd3ff6e9d8a4ac1bcc1c9314466f2fefc5",
-      "apps/desktop/public/mine-stage/mine-stage-engine.js": "15c78fbb1fb98aebeecfa41c2bba70125e0aa7a0381c4a4039cb68e8f2a1cf68",
-      "apps/desktop/public/mine-stage/mine-stage-bridge.js": "2e211a7d1ddb57107f179973b9fef077129278ed768b45484e4be97455525005",
+      "apps/desktop/public/mine-stage/mine-stage-engine.js": "90ae552104157cdfd237e950870b980c613f631d838f720695bc25e853efe858",
+      "apps/desktop/public/mine-stage/mine-stage-bridge.js": "1e1df1f948af4da03eea1a1acca9cce1ef646c5a9accaeecab7639b75243399e",
       "apps/desktop/public/mine-stage/sonic-topography-preset.js": "0a6a01d34d9c80cffe633ccd08f5e4132a6f82c2a2b6eec73cd8214b930e8c21",
       "apps/desktop/public/mine-stage/sonic-workshop-preset.js": "321bea56ee90670e48db8dfbf3348dd966eee0bbc4d379a503ce5ccc9647f8ec",
       "apps/desktop/public/mine-stage/vendor/sonic-workshop/mineradio-bridge.html": "dedaec65ede2e1b8c11a597c53945e0f9098f826d9db255469f1b9355cdc44a2",
@@ -4489,7 +4559,7 @@
         "mode": "off",
         "art": false,
         "theme": "dark",
-        "brightness": 22,
+        "brightness": 21.666666666666668,
         "colorDifference": 0,
         "layers": [
           {
@@ -4600,8 +4670,8 @@
         "mode": "off",
         "art": false,
         "theme": "light",
-        "brightness": 192.16666666666666,
-        "colorDifference": 2,
+        "brightness": 192,
+        "colorDifference": 3,
         "layers": [
           {
             "selector": "body",
@@ -4711,8 +4781,8 @@
         "mode": "off",
         "art": true,
         "theme": "dark",
-        "brightness": 47.666666666666664,
-        "colorDifference": 99,
+        "brightness": 48,
+        "colorDifference": 98,
         "layers": [
           {
             "selector": "body",
@@ -5050,8 +5120,8 @@
         "mode": "mine-0",
         "art": false,
         "theme": "light",
-        "brightness": 201.5,
-        "colorDifference": 38,
+        "brightness": 204.83333333333334,
+        "colorDifference": 2,
         "layers": [
           {
             "selector": "body",
@@ -5167,8 +5237,8 @@
         "mode": "mine-0",
         "art": true,
         "theme": "dark",
-        "brightness": 48.666666666666664,
-        "colorDifference": 102,
+        "brightness": 48.833333333333336,
+        "colorDifference": 103,
         "layers": [
           {
             "selector": "body",
@@ -5401,7 +5471,7 @@
         "mode": "mine-7",
         "art": false,
         "theme": "dark",
-        "brightness": 21.666666666666668,
+        "brightness": 22,
         "colorDifference": 0,
         "layers": [
           {
@@ -5518,7 +5588,7 @@
         "mode": "mine-7",
         "art": false,
         "theme": "light",
-        "brightness": 201.16666666666666,
+        "brightness": 201.83333333333334,
         "colorDifference": 2,
         "layers": [
           {
@@ -5635,8 +5705,8 @@
         "mode": "mine-7",
         "art": true,
         "theme": "dark",
-        "brightness": 58.5,
-        "colorDifference": 94,
+        "brightness": 49.5,
+        "colorDifference": 104,
         "layers": [
           {
             "selector": "body",

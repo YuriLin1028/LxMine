@@ -109,40 +109,25 @@ function scheduleIdleStep(work: () => void, fallbackDelayMs: number): void {
 }
 
 function prewarmAllFoliaChunks(): void {
+  // Warm chunks lazily only when the stage is hidden and the browser is idle,
+  // avoiding JS parse/compile jank while the user is actively viewing a song or switching tracks.
   const keys = Object.keys(loaders) as FoliaStageModeKey[];
-  // Warm Pixi core + inner Pixi runtimes + icon map + all mode chunks swiftly in parallel batches
-  // so switching to ANY Folia mode (Fume, Sonnet, Tempera, Lumiere, Diorama, etc.) has zero wait.
-  const warmupRuntimes = [
-    () => loadPixi().catch(() => {}),
-    () => import('../components/visualizer/sonnet/createSonnetPixiRuntime').catch(() => {}),
-    () => import('../components/visualizer/tempera/createTemperaPixiRuntime').catch(() => {}),
-    () => import('../components/visualizer/lumiere/createLumierePixiRuntime').catch(() => {}),
-    () => import('lucide-react/dynamicIconImports').catch(() => {}),
-  ];
-  let phase = 0;
   let cursor = 0;
   const pump = () => {
-    if (phase === 0) {
-      phase = 1;
-      void Promise.all(warmupRuntimes.map(fn => fn())).finally(() => {
-        scheduleIdleStep(pump, 16);
-      });
+    if (presentationState.visible || isWallpaperHost) {
+      window.setTimeout(() => scheduleIdleStep(pump, 1500), 2200);
       return;
     }
-    const batch: Promise<unknown>[] = [];
-    while (cursor < keys.length && batch.length < 4) {
-      const key = keys[cursor++];
-      if (!resolvedComponents[key]) {
-        batch.push(loadModeModule(key).catch(() => {}));
+    while (cursor < keys.length && resolvedComponents[keys[cursor]]) cursor += 1;
+    if (cursor >= keys.length) return;
+    const key = keys[cursor++];
+    void loadModeModule(key).catch(() => {}).finally(() => {
+      if (cursor < keys.length) {
+        window.setTimeout(() => scheduleIdleStep(pump, 600), 500);
       }
-    }
-    if (batch.length > 0 && cursor < keys.length) {
-      void Promise.all(batch).finally(() => scheduleIdleStep(pump, 16));
-    } else if (cursor < keys.length) {
-      scheduleIdleStep(pump, 16);
-    }
+    });
   };
-  window.setTimeout(() => scheduleIdleStep(pump, 20), 25);
+  window.setTimeout(() => scheduleIdleStep(pump, 2500), 3200);
 }
 prewarmAllFoliaChunks();
 
@@ -196,6 +181,8 @@ interface StageMetadata {
   lyricMaxLines?: number;
   topInset?: number;
   bottomInset?: number;
+  positionMs?: number;
+  playing?: boolean;
 }
 
 interface StageClock {
@@ -259,12 +246,17 @@ const audioBandsMV: AudioBands = {
 let anchorMs = 0;
 let anchorAt = performance.now();
 let clockRate = 1;
+let clockRateUntil = 0;
 let clockPlaying = false;
 let lyricOffsetMs = 0;
 let trackDurationMs = 0;
 let frameCount = 0;
 let visualReadySignaled = false;
 const runtimeErrors: string[] = [];
+// Folia visualizers have React commit + entrance/spring latency (~100-180ms vs classic canvas);
+// apply a small calibrated lead so syllable sweep & line transitions lock onto audio vocals.
+const FOLIA_VISUAL_LEAD_MS = 120;
+const paletteExtractCache = new Map<string, string[]>();
 
 const presentationState = {
   visible: isWallpaperHost,
@@ -298,9 +290,70 @@ let vocalNodes: {
 let currentAudioUrl = '';
 
 function currentPositionSec(): number {
-  const rawMs = anchorMs + (clockPlaying ? (performance.now() - anchorAt) * clockRate : 0);
+  const now = performance.now();
+  let rawMs = anchorMs;
+  if (clockPlaying) {
+    if (clockRate !== 1 && clockRateUntil > 0 && now >= clockRateUntil) {
+      // Bounded rate window elapsed: fold caught-up position and return strictly to 1.0x
+      // so long gaps between host syncs can NEVER drift or lag behind audio.
+      anchorMs = anchorMs + (clockRateUntil - anchorAt) * clockRate;
+      anchorAt = clockRateUntil;
+      clockRate = 1;
+      clockRateUntil = 0;
+    }
+    rawMs = anchorMs + (now - anchorAt) * clockRate;
+  }
   const clampedMs = trackDurationMs > 0 ? Math.min(trackDurationMs, Math.max(0, rawMs)) : Math.max(0, rawMs);
   return clampedMs / 1000;
+}
+
+function applyClockSample(incomingMsRaw: number, nextPlaying: boolean, snapImmediate: boolean = false): void {
+  const now = performance.now();
+  const currentMs = currentPositionSec() * 1000;
+  const incomingMs = Math.max(0, Number(incomingMsRaw || 0));
+  const diffMs = incomingMs - currentMs;
+
+  if (!snapImmediate && clockPlaying && nextPlaying) {
+    if (Math.abs(diffMs) > 450 || anchorAt <= 0) {
+      anchorMs = incomingMs;
+      anchorAt = now;
+      clockRate = 1;
+      clockRateUntil = 0;
+      lastPushedSec = -1;
+    } else if (Math.abs(diffMs) < 18) {
+      // Negligible jitter: stay at exact 1.0x
+      anchorMs = currentMs;
+      anchorAt = now;
+      clockRate = 1;
+      clockRateUntil = 0;
+    } else {
+      // Time-windowed convergence: smoothly absorb drift over catchupMs, then lock back to 1.0x.
+      const catchupMs = Math.min(850, Math.max(220, Math.abs(diffMs) * 2.4));
+      const rate = Math.max(0.90, Math.min(1.10, 1 + diffMs / catchupMs));
+      const actualWindowMs = Math.abs(rate - 1) > 0.0005 ? Math.min(1200, Math.abs(diffMs / (rate - 1))) : 0;
+      anchorMs = currentMs;
+      anchorAt = now;
+      clockRate = rate;
+      clockRateUntil = actualWindowMs > 0 ? now + actualWindowMs : 0;
+    }
+  } else if (!snapImmediate && clockPlaying && !nextPlaying) {
+    anchorMs = Math.abs(diffMs) < 400 ? currentMs : incomingMs;
+    anchorAt = now;
+    clockRate = 1;
+    clockRateUntil = 0;
+    lastPushedSec = -1;
+  } else {
+    anchorMs = incomingMs;
+    anchorAt = now;
+    clockRate = 1;
+    clockRateUntil = 0;
+    lastPushedSec = -1;
+  }
+
+  if (clockPlaying !== nextPlaying) {
+    clockPlaying = nextPlaying;
+    scheduleAudioStreamSync(false);
+  }
 }
 
 function makeSoftClipCurve(knee: number, ceiling: number): Float32Array<ArrayBuffer> {
@@ -921,6 +974,29 @@ let latestMeta: StageMetadata = {
   lyricMaxLines: 0,
 };
 let metaRevision = 0;
+let currentSongId = '';
+let lastLinesSig = '';
+let lastTransSig = '';
+
+function linesSignature(lines?: StageLyricLine[]): string {
+  if (!Array.isArray(lines) || !lines.length) return '0';
+  const first = lines[0];
+  const mid = lines[lines.length >> 1];
+  const last = lines[lines.length - 1];
+  return [
+    lines.length,
+    first?.timeMs ?? 0, first?.text ?? '', first?.words?.length ?? 0,
+    mid?.timeMs ?? 0, mid?.text ?? '', mid?.words?.length ?? 0,
+    last?.timeMs ?? 0, last?.text ?? '', last?.words?.length ?? 0,
+  ].join('|');
+}
+
+function transSignature(lines?: { timeMs: number; text: string }[]): string {
+  if (!Array.isArray(lines) || !lines.length) return '0';
+  const first = lines[0];
+  const last = lines[lines.length - 1];
+  return `${lines.length}|${first?.timeMs ?? 0}|${first?.text ?? ''}|${last?.timeMs ?? 0}|${last?.text ?? ''}`;
+}
 
 function applyWallpaperCssVars(data: { wallpaperBgOpacity?: number; wallpaperOverallOpacity?: number }): void {
   const rootEl = document.documentElement;
@@ -945,25 +1021,67 @@ window.lxmineStage = {
       currentAudioUrl = nextAudio;
       scheduleAudioStreamSync(false);
     }
-    if (data.id && data.id !== latestMeta.id) {
+    const nextId = data.id ? String(data.id) : currentSongId;
+    const songChanged = Boolean(nextId && nextId !== currentSongId);
+    if (songChanged) {
+      currentSongId = nextId;
+    }
+    lyricOffsetMs = Number(data.lyricOffset || 0);
+    trackDurationMs = Number(data.duration || 0);
+    if (data.positionMs != null && Number.isFinite(Number(data.positionMs))) {
+      applyClockSample(
+        Number(data.positionMs),
+        data.playing != null ? !!data.playing : clockPlaying,
+        songChanged,
+      );
+    } else if (songChanged) {
       anchorMs = 0;
       anchorAt = performance.now();
       clockRate = 1;
+      clockRateUntil = 0;
+      lastPushedSec = -1;
+    } else if (data.playing != null && clockPlaying !== !!data.playing) {
+      applyClockSample(currentPositionSec() * 1000, !!data.playing, false);
     }
-    lastPushedSec = -1;
-    lyricOffsetMs = Number(data.lyricOffset || 0);
-    trackDurationMs = Number(data.duration || 0);
     applyWallpaperCssVars(data);
+
+    // Preserve identical line/translation array references across non-lyric metadata updates
+    // (cover arrival, duration, audioUrl) so convertLines/Intl.Segmenter & visualizers don't rebuild.
+    let nextLines = data.lines;
+    if (data.lines !== undefined) {
+      const sig = linesSignature(data.lines);
+      if (!songChanged && sig === lastLinesSig && latestMeta.lines !== undefined) {
+        nextLines = latestMeta.lines;
+      } else {
+        lastLinesSig = sig;
+      }
+    }
+    let nextTrans = data.translationLines;
+    if (data.translationLines !== undefined) {
+      const tsig = transSignature(data.translationLines);
+      if (!songChanged && tsig === lastTransSig && latestMeta.translationLines !== undefined) {
+        nextTrans = latestMeta.translationLines;
+      } else {
+        lastTransSig = tsig;
+      }
+    }
 
     const nextModeRaw = data.mode || latestMeta.mode || 'folia-partita';
     const nextMode = resolveFoliaMode(nextModeRaw);
 
     const commit = () => {
       if (rev !== metaRevision) return;
-      latestMeta = { ...latestMeta, ...data, mode: nextModeRaw };
+      latestMeta = {
+        ...latestMeta,
+        ...data,
+        ...(nextLines !== undefined ? { lines: nextLines } : {}),
+        ...(nextTrans !== undefined ? { translationLines: nextTrans } : {}),
+        mode: nextModeRaw,
+      };
       const bottomInset = Number(latestMeta.bottomInset || 0);
       playerBottomBarLiveOffset.set(Math.max(40, bottomInset > 0 ? bottomInset : 168));
       setStageMeta?.(latestMeta);
+      ensureTickLoop();
       signalVisualReadySoon();
     };
 
@@ -976,43 +1094,8 @@ window.lxmineStage = {
 
   clock(data) {
     if (!data) return;
-    const now = performance.now();
-    const currentMs = currentPositionSec() * 1000;
-    const incomingMs = Math.max(0, Number(data.positionMs || 0));
-    const nextPlaying = !!data.playing;
-    const diffMs = incomingMs - currentMs;
-
-    if (clockPlaying && nextPlaying) {
-      // C0-continuous rate PLL: zero instantaneous position jump for <650ms audio buffer jitter,
-      // eliminating 4Hz timeupdate frame twitch ("抽帧") completely while converging smoothly.
-      if (Math.abs(diffMs) > 650 || anchorAt <= 0) {
-        anchorMs = incomingMs;
-        anchorAt = now;
-        clockRate = 1;
-        lastPushedSec = -1;
-      } else {
-        anchorMs = currentMs;
-        anchorAt = now;
-        clockRate = Math.max(0.88, Math.min(1.12, 1 + (diffMs / 1000) * 0.35));
-      }
-    } else if (clockPlaying && !nextPlaying) {
-      // Freezing on pause: hold the smooth VSync position instead of snapping backwards
-      // to an older buffered audio.currentTime sample.
-      anchorMs = Math.abs(diffMs) < 550 ? currentMs : incomingMs;
-      anchorAt = now;
-      clockRate = 1;
-      lastPushedSec = -1;
-    } else {
-      anchorMs = incomingMs;
-      anchorAt = now;
-      clockRate = 1;
-      lastPushedSec = -1;
-    }
-
-    if (clockPlaying !== nextPlaying) {
-      clockPlaying = nextPlaying;
-      scheduleAudioStreamSync(false);
-    }
+    applyClockSample(Number(data.positionMs || 0), !!data.playing, false);
+    ensureTickLoop();
   },
 
   spectrum(data) {
@@ -1039,7 +1122,12 @@ window.lxmineStage = {
     setStageVisible?.(nextVisible && nextDetail);
     syncAudioStream();
     if (nextVisible && nextDetail) {
+      lastPushedSec = -1;
+      ensureTickLoop();
       signalVisualReadySoon();
+    } else if (!nextVisible && !isWallpaperHost && rafHandle) {
+      cancelAnimationFrame(rafHandle);
+      rafHandle = 0;
     }
   },
 
@@ -1122,15 +1210,28 @@ window.addEventListener('unhandledrejection', (event) => {
   console.error('[FoliaStage]', event.reason);
 });
 
-// Master animation clock + spectrum pump
+// Master animation clock + spectrum pump (pauses rAF completely while hidden)
 let rafHandle = 0;
+function isTickActive(): boolean {
+  return !document.hidden && (presentationState.visible || isWallpaperHost);
+}
+function ensureTickLoop(): void {
+  if (!rafHandle && isTickActive()) {
+    rafHandle = requestAnimationFrame(tickLoop);
+  }
+}
+document.addEventListener('visibilitychange', () => {
+  if (isTickActive()) ensureTickLoop();
+  else if (rafHandle) { cancelAnimationFrame(rafHandle); rafHandle = 0; }
+});
 function tickLoop(): void {
+  rafHandle = 0;
+  if (!isTickActive()) return;
   rafHandle = requestAnimationFrame(tickLoop);
-  const active = !document.hidden && (presentationState.visible || isWallpaperHost);
-  if (!active) return;
 
   frameCount += 1;
-  const nextSec = Math.max(0, currentPositionSec() + lyricOffsetMs / 1000);
+  const leadMs = clockPlaying ? FOLIA_VISUAL_LEAD_MS : 0;
+  const nextSec = Math.max(0, currentPositionSec() + (lyricOffsetMs + leadMs) / 1000);
   if (Math.abs(nextSec - lastPushedSec) > 0.0005) {
     lastPushedSec = nextSec;
     currentTimeMV.set(nextSec);
@@ -1169,7 +1270,7 @@ function tickLoop(): void {
     audioBandsMV.treble.set(smoothedBands.treble);
   }
 }
-rafHandle = requestAnimationFrame(tickLoop);
+ensureTickLoop();
 
 const PIXI_INTERNAL_RESIZE_MODES = new Set<FoliaStageModeKey>(['lumiere', 'sonnet', 'tempera']);
 
@@ -1331,10 +1432,20 @@ function FoliaStageApp() {
   const bgImageUrl = useMemo(() => resolveCoverProxyUrl(meta.bgImage), [meta.bgImage]);
   const paletteSource = bgImageUrl || coverUrl;
 
+  const hasHostPalette = Boolean(meta.lyricColors?.primary);
+
   useEffect(() => {
-    if (!paletteSource) {
-      lastPaletteImageRef.current = '';
-      setExtractedColors([]);
+    // Host already extracts and passes cover/custom lyricColors; skip redundant async image
+    // download + canvas decode on song switch to prevent a mid-song second scene rebuild.
+    if (hasHostPalette || !paletteSource) {
+      lastPaletteImageRef.current = paletteSource;
+      setExtractedColors(prev => (prev.length ? [] : prev));
+      return;
+    }
+    const cached = paletteExtractCache.get(paletteSource);
+    if (cached) {
+      lastPaletteImageRef.current = paletteSource;
+      setExtractedColors(cached);
       return;
     }
     if (paletteSource === lastPaletteImageRef.current) return;
@@ -1343,12 +1454,14 @@ function FoliaStageApp() {
     void extractColors(paletteSource, 5)
       .then((colors) => {
         if (!cancelled && Array.isArray(colors) && colors.length > 0) {
+          if (paletteExtractCache.size > 48) paletteExtractCache.clear();
+          paletteExtractCache.set(paletteSource, colors);
           setExtractedColors(colors);
         }
       })
       .catch(() => {});
     return () => { cancelled = true; };
-  }, [paletteSource]);
+  }, [paletteSource, hasHostPalette]);
 
   const seed = `${meta.id || ''}:${meta.name || ''}:${meta.singer || ''}`;
 
@@ -1438,11 +1551,13 @@ function FoliaStageApp() {
 
   const handleLyricSeek = useCallback((sec: number) => {
     if (!Number.isFinite(sec)) return;
-    const ms = Math.max(0, Math.round(sec * 1000));
+    const ms = Math.max(0, Math.round(sec * 1000 - lyricOffsetMs));
     anchorMs = ms;
     anchorAt = performance.now();
+    clockRate = 1;
+    clockRateUntil = 0;
     lastPushedSec = -1;
-    currentTimeMV.set(Math.max(0, sec + lyricOffsetMs / 1000));
+    currentTimeMV.set(Math.max(0, sec));
     try { window.__lxmineNative?.seek?.(ms); } catch (_) {}
   }, []);
 

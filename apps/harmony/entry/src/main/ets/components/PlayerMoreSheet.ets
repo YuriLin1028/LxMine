@@ -2,7 +2,7 @@ import { uiMaterial } from '@kit.ArkUI';
 import { Song } from '../model/Song';
 import { MaterialSelect, MaterialToggle, musicButtonPress, musicMenuMaterial } from './MaterialControls';
 import { SmoothSlider } from './SmoothSlider';
-import { TEXT, MUTED, ACCENT } from './Theme';
+import { TEXT, MUTED, ACCENT, ON_ACCENT } from './Theme';
 import {
   AUDIO_FX_BAND_LABELS,
   AUDIO_FX_PRESETS,
@@ -67,6 +67,7 @@ export struct PlayerMoreSheet {
   @Prop volume: number = 1.0;
   @Prop desktopLyrics: boolean = false;
   @Prop desktopLyricsLocked: boolean = false;
+  @Prop mobileDesktopLyricsSupported: boolean = false;
   @Prop wallpaperMode: boolean = false;
 
   onAddToPlaylist: () => void = () => {};
@@ -445,6 +446,32 @@ export struct PlayerMoreSheet {
         }
         .width('100%')
         .margin({ top: 8 })
+        .backgroundColor($r('app.color.card_surface'))
+        .borderRadius(18)
+      } else if (this.mobileDesktopLyricsSupported) {
+        Flex({ wrap: FlexWrap.Wrap, justifyContent: FlexAlign.Start }) {
+          Button(this.desktopLyrics ? '桌面歌词：开' : '桌面歌词：关')
+            .attributeModifier(musicButtonPress)
+            .height(34).padding({ left: 14, right: 14 }).margin({ right: 8, bottom: 4 })
+            .fontSize(13).fontWeight(FontWeight.Medium)
+            .fontColor(this.desktopLyrics ? ON_ACCENT : TEXT)
+            .backgroundColor(this.desktopLyrics ? ACCENT : $r('app.color.card_surface'))
+            .borderRadius(17)
+            .onClick(() => this.onToggleDesktopLyrics())
+          if (this.desktopLyrics) {
+            Button(this.desktopLyricsLocked ? '已锁定桌面歌词' : '锁定桌面歌词')
+              .attributeModifier(musicButtonPress)
+              .height(34).padding({ left: 14, right: 14 }).margin({ right: 8, bottom: 4 })
+              .fontSize(13).fontWeight(FontWeight.Medium)
+              .fontColor(this.desktopLyricsLocked ? ON_ACCENT : TEXT)
+              .backgroundColor(this.desktopLyricsLocked ? ACCENT : $r('app.color.card_surface'))
+              .borderRadius(17)
+              .onClick(() => this.onToggleDesktopLyricsLocked())
+          }
+        }
+        .width('100%')
+        .margin({ top: 8 })
+        .padding({ left: 12, right: 4, top: 10, bottom: 6 })
         .backgroundColor($r('app.color.card_surface'))
         .borderRadius(18)
       }

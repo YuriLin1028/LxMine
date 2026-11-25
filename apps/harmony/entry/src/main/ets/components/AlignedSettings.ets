@@ -2,7 +2,7 @@ import { curves, uiMaterial } from '@kit.ArkUI';
 import { musicButtonPress, musicMaterial, musicMenuMaterial, HdsExquisiteCapsule, MaterialSelect, MaterialToggle } from './MaterialControls';
 import { SmoothSlider } from './SmoothSlider';
 import { PRODUCT_NAME, VERSION_NAME } from 'BuildProfile';
-import { SyncSourcePayload } from '../services/LanSyncClient';
+import { SyncSourcePayload, TrustedDevice } from '../services/LanSyncClient';
 import { LanDevice } from '../services/LanDiscovery';
 import { LyricPreferences } from '../services/LyricPreferences';
 import { MINE_RADIO_MODES, MineRadioMode } from '../model/MineRadioModes';
@@ -70,11 +70,13 @@ export struct AlignedSettings {
   @Prop mixWithOthers: boolean = false;
   @Prop refreshAlgoDoubleTap: boolean = true;
   @Prop lanAutoSync: boolean = false;
+  @Prop trustCircleTransitive: boolean = true;
   @Prop lanLocalAddress: string = '';
   @Prop carDetail: string = '';
   @Prop completedDownloads: number = 0;
   @Prop dislikedCount: number = 0;
   @Prop devices: LanDevice[] = [];
+  @Prop trustedDevices: TrustedDevice[] = [];
   @Prop lanSsid: string = '';
   @Prop message: string = '';
   @Prop lyrics: LyricPreferences = { colorMode: 'cover-gradient', primary: '#7DD3FC', secondary: '#A5B4FC', showTranslation: true, showRomaji: false, scale: 1, lineSpacing: 1.2, maxLines: 0 };
@@ -88,6 +90,9 @@ export struct AlignedSettings {
   @Prop volume: number = 1.0;
   @Prop desktopLyrics: boolean = false;
   @Prop desktopLyricsLocked: boolean = false;
+  @Prop mobileDesktopLyrics: boolean = false;
+  @Prop mobileDesktopLyricsLocked: boolean = false;
+  @Prop mobileDesktopLyricsSupported: boolean = false;
   @Prop desktopLyricSize: number = 1.0;
   @Prop desktopLyricLines: number = 3;
   @Prop desktopLyricColorMode: string = 'cover-gradient';
@@ -120,8 +125,11 @@ export struct AlignedSettings {
   onPanel: (value: string) => void = () => {};
   onDownloads: () => void = () => {};
   onSend: (device: LanDevice) => void = () => {};
+  onPair: (device: LanDevice) => void = () => {};
+  onRemoveTrusted: (id: string) => void = () => {};
   onSendDirect: (target: string) => void = () => {};
   onLanAutoSync: (value: boolean) => void = () => {};
+  onTrustCircleTransitive: (value: boolean) => void = () => {};
   onQuality: (value: string) => void = () => {};
   onMode: (value: string) => void = () => {};
   onStyle: (value: string) => void = () => {};
@@ -161,6 +169,8 @@ export struct AlignedSettings {
   onVolume: (value: number) => void = () => {};
   onDesktopLyrics: (value: boolean) => void = () => {};
   onDesktopLyricsLocked: (value: boolean) => void = () => {};
+  onMobileDesktopLyrics: (value: boolean) => void = () => {};
+  onMobileDesktopLyricsLocked: (value: boolean) => void = () => {};
   onDesktopLyricSize: (value: number) => void = () => {};
   onDesktopLyricLines: (value: number) => void = () => {};
   onDesktopLyricColorMode: (value: string) => void = () => {};
@@ -368,7 +378,7 @@ export struct AlignedSettings {
       })
       this.link({
         title: '局域网同步',
-        detail: this.lanAutoSync ? '已开启自动同步 · 手机、平板与电脑双向合并' : '手机、平板与电脑之间双向同步歌单、音源与设置',
+        detail: this.lanAutoSync ? '已开启信任圈自动同步 · 手机、平板与电脑双向合并' : '设备信任圈 · 手机、平板与电脑之间双向同步歌单、音源与设置',
         action: () => this.onPanel('sync')
       })
       this.link({
@@ -393,14 +403,14 @@ export struct AlignedSettings {
     this.title('关于')
     Column({ space: 1 }) {
       this.link({ title: 'LxMine', detail: 'LX 音源 · MineRadio 视觉 · 全端统一体验', action: () => {}, label: VERSION_NAME })
-      this.link({
-        title: '检查更新',
-        detail: PRODUCT_NAME.toString() === 'store'
-          ? '检测 GitHub 最新版本并跳转华为应用市场邀请测试更新'
-          : '自动通过国内加速镜像获取 GitHub 最新版 HAP 并保存到指定位置',
-        action: this.onCheckUpdate,
-        label: this.updateChecking ? '检测中…' : '检查'
-      })
+      if (PRODUCT_NAME.toString() !== 'store') {
+        this.link({
+          title: '检查更新',
+          detail: '自动通过国内加速镜像获取 GitHub 最新版 HAP 并保存到指定位置',
+          action: this.onCheckUpdate,
+          label: this.updateChecking ? '检测中…' : '检查'
+        })
+      }
     }.width('100%').backgroundColor($r('app.color.card_surface')).borderRadius(20)
   }
 
@@ -902,6 +912,24 @@ export struct AlignedSettings {
           }
         }
       }.width('100%').backgroundColor($r('app.color.card_surface')).borderRadius(20)
+    } else if (this.mobileDesktopLyricsSupported) {
+      this.title('桌面歌词')
+      Column({ space: 1 }) {
+        this.toggle({
+          title: '桌面歌词',
+          detail: '由鸿蒙系统桌面歌词托管显示，样式、颜色与拖动范围由系统统一控制',
+          value: this.mobileDesktopLyrics,
+          action: this.onMobileDesktopLyrics
+        })
+        if (this.mobileDesktopLyrics) {
+          this.toggle({
+            title: '锁定桌面歌词',
+            detail: '锁定桌面歌词位置，防止误触拖动',
+            value: this.mobileDesktopLyricsLocked,
+            action: this.onMobileDesktopLyricsLocked
+          })
+        }
+      }.width('100%').backgroundColor($r('app.color.card_surface')).borderRadius(20)
     }
 
     this.title('车载与蓝牙歌词')
@@ -1107,21 +1135,134 @@ export struct AlignedSettings {
     }.width('100%').backgroundColor($r('app.color.card_surface')).borderRadius(20)
   }
 
+  private isTrustedDeviceId(id: string): boolean {
+    return this.trustedDevices.some((item: TrustedDevice) => item.id === id);
+  }
+
+  private onlineDeviceById(id: string): LanDevice | undefined {
+    return this.devices.find((item: LanDevice) => item.id === id);
+  }
+
+  private untrustedNearbyDevices(): LanDevice[] {
+    return this.devices
+      .filter((item: LanDevice) => !this.isTrustedDeviceId(item.id))
+      .sort((a: LanDevice, b: LanDevice) => a.name.localeCompare(b.name));
+  }
+
+  private trustedDeviceDetail(item: TrustedDevice): string {
+    const online = this.onlineDeviceById(item.id);
+    const parts: string[] = [devicePlatformName(item.platform)];
+    if (online) {
+      parts.push(`在线 · ${online.address}:${online.port}`);
+      if (online.autoSyncPlaylists) parts.push('自动同步已开启');
+    } else {
+      parts.push('离线');
+    }
+    return parts.join(' · ');
+  }
+
+  private nearbyDeviceDetail(device: LanDevice): string {
+    const parts: string[] = [
+      '未信任',
+      devicePlatformName(device.platform),
+      `${device.address}:${device.port}`,
+    ];
+    if (device.ssid) parts.push(device.ssid);
+    if (device.autoSyncPlaylists) parts.push('自动同步已开启');
+    return parts.join(' · ');
+  }
+
+  private confirmRemoveTrusted(item: TrustedDevice): void {
+    this.getUIContext().showAlertDialog({
+      title: '移出信任圈',
+      message: `确定将「${item.name}」移出设备信任圈吗？移出后双方将无法手动发送或自动同步数据。`,
+      autoCancel: true,
+      systemMaterial: musicMenuMaterial(),
+      primaryButton: { value: '取消', action: () => {} },
+      secondaryButton: { value: '确认移出', fontColor: '#FF453A', action: () => { this.onRemoveTrusted(item.id); } }
+    });
+  }
+
   /** 二级页：局域网同步 */
   @Builder private syncPanel() {
     this.title('局域网同步')
     Text(this.lanSsid ? `本机 Wi‑Fi：${this.lanSsid}${this.lanLocalAddress ? ' · ' + this.lanLocalAddress : ''}` : `设备需连接同一局域网${this.lanLocalAddress ? '（本机 ' + this.lanLocalAddress + '）' : ''}`).fontSize(13).fontColor(MUTED).width('100%')
-    Text('发送后由对方确认接收（包含「我的收藏」与全部歌单）。若路由器开启广播隔离，可输入对端 IP:端口直连。').fontSize(13).fontColor(MUTED).width('100%').padding({ top: 8, bottom: 12 })
+    Text('仅已加入「设备信任圈」的设备可发送或自动同步数据，防止同 Wi‑Fi 下陌生设备误同步。').fontSize(13).fontColor(MUTED).width('100%').padding({ top: 8, bottom: 12 })
     Column({ space: 1 }) {
-      this.toggle({ title: '同局域网自动同步歌单', detail: '双方均开启时，歌单和收藏变动自动合并同步', value: this.lanAutoSync, action: this.onLanAutoSync })
-      if (!this.devices.length) { Row({ space: 12 }) { LoadingProgress().width(22).height(22); Text('正在寻找附近的 LxMine…').fontSize(14).fontColor(MUTED) }.width('100%').padding(18) }
-      ForEach(this.devices, (device: LanDevice) => { this.link({ title: device.name, detail: `${devicePlatformName(device.platform)} · ${device.address}:${device.port}${device.ssid ? ' · ' + device.ssid : ''}`, action: () => this.onSend(device), label: '发送' }) }, (device: LanDevice) => device.id)
+      this.toggle({ title: '同局域网自动同步歌单', detail: '仅与信任圈内同样开启此项的设备自动合并歌单与收藏（不覆盖音源与设置）', value: this.lanAutoSync, action: this.onLanAutoSync })
+      this.toggle({ title: '信任圈成员互通', detail: '开启后，配对新设备时自动同步对方信任圈里的设备并互相引荐；关闭则仅拉入当前配对设备', value: this.trustCircleTransitive, action: this.onTrustCircleTransitive })
+    }.width('100%').backgroundColor($r('app.color.card_surface')).borderRadius(20)
+
+    // 直接渲染 Text，避免 @Builder 原始值传参导致 trustedDevices.length 变化不刷新。
+    Text(`设备信任圈（${this.trustedDevices.length} 台）`)
+      .fontSize(14).fontWeight(FontWeight.Medium).fontColor(MUTED)
+      .width('100%').padding({ top: 22, bottom: 10, left: 4 })
+    Column({ space: 1 }) {
+      if (!this.trustedDevices.length) {
+        Text('尚未信任任何设备：请在下方「附近设备」点击「加入信任圈」，对端核对验证码确认后即可在此发送同步。')
+          .fontSize(13).fontColor(MUTED).width('100%').padding(18)
+      }
+      ForEach(this.trustedDevices, (item: TrustedDevice) => {
+        Row({ space: 10 }) {
+          this.copy({ title: item.name, detail: this.trustedDeviceDetail(item) })
+          Row({ space: 8 }) {
+            Button(this.onlineDeviceById(item.id) ? '发送' : '离线')
+              .attributeModifier(musicButtonPress)
+              .height(34).padding({ left: 14, right: 14 })
+              .fontSize(13).fontWeight(FontWeight.Medium)
+              .fontColor(this.onlineDeviceById(item.id) ? ACCENT : MUTED)
+              .backgroundColor(this.onlineDeviceById(item.id) ? '#2464D2FF' : $r('app.color.card_surface'))
+              .borderRadius(17)
+              .enabled(this.onlineDeviceById(item.id) !== undefined)
+              .onClick(() => {
+                const online = this.onlineDeviceById(item.id);
+                if (online) this.onSend(online);
+              })
+            Button('移除')
+              .attributeModifier(musicButtonPress)
+              .height(34).padding({ left: 12, right: 12 })
+              .fontSize(13).fontColor(MUTED)
+              .backgroundColor($r('app.color.card_surface'))
+              .borderRadius(17)
+              .onClick(() => this.confirmRemoveTrusted(item))
+          }
+        }.width('100%').padding({ left: 18, right: 14, top: 14, bottom: 14 })
+      }, (item: TrustedDevice) => {
+        const online = this.onlineDeviceById(item.id);
+        return `${item.id}:${item.name}:${online ? `${online.address}:${online.port}:${online.autoSyncPlaylists ? 1 : 0}` : 'offline'}`;
+      })
+    }.width('100%').backgroundColor($r('app.color.card_surface')).borderRadius(20)
+
+    this.title('附近未信任设备')
+    Column({ space: 1 }) {
+      if (!this.devices.length) {
+        Row({ space: 12 }) {
+          LoadingProgress().width(22).height(22)
+          Text('正在寻找附近的 LxMine…').fontSize(14).fontColor(MUTED)
+        }.width('100%').padding(18)
+      } else if (!this.untrustedNearbyDevices().length) {
+        Text(`附近发现的 ${this.devices.length} 台设备均已在上方信任圈内，请在信任圈中发送或管理。`)
+          .fontSize(13).fontColor(MUTED).width('100%').padding(18)
+      } else {
+        ForEach(this.untrustedNearbyDevices(), (device: LanDevice) => {
+          Row({ space: 10 }) {
+            this.copy({ title: device.name, detail: this.nearbyDeviceDetail(device) })
+            Button('加入信任圈')
+              .attributeModifier(musicButtonPress)
+              .height(34).padding({ left: 14, right: 14 })
+              .fontSize(13).fontWeight(FontWeight.Medium)
+              .fontColor(ACCENT).backgroundColor('#2464D2FF')
+              .borderRadius(17)
+              .onClick(() => this.onPair(device))
+          }.width('100%').padding({ left: 18, right: 14, top: 14, bottom: 14 })
+        }, (device: LanDevice) => `${device.id}:${device.address}:${device.port}:${device.autoSyncPlaylists ? '1' : '0'}`)
+      }
       Row({ space: 8 }) {
-        TextInput({ text: this.directTargetDraft, placeholder: '输入对端 IP:端口（如 192.168.1.10:41300）' })
+        TextInput({ text: this.directTargetDraft, placeholder: '广播隔离时手动直连 IP:端口' })
           .layoutWeight(1).height(40).fontSize(13).fontColor(TEXT).placeholderColor(MUTED)
-          .backgroundColor('#14FFFFFF').borderRadius(12)
+          .backgroundColor($r('app.color.card_surface')).borderRadius(12)
           .onChange((value: string) => { this.directTargetDraft = value; })
-        Button('直连发送').attributeModifier(musicButtonPress).height(38).padding({ left: 14, right: 14 })
+        Button('直连').attributeModifier(musicButtonPress).height(38).padding({ left: 14, right: 14 })
           .fontSize(13).fontColor(ACCENT).backgroundColor('#2464D2FF').borderRadius(19)
           .enabled(!!this.directTargetDraft.trim())
           .onClick(() => this.onSendDirect(this.directTargetDraft.trim()))

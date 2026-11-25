@@ -284,6 +284,7 @@ fun HomePage(
                         items = forYouSongs,
                         likedKeys = likedKeys,
                         onPlay = { vm.playSong(it, forYouSongs, preserveQueue = true) },
+                        onPlayNext = { vm.playNext(it) },
                         onLike = { vm.like(it) },
                         onAddToPlaylist = { vm.addToPlaylist(it) },
                         onDownload = { vm.downloadSong(it) },
@@ -309,6 +310,8 @@ fun HomePage(
                         onPlayAll = {
                             if (sortedNewSongs.isNotEmpty()) vm.playSong(sortedNewSongs.first(), sortedNewSongs)
                         },
+                        onBatchCollect = { vm.openBatchCollectPicker(sortedNewSongs, "批量收藏 · 新歌速递") },
+                        wide = wide,
                         onSort = { newSongsSort = it },
                         onManual = {
                             orderSongs = sortedNewSongs
@@ -326,6 +329,7 @@ fun HomePage(
                                 onLike = { vm.like(song) },
                                 onMore = { vm.addToPlaylist(song) },
                                 onDownload = { vm.downloadSong(song) },
+                                onPlayNext = { vm.playNext(song) },
                             )
                         }
                     }
@@ -376,6 +380,7 @@ fun HomePage(
                         items = feed.similar,
                         likedKeys = likedKeys,
                         onPlay = { vm.playSong(it, feed.similar, preserveQueue = true) },
+                        onPlayNext = { vm.playNext(it) },
                         onLike = { vm.like(it) },
                         onAddToPlaylist = { vm.addToPlaylist(it) },
                         onDownload = { vm.downloadSong(it) },
@@ -547,6 +552,7 @@ private fun FeedSongCardRow(
     items: List<Song>,
     likedKeys: Set<String>,
     onPlay: (Song) -> Unit,
+    onPlayNext: (Song) -> Unit,
     onLike: (Song) -> Unit,
     onAddToPlaylist: (Song) -> Unit,
     onDownload: (Song) -> Unit,
@@ -561,6 +567,7 @@ private fun FeedSongCardRow(
             val cardMenu = rememberGlassMenuTrigger {
                 buildList {
                     add(GlassMenuItem("立即播放") { onPlay(song) })
+                    add(GlassMenuItem("下一首播放") { onPlayNext(song) })
                     add(GlassMenuItem(if (liked) "取消收藏" else "收藏") { onLike(song) })
                     add(GlassMenuItem("添加到歌单") { onAddToPlaylist(song) })
                     if (song.source != "local") {

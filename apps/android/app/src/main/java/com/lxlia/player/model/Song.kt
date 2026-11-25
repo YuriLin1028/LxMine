@@ -137,11 +137,10 @@ data class MusicPlaylist(
                 for (index in 0 until array.length()) array.optString(index).takeIf { it.isNotEmpty() }?.let(ids::add)
             }
             val name = json.optString("name")
-            val rawIsFavorite = json.optBoolean("isFavorite") || name == "我喜欢的" || name == "我的收藏"
-            val normalizedName = if (rawIsFavorite && (name.isEmpty() || name == "我喜欢的")) "我的收藏" else name
+            val rawIsFavorite = json.optBoolean("isFavorite")
             return MusicPlaylist(
                 id = json.optString("id"),
-                name = normalizedName,
+                name = name,
                 kind = json.optString("kind").ifEmpty { "lx" },
                 songs = songs,
                 songIds = ids.ifEmpty { songs.map { it.key } },
@@ -152,6 +151,39 @@ data class MusicPlaylist(
                 warning = json.optString("warning"),
                 customCover = json.optString("customCover"),
             )
+        }
+
+        /**
+         * 规范化收藏歌单唯一性（方案 B + 1.3.0 自愈）：
+         * - 若整组歌单无 isFavorite=true，仅为首个旧版「我喜欢的/我的收藏」补打 isFavorite=true；
+         * - 若存在多个 isFavorite=true（1.3.0 导入同名 .lxmc 造成的隐藏重复项），仅保留第一个为内置收藏，其余恢复为独立普通歌单；
+         * - 若已有唯一 isFavorite=true，绝不按名称吞并同名导入/自建歌单。
+         */
+        fun normalizeList(lists: List<MusicPlaylist>): List<MusicPlaylist> {
+            if (lists.isEmpty()) return lists
+            val favCount = lists.count { it.isFavorite }
+            if (favCount == 0) {
+                var promoted = false
+                return lists.map { item ->
+                    if (!promoted && (item.name == "我喜欢的" || item.name == "我的收藏")) {
+                        promoted = true
+                        item.copy(isFavorite = true, name = "我的收藏")
+                    } else {
+                        item
+                    }
+                }
+            }
+            var keptPrimary = false
+            return lists.map { item ->
+                if (!item.isFavorite) return@map item
+                if (!keptPrimary) {
+                    keptPrimary = true
+                    val normalizedName = if (item.name.isBlank() || item.name == "我喜欢的") "我的收藏" else item.name
+                    if (normalizedName == item.name) item else item.copy(name = normalizedName)
+                } else {
+                    item.copy(isFavorite = false)
+                }
+            }
         }
 
         /** 验证同步/持久化数据；只丢弃坏歌单，不让整份数据打不开。 */

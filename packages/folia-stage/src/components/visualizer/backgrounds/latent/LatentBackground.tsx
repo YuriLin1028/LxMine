@@ -132,25 +132,22 @@ const LatentBackground: React.FC<LatentBackgroundProps> = ({
     pausedRef.current = paused;
 
     useEffect(() => {
+        // Reuse already-resolved theme colors directly instead of re-downloading and decoding
+        // the album cover image a third time on every song switch.
+        if (theme.primaryColor && theme.backgroundColor) {
+            setCoverColors([]);
+            return;
+        }
         let active = true;
-
         if (!coverUrl) {
             setCoverColors([]);
-            return () => {
-                active = false;
-            };
+            return () => { active = false; };
         }
-
         void extractRepresentativeColors(coverUrl, 6).then(colors => {
-            if (active) {
-                setCoverColors(colors);
-            }
+            if (active) setCoverColors(colors);
         });
-
-        return () => {
-            active = false;
-        };
-    }, [coverUrl]);
+        return () => { active = false; };
+    }, [coverUrl, theme.primaryColor, theme.backgroundColor]);
 
     const shaderColors = useMemo(
         () => resolveLatentShaderColors(coverColors, theme, tuning.colorSource),
@@ -161,18 +158,15 @@ const LatentBackground: React.FC<LatentBackgroundProps> = ({
         const ditheringMount = ditheringRef.current?.paperShaderMount;
         const meshMount = meshRef.current?.paperShaderMount;
 
-        if (staticMode) {
+        if (staticMode || paused) {
             ditheringMount?.setSpeed(0);
             meshMount?.setSpeed(0);
             return;
         }
 
         let animationFrame = 0;
-        // The full-screen layers' last written styles: once the smoothed audio settles (paused,
-        // silence) the strings stop changing, and the layers are left alone instead of being
-        // handed the same filter every frame.
-        const writtenStyles = new WeakMap<HTMLElement, Partial<Record<'opacity' | 'transform' | 'filter', string>>>();
-        const writeLayerStyle = (element: HTMLElement, property: 'opacity' | 'transform' | 'filter', value: string) => {
+        const writtenStyles = new WeakMap<HTMLElement, Partial<Record<'opacity' | 'transform', string>>>();
+        const writeLayerStyle = (element: HTMLElement, property: 'opacity' | 'transform', value: string) => {
             let written = writtenStyles.get(element);
             if (!written) {
                 written = {};
@@ -191,34 +185,25 @@ const LatentBackground: React.FC<LatentBackgroundProps> = ({
 
         // Keep audio-rate changes inside the shader/DOM layer so React only rerenders on palette changes.
         const updateAudioResponse = () => {
-            const isPaused = pausedRef.current;
-            const targetPower = isPaused ? 0 : normalizeAudio(audioPower.get());
-            const targetBass = isPaused ? 0 : normalizeAudio(audioBands.bass.get());
-            const targetBeatEnergy = isPaused
-                ? 0
-                : resolveLatentBroadbandEnergy(
-                    audioBands.bass.get(),
-                    audioBands.lowMid.get(),
-                    audioBands.mid.get(),
-                    audioBands.vocal.get(),
-                    audioBands.treble.get(),
-                );
-            const targetMid = isPaused
-                ? 0
-                : normalizeAudio(Math.max(audioBands.mid.get(), audioBands.vocal.get()));
+            if (pausedRef.current) {
+                animationFrame = 0;
+                return;
+            }
+            const targetPower = normalizeAudio(audioPower.get());
+            const targetBass = normalizeAudio(audioBands.bass.get());
+            const targetBeatEnergy = resolveLatentBroadbandEnergy(
+                audioBands.bass.get(),
+                audioBands.lowMid.get(),
+                audioBands.mid.get(),
+                audioBands.vocal.get(),
+                audioBands.treble.get(),
+            );
+            const targetMid = normalizeAudio(Math.max(audioBands.mid.get(), audioBands.vocal.get()));
             smoothedPower = easeTowards(smoothedPower, targetPower, 0.12);
             smoothedBass = easeTowards(smoothedBass, targetBass, 0.16);
-            smoothedMid = easeTowards(
-                smoothedMid,
-                targetMid,
-                0.13,
-            );
+            smoothedMid = easeTowards(smoothedMid, targetMid, 0.13);
             latentOnsetPulse = tuning.enhancedBeatResponse
-                ? resolveLatentOnsetPulse(
-                    targetBeatEnergy,
-                    previousBeatEnergy,
-                    latentOnsetPulse,
-                )
+                ? resolveLatentOnsetPulse(targetBeatEnergy, previousBeatEnergy, latentOnsetPulse)
                 : 0;
             previousBeatEnergy = targetBeatEnergy;
             const beatSpeedTarget = resolveLatentAudioSpeedTarget(
@@ -240,7 +225,7 @@ const LatentBackground: React.FC<LatentBackgroundProps> = ({
                     tuning.ditheringSpeed,
                     tuning.ditheringAudioSpeed,
                     smoothedBeatSpeed,
-                    isPaused,
+                    false,
                 );
                 currentDitheringMount.setSpeed(ditheringSpeed);
                 updatePaperShaderUniforms(currentDitheringMount, {
@@ -252,7 +237,7 @@ const LatentBackground: React.FC<LatentBackgroundProps> = ({
                     tuning.meshSpeed,
                     tuning.meshAudioSpeed,
                     smoothedBeatSpeed,
-                    isPaused,
+                    false,
                 );
                 currentMeshMount.setSpeed(meshSpeed);
                 updatePaperShaderUniforms(currentMeshMount, {
@@ -268,7 +253,7 @@ const LatentBackground: React.FC<LatentBackgroundProps> = ({
                 writeLayerStyle(ditheringLayerRef.current, 'transform', `scale(${1.015 + smoothedBass * 0.025})`);
             }
             if (meshLayerRef.current) {
-                writeLayerStyle(meshLayerRef.current, 'filter', `saturate(${1.04 + smoothedMid * 0.34}) brightness(${0.94 + smoothedPower * 0.16})`);
+                // Avoid per-frame full-screen CSS filter mutations on WebGL canvas (huge compositor hit).
                 writeLayerStyle(meshLayerRef.current, 'transform', `scale(${1.025 + smoothedPower * 0.018})`);
             }
 
@@ -277,7 +262,7 @@ const LatentBackground: React.FC<LatentBackgroundProps> = ({
 
         animationFrame = requestAnimationFrame(updateAudioResponse);
         return () => cancelAnimationFrame(animationFrame);
-    }, [audioBands, audioPower, showMesh, staticMode, tuning]);
+    }, [audioBands, audioPower, paused, showMesh, staticMode, tuning]);
 
     return (
         <div

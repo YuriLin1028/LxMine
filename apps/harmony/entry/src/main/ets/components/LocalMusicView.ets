@@ -22,8 +22,10 @@ export struct LocalMusicView {
   @Prop searchQuery: string = '';
   scroller: Scroller = new Scroller();
   onPlay: (song: Song) => void = () => {};
+  onPlayNext: (song: Song) => void = () => {};
   onLike: (song: Song) => void = () => {};
   onMore: (song: Song) => void = () => {};
+  onBatchCollect: (songs: Song[]) => void = () => {};
   onScroll: (offset: number) => void = () => {};
   likedSong: (song: Song) => boolean = () => false;
   onPlayAll: () => void = () => {};
@@ -47,7 +49,9 @@ export struct LocalMusicView {
       ListItem() {
         Column({ space: 10 }) {
           SongListTools({ countText: `${this.songs.length} 首本地歌曲`, disabled: !this.songs.length,
-            onPlayAll: () => this.onPlayAll(), onSort: (mode: string) => this.onSort(mode), onManual: () => this.onManualSort() })
+            wide: this.wide, showBatchCollect: this.songs.length > 0,
+            onPlayAll: () => this.onPlayAll(), onSort: (mode: string) => this.onSort(mode),
+            onManual: () => this.onManualSort(), onBatchCollect: () => this.onBatchCollect(this.songs) })
           if (this.searchOpen) {
             Row({ space: 8 }) {
               Image($r('app.media.ic_search')).width(18).height(18).opacity(0.7)
@@ -64,8 +68,10 @@ export struct LocalMusicView {
       LazyForEach(this.source, (song: Song, index: number) => {
         ListItem() {
           SongRow({ song, index, wide: this.wide, showDownload: false, hideDownload: true,
+            showPlayNext: true,
             active: this.selectedKey === songKey(song), liked: this.likedSong(song),
-            onPlay: () => this.onPlay(song), onLike: () => this.onLike(song), onMore: () => this.onMore(song) })
+            onPlay: () => this.onPlay(song), onPlayNext: () => this.onPlayNext(song),
+            onLike: () => this.onLike(song), onMore: () => this.onMore(song) })
         }
       }, (song: Song) => `${songKey(song)}|${song.coverUrl ?? ''}`)
       if (!this.songs.length) {
